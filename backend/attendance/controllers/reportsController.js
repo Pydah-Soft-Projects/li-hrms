@@ -83,7 +83,7 @@ function formatRecordInOutTime(rec) {
  */
 exports.getAttendanceReport = async (req, res) => {
     try {
-        let { startDate, endDate, departmentId, divisionId, employeeId, designationId, groupBy, month, year } = req.query;
+        let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, groupBy, month, year } = req.query;
 
         // --- NEW: Payroll Month Logic ---
         if (month && year) {
@@ -145,6 +145,14 @@ exports.getAttendanceReport = async (req, res) => {
             } else {
                 query.employeeNumber = { $in: empNos };
             }
+        }
+
+        if (employeeGroupId && employeeGroupId !== 'all') {
+            const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+            const groupEmployees = await Employee.find({ employee_group_id: { $in: groupIds }, is_active: { $ne: false } }).select('emp_no');
+            const groupEmpNos = groupEmployees.map(employee => employee.emp_no);
+            const existingEmpNos = query.employeeNumber?.$in;
+            query.employeeNumber = { $in: existingEmpNos ? groupEmpNos.filter(empNo => existingEmpNos.includes(empNo)) : groupEmpNos };
         }
 
         const limit = parseInt(req.query.limit) || 50;
@@ -282,6 +290,10 @@ exports.getAttendanceReport = async (req, res) => {
 
                 // Prioritize department_id for employee grouping
                 const empFilter = { is_active: { $ne: false }, department_id: activeDeptId };
+                if (employeeGroupId && employeeGroupId !== 'all') {
+                    const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+                    empFilter.employee_group_id = { $in: groupIds };
+                }
 
                 if (designationId && designationId !== 'all') {
                     const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
@@ -342,7 +354,11 @@ exports.getAttendanceReport = async (req, res) => {
                     total = childEmployees.length;
                 }
 
-                const childQuery = { ...query, employeeNumber: { $in: childEmpNos } };
+                const scopedEmpNos = query.employeeNumber?.$in;
+                const childQuery = {
+                    ...query,
+                    employeeNumber: { $in: scopedEmpNos ? childEmpNos.filter(empNo => scopedEmpNos.includes(empNo)) : childEmpNos }
+                };
 
                 const [childStatsData, childLeaveCount] = await Promise.all([
                     AttendanceDaily.aggregate([
@@ -557,7 +573,7 @@ exports.getThumbReports = async (req, res) => {
  */
 exports.exportAttendanceReport = async (req, res) => {
     try {
-        let { startDate, endDate, departmentId, divisionId, employeeId, designationId, search, strict, groupBy, month, year } = req.query;
+        let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, search, strict, groupBy, month, year } = req.query;
 
         // --- NEW: Payroll Month Logic ---
         if (month && year) {
@@ -601,6 +617,10 @@ exports.exportAttendanceReport = async (req, res) => {
             const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
             empClauses.push({ _id: empIds.length > 1 ? { $in: empIds } : empIds[0] });
         }
+        if (employeeGroupId && employeeGroupId !== 'all') {
+            const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+            empClauses.push({ employee_group_id: { $in: groupIds } });
+        }
         if (search) {
             empClauses.push({
                 $or: [
@@ -620,7 +640,7 @@ exports.exportAttendanceReport = async (req, res) => {
         employees.sort((a, b) => compareEmpNo(a.emp_no, b.emp_no));
 
         const empNosFromHRMS = employees.map(e => String(e.emp_no).toUpperCase());
-        if (empNosFromHRMS.length > 0 && (departmentId || divisionId || employeeId || search)) {
+        if (empNosFromHRMS.length > 0 && (departmentId || divisionId || employeeId || employeeGroupId || search)) {
             query.employeeNumber = { $in: empNosFromHRMS };
         }
         const empMap = employees.reduce((acc, e) => {
@@ -946,6 +966,14 @@ exports.exportAttendanceReport = async (req, res) => {
                     const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
                     empQuery.designation_id = { $in: desigIds };
                 }
+                if (employeeId && employeeId !== 'all') {
+                    const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+                    empQuery._id = { $in: empIds };
+                }
+                if (employeeGroupId && employeeGroupId !== 'all') {
+                    const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+                    empQuery.employee_group_id = { $in: groupIds };
+                }
                 if (departmentId && departmentId !== 'all') {
                     const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
                     empQuery.department_id = { $in: deptIds };
@@ -954,16 +982,60 @@ exports.exportAttendanceReport = async (req, res) => {
                     const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
                     empQuery.division_id = { $in: divIds };
                 }
-                const emps = await Employee.find(empQuery).select('emp_no employee_name').lean();
-                children = emps.map(e => ({ _id: e._id, name: e.employee_name, emp_no: e.emp_no }));
+                const emps = await Employee.find(empQuery)
+                    .populate('designation_id', 'name')
+                    .populate('division_id', 'name')
+                    .populate('department_id', 'name')
+                    .populate('employee_group_id', 'name')
+                    .select('emp_no employee_name designation_id division_id department_id employee_group_id')
+                    .lean();
+                children = emps.map(e => ({ _id: e._id, ...e, name: e.employee_name }));
             }
+
+            const employeeSummaryMode = groupBy === 'employee';
+            const monthlyKey = month && year ? `${parseInt(String(year), 10)}-${String(parseInt(String(month), 10)).padStart(2, '0')}` : null;
+            const exportAttendanceSettings = await AttendanceSettings.getSettings();
+            const exportProcessingMode = AttendanceSettings.getProcessingMode(exportAttendanceSettings)?.mode || 'multi_shift';
+            const monthlySummaries = employeeSummaryMode && monthlyKey
+                ? await MonthlyAttendanceSummary.find({ employeeId: { $in: children.map(child => child._id) }, month: monthlyKey }).lean()
+                : [];
+            const paidLeaveRecords = employeeSummaryMode
+                ? await Leave.find({
+                    emp_no: { $in: children.map(child => child.emp_no) },
+                    status: 'approved',
+                    isActive: true,
+                    fromDate: { $lte: endDate },
+                    toDate: { $gte: startDate },
+                }).select('emp_no leaveType leaveNature numberOfDays').lean()
+                : [];
+            const leaveTotalsByEmployee = {};
+            paidLeaveRecords.forEach(leave => {
+                const empNo = String(leave.emp_no);
+                const totals = leaveTotalsByEmployee[empNo] || { cl: 0, ccl: 0, paid: 0, lop: 0 };
+                const days = Number(leave.numberOfDays) || 0;
+                const leaveType = String(leave.leaveType || '').toUpperCase();
+                const isPaid = leave.leaveNature !== 'lop' && leave.leaveNature !== 'without_pay';
+                if (isPaid) {
+                    totals.paid += days;
+                    if (leaveType.includes('CCL')) totals.ccl += days;
+                    else if (leaveType === 'CL' || leaveType.includes('CASUAL')) totals.cl += days;
+                } else {
+                    totals.lop += days;
+                }
+                leaveTotalsByEmployee[empNo] = totals;
+            });
 
             const abstractRows = [
                 ['ATTENDANCE SUMMARY REPORT'],
                 ['Period', `${startDate} to ${endDate}`],
                 ['Level', groupBy.toUpperCase()],
                 [''],
-                ['Name', 'E.NO', 'Headcount', 'P', 'A', 'L', 'OD', 'LVE', 'WO', 'HOL', 'Present %', 'Total Working Hrs']
+                employeeSummaryMode
+                    ? ['EC No.', 'Employee Name', 'Designation', 'Division', 'Department', 'Group', 'Present Days', 'Absent Days', 'Leave Days', '', '', 'Week Offs', 'Total Days', 'Lates/Early Out', 'Deduction Days', '', 'Total Paid Days']
+                    : ['Name', 'E.NO', 'Headcount', 'P', 'A', 'L', 'OD', 'LVE', 'WO', 'HOL', 'Present %', 'Total Working Hrs'],
+                ...(employeeSummaryMode
+                    ? [['', '', '', '', '', '', '', '', 'CL', 'CCL', 'LOP', '', '', '', 'ABS (extra LOP)', 'Late/Early Out Related', '']]
+                    : [])
             ];
 
             for (const child of children) {
@@ -1033,6 +1105,48 @@ exports.exportAttendanceReport = async (req, res) => {
                 const expectedWorkingDays = Math.max(0, daysInRange - avgWO - avgHOL);
                 const trueAbsent = Math.max(0, expectedWorkingDays - (cStats.present || 0) - (cStats.od || 0) - (childLeaveCount || 0));
 
+                if (employeeSummaryMode) {
+                    const leaveTotals = leaveTotalsByEmployee[String(child.emp_no)] || { cl: 0, ccl: 0, paid: 0, lop: 0 };
+                    let summary = monthlySummaries.find(item => String(item.employeeId) === String(child._id));
+                    if (!summary && monthlyKey) {
+                        try {
+                            summary = await calculateMonthlySummary(child._id, child.emp_no, parseInt(String(year), 10), parseInt(String(month), 10));
+                        } catch (error) {
+                            console.error('Monthly attendance summary calculation failed', error);
+                        }
+                    }
+                    const payRow = summary ? payRegisterAllRowFromSummary(summary, exportProcessingMode) : null;
+                    const weekOffs = payRow?.weekOffs ?? (nonWorkingMap[child.emp_no]?.wo || 0);
+                    const holidays = payRow?.holidays ?? (nonWorkingMap[child.emp_no]?.hol || 0);
+                    const present = payRow?.present ?? (cStats.present || 0);
+                    const absent = payRow?.absent ?? trueAbsent;
+                    const paidLeaves = payRow?.paidLeaves ?? leaveTotals.paid;
+                    const lopLeaves = payRow?.dedLop ?? leaveTotals.lop;
+                    const totalDays = payRow?.totalDaysSummed ?? (present + absent + weekOffs + holidays + paidLeaves + lopLeaves + (cStats.od || 0));
+                    const attendanceDeduction = payRow?.attDed ?? 0;
+                    const paidDays = payRow?.paidDays ?? Math.max(0, present + weekOffs + holidays + (cStats.od || 0) + paidLeaves - attendanceDeduction);
+                    abstractRows.push([
+                        child.emp_no || '-',
+                        child.employee_name || child.name,
+                        child.designation_id?.name || '',
+                        child.division_id?.name || '',
+                        child.department_id?.name || '',
+                        child.employee_group_id?.name || '',
+                        Number(present.toFixed(1)),
+                        Number(absent.toFixed(1)),
+                        Number(leaveTotals.cl.toFixed(1)),
+                        Number(leaveTotals.ccl.toFixed(1)),
+                        Number(lopLeaves.toFixed(1)),
+                        Number(weekOffs.toFixed(1)),
+                        Number(totalDays.toFixed(1)),
+                        payRow?.lates ?? (cStats.late || 0),
+                        payRow?.dedAbsent ?? Number(absent.toFixed(1)),
+                        Number(attendanceDeduction.toFixed(1)),
+                        Number(paidDays.toFixed(1)),
+                    ]);
+                    continue;
+                }
+
                 abstractRows.push([
                     child.name,
                     child.emp_no || '-',
@@ -1050,6 +1164,14 @@ exports.exportAttendanceReport = async (req, res) => {
             }
 
             const wsSummary = XLSX.utils.aoa_to_sheet(abstractRows);
+            if (employeeSummaryMode) {
+                wsSummary['!merges'] = [
+                    ...[0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 16].map(column => ({ s: { r: 4, c: column }, e: { r: 5, c: column } })),
+                    { s: { r: 4, c: 8 }, e: { r: 4, c: 10 } },
+                    { s: { r: 4, c: 14 }, e: { r: 4, c: 15 } },
+                ];
+                wsSummary['!cols'] = [12, 26, 18, 18, 20, 18, 13, 13, 11, 12, 11, 12, 12, 16, 16, 22, 14].map(wch => ({ wch }));
+            }
             XLSX.utils.book_append_sheet(workbook, wsSummary, 'Attendance Summary');
         } else {
             // Standard general summary sheet
@@ -1486,7 +1608,7 @@ const drawPDFTableModern = (doc, headers, data, startX, startY, colWidths, optio
 exports.exportAttendanceReportPDF = async (req, res) => {
     console.log('--- EXPORT PDF CALLED ---', req.query);
     try {
-        let { startDate, endDate, departmentId, divisionId, employeeId, designationId, search, strict, groupBy, month, year } = req.query;
+        let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, search, strict, groupBy, month, year } = req.query;
 
         // Sync dates for payroll months
         if (month && year) {
@@ -1690,6 +1812,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         if (employeeId && employeeId !== 'all') {
             const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
             empClauses.push({ _id: { $in: empIds } });
+        }
+        if (employeeGroupId && employeeGroupId !== 'all') {
+            const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+            empClauses.push({ employee_group_id: { $in: groupIds } });
         }
         if (search) {
             empClauses.push({ $or: [{ employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } }] });

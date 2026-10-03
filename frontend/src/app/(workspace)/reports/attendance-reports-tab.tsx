@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api, Department, Division, Employee, Designation } from '@/lib/api';
+import { api, Department, Division, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
     Search,
@@ -74,6 +74,7 @@ export default function AttendanceReportsTab() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
 
     // View & Tab states
     const [viewMode, setViewMode] = useState<'detailed' | 'abstract'>('abstract');
@@ -103,6 +104,7 @@ export default function AttendanceReportsTab() {
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+    const [employeeGroupIds, setEmployeeGroupIds] = useState<string[]>([]);
     const [allDesignations, setAllDesignations] = useState<Designation[]>([]);
     const [designations, setDesignations] = useState<Designation[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -171,6 +173,7 @@ export default function AttendanceReportsTab() {
             if (divisionIds.length > 0) params.divisionId = divisionIds;
             if (designationIds.length > 0) params.designationId = designationIds;
             if (employeeIds.length > 0) params.employeeId = employeeIds;
+            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds;
 
             const response = await api.getAttendanceReportSummary(params);
             if (response.success) {
@@ -197,7 +200,7 @@ export default function AttendanceReportsTab() {
         } finally {
             setLoading(false);
         }
-    }, [page, limit, searchQuery, viewMode, drilldownLevel, dateMode, selectedMonth, selectedYear, startDate, endDate, departmentIds, divisionIds, designationIds, employeeIds]);
+    }, [page, limit, searchQuery, viewMode, drilldownLevel, dateMode, selectedMonth, selectedYear, startDate, endDate, departmentIds, divisionIds, designationIds, employeeIds, employeeGroupIds]);
 
     useEffect(() => {
         loadInitialFilters();
@@ -211,12 +214,14 @@ export default function AttendanceReportsTab() {
         setFetchingFilters(true);
         setFetchingSettings(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, groupRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
                 api.getSetting('payroll_cycle_start_day')
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
+            if (groupRes.success) setEmployeeGroups(groupRes.data || []);
             if (desRes.success) {
                 setAllDesignations(desRes.data || []);
                 setDesignations(desRes.data || []);
@@ -342,7 +347,8 @@ export default function AttendanceReportsTab() {
                 departmentId: departmentIds,
                 designationId: designationIds,
                 employeeId: employeeIds,
-                groupBy: drilldownLevel === 'all' ? 'division' : (drilldownLevel === 'division' ? 'department' : 'employee')
+                employeeGroupId: employeeGroupIds,
+                groupBy: 'employee'
             };
 
             if (usePageFilters) {
@@ -442,7 +448,7 @@ export default function AttendanceReportsTab() {
         setPage(1);
     };
 
-    const isFiltered = divisionIds.length > 0 || departmentIds.length > 0 || designationIds.length > 0 || employeeIds.length > 0;
+    const isFiltered = divisionIds.length > 0 || departmentIds.length > 0 || designationIds.length > 0 || employeeIds.length > 0 || employeeGroupIds.length > 0;
     const getBreadcrumbs = () => {
         const items = [{ label: 'Reports', level: 'all', id: 'all' }];
         if (divisionIds.length > 0) {
@@ -770,6 +776,7 @@ export default function AttendanceReportsTab() {
                             setDivisionIds([]);
                             setDepartmentIds([]);
                             setEmployeeIds([]);
+                            setEmployeeGroupIds([]);
                             setDesignationIds([]);
                             setDesignations(allDesignations);
                             setDrilldownLevel('all');
@@ -844,6 +851,13 @@ export default function AttendanceReportsTab() {
                             selectedIds={employeeIds}
                             onChange={setEmployeeIds}
                             disabled={departmentIds.length === 0}
+                        />
+                        <MultiSelect
+                            label="Group"
+                            options={employeeGroups.map(group => ({ id: group._id, name: group.name }))}
+                            selectedIds={employeeGroupIds}
+                            onChange={setEmployeeGroupIds}
+                            loading={fetchingFilters}
                         />
                     </div>
                 </div>

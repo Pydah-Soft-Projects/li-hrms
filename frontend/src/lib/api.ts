@@ -2517,7 +2517,7 @@ export const api = {
     return apiRequest<any>('/employee-applications/form-settings', { method: 'GET' });
   },
 
-  exportEmployees: async (fields: string[], filters?: any, empNo?: string) => {
+  exportEmployees: async (fields: string[], filters?: any, empNo?: string, format: 'csv' | 'xlsx' = 'csv') => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -2529,7 +2529,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/employees/export`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ fields, filters, empNo }),
+      body: JSON.stringify({ fields, filters, empNo, format }),
     });
 
     if (!response.ok) {
@@ -2557,6 +2557,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
       view?: 'full' | 'summary' | 'list';
@@ -2577,6 +2579,8 @@ export const api = {
     if (filters?.search) params.append('search', filters.search);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.doj_start) params.append('doj_start', filters.doj_start);
+    if (filters?.doj_end) params.append('doj_end', filters.doj_end);
     if (filters?.page) params.append('page', String(filters.page));
     if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     if (filters?.view) params.append('view', filters.view);
@@ -2600,6 +2604,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
       sortBy?: string;
@@ -2623,6 +2629,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
     },
@@ -5798,6 +5806,7 @@ export const api = {
     month: string;
     departmentIds?: string[];
     divisionIds?: string[];
+    designationId?: string;
     search?: string;
     employeeGroupId?: string;
   }) => {
@@ -5829,6 +5838,7 @@ export const api = {
     month: string;
     departmentIds?: string[];
     divisionIds?: string[];
+    designationId?: string;
     search?: string;
     employeeGroupId?: string;
   }) => {
@@ -6777,6 +6787,7 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
     departmentId?: string | string[];
     divisionId?: string | string[];
     designationId?: string | string[];
@@ -6791,6 +6802,7 @@ export const api = {
     if (params.startDate) query.append('startDate', params.startDate);
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
     if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
     if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);
     if (params.designationId) query.append('designationId', Array.isArray(params.designationId) ? params.designationId.join(',') : params.designationId);
@@ -6808,6 +6820,7 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
     search?: string;
     page?: number;
     limit?: number;
@@ -6816,6 +6829,7 @@ export const api = {
     if (params.startDate) query.append('startDate', params.startDate);
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
     if (params.search) query.append('search', params.search);
     if (params.page) query.append('page', params.page.toString());
     if (params.limit) query.append('limit', params.limit.toString());
@@ -6827,6 +6841,7 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
     search?: string;
     departmentId?: string | string[];
     divisionId?: string | string[];
@@ -6842,6 +6857,7 @@ export const api = {
     if (params.month) query.append('month', params.month);
     if (params.year) query.append('year', params.year);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
     if (params.search) query.append('search', params.search);
     if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
     if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);

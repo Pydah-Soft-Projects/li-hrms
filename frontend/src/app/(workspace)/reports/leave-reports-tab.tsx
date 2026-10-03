@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { api, Division, Department, Employee, Designation } from '@/lib/api';
+import { api, Division, Department, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import { 
     FileText, 
@@ -20,7 +20,13 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { downloadLeaveODReportPdf, type LeaveODReportExportFilters } from '@/lib/leaveOdReportExport';
+import { 
+    downloadLeaveODReportPdf, 
+    downloadLeaveODReportXlsx,
+    normalizeLeaveOdTypesForSelect, 
+    type LeaveODReportExportFilters, 
+    type LeaveOdTypeOption 
+} from '@/lib/leaveOdReportExport';
 
 export default function LeaveReportsTab() {
     const [loading, setLoading] = useState(false);
@@ -31,14 +37,18 @@ export default function LeaveReportsTab() {
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
-    
     const [designations, setDesignations] = useState<Designation[]>([]);
+    const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<LeaveOdTypeOption[]>([]);
     
     // Selection states
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
+    const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+    const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('');
+    const [statusFilter, setStatusFilter] = useState<string>('');
     
     // Date/Mode states
     const [dateMode, setDateMode] = useState<'pay_cycle' | 'monthly' | 'range'>('pay_cycle');
@@ -55,7 +65,7 @@ export default function LeaveReportsTab() {
         totalLeaves: 0,
         totalApprovedLeaves: 0,
         totalPendingLeaves: 0,
-        totalRejectedLeaves: 0 // Will calculate if not provided
+        totalRejectedLeaves: 0
     });
     const [loadingData, setLoadingData] = useState(false);
     const [page, setPage] = useState(1);
@@ -69,13 +79,17 @@ export default function LeaveReportsTab() {
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, grpRes, typeRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
+                api.getLeaveTypes('leave'),
                 api.getSetting('payroll_cycle_start_day'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
+            if (grpRes.success) setGroups(grpRes.data || []);
+            if (typeRes.success) setLeaveTypes(normalizeLeaveOdTypesForSelect(typeRes.data || []));
             if (settingRes?.success && settingRes.data?.value) {
                 setPayrollStartDay(parseInt(settingRes.data.value));
             }
@@ -166,24 +180,31 @@ export default function LeaveReportsTab() {
         division: divisionIds,
         department: departmentIds,
         designation: designationIds,
+        group: groupFilterIds,
         employeeId: employeeIds,
+        leaveType: leaveTypeFilter || undefined,
+        status: statusFilter || undefined,
     };
 
     const fetchReportData = async () => {
         setLoadingData(true);
         try {
-            const query = new URLSearchParams({
+            const queryParams: Record<string, string> = {
                 page: page.toString(),
                 limit: limit.toString(),
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
-                ...(searchQuery ? { search: searchQuery } : {}),
-                division: divisionIds.join(','),
-                department: departmentIds.join(','),
-                designation: designationIds.join(','),
-                employeeId: employeeIds.join(',')
-            }).toString();
+            };
+            if (searchQuery) queryParams.search = searchQuery;
+            if (divisionIds.length) queryParams.division = divisionIds.join(',');
+            if (departmentIds.length) queryParams.department = departmentIds.join(',');
+            if (designationIds.length) queryParams.designation = designationIds.join(',');
+            if (groupFilterIds.length) queryParams.group = groupFilterIds.join(',');
+            if (employeeIds.length) queryParams.employeeId = employeeIds.join(',');
+            if (leaveTypeFilter) queryParams.leaveType = leaveTypeFilter;
+            if (statusFilter) queryParams.status = statusFilter;
 
+            const query = new URLSearchParams(queryParams).toString();
             const res = await api.get(`/leaves/?${query}`);
             if (res.success) {
                 setReportData(res.data || []);
@@ -198,16 +219,20 @@ export default function LeaveReportsTab() {
 
     const fetchStats = async () => {
         try {
-            const query = new URLSearchParams({
+            const queryParams: Record<string, string> = {
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
-                ...(searchQuery ? { search: searchQuery } : {}),
-                division: divisionIds.join(','),
-                department: departmentIds.join(','),
-                designation: designationIds.join(','),
-                employeeId: employeeIds.join(',')
-            }).toString();
+            };
+            if (searchQuery) queryParams.search = searchQuery;
+            if (divisionIds.length) queryParams.division = divisionIds.join(',');
+            if (departmentIds.length) queryParams.department = departmentIds.join(',');
+            if (designationIds.length) queryParams.designation = designationIds.join(',');
+            if (groupFilterIds.length) queryParams.group = groupFilterIds.join(',');
+            if (employeeIds.length) queryParams.employeeId = employeeIds.join(',');
+            if (leaveTypeFilter) queryParams.leaveType = leaveTypeFilter;
+            if (statusFilter) queryParams.status = statusFilter;
 
+            const query = new URLSearchParams(queryParams).toString();
             const res = await api.get(`/leaves/dashboard-stats?${query}`);
             if (res.success && res.data) {
                 setReportStats(res.data);
@@ -223,12 +248,12 @@ export default function LeaveReportsTab() {
             fetchStats();
         }, 500);
         return () => clearTimeout(timer);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, page, payrollStartDay]);
+    }, [divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, leaveTypeFilter, statusFilter, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, page, payrollStartDay]);
 
     // Reset pagination on filter change
     useEffect(() => {
         setPage(1);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
+    }, [divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, leaveTypeFilter, statusFilter, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
 
     const handleExport = async () => {
         const toastId = toast.loading('Generating PDF report...');
@@ -255,28 +280,11 @@ export default function LeaveReportsTab() {
         setLoadingXlsx(true);
         
         try {
-            const blob = await api.downloadLeaveODReportXLSX({
-                fromDate: effectiveDates.start,
-                toDate: effectiveDates.end,
-                search: searchQuery || undefined,
-                division: divisionIds,
-                department: departmentIds,
-                designation: designationIds,
-                employeeId: employeeIds,
-                includeLeaves: true,
-                includeODs: false,
-                includeSummary: true,
-            });
-
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Leaves_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            
+            await downloadLeaveODReportXlsx(
+                exportFilters,
+                { includeLeaves: true, includeODs: false, includeSummary: true },
+                `Leaves_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`
+            );
             toast.success('Leaves Excel Downloaded Successfully!', { id: toastId });
         } catch (error: any) {
             console.error('Export error:', error);
@@ -358,12 +366,46 @@ export default function LeaveReportsTab() {
                             loading={fetchingFilters}
                         />
                         <MultiSelect
+                            label="Group"
+                            options={groups.map(g => ({ id: g._id, name: g.name }))}
+                            selectedIds={groupFilterIds}
+                            onChange={setGroupFilterIds}
+                            loading={fetchingFilters}
+                        />
+                        <MultiSelect
                             label="Employee"
                             options={employees.map(e => ({ id: e._id, name: `${e.employee_name} (${e.emp_no})` }))}
                             selectedIds={employeeIds}
                             onChange={setEmployeeIds}
                             disabled={departmentIds.length === 0}
                         />
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Leave Type</label>
+                            <select
+                                value={leaveTypeFilter}
+                                onChange={(e) => setLeaveTypeFilter(e.target.value)}
+                                className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500/20 outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                            >
+                                <option value="">All Leave Types</option>
+                                {leaveTypes.map((t) => (
+                                    <option key={t.code} value={t.code}>{t.name} ({t.code})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Status</label>
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500/20 outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                            >
+                                <option value="">All Status</option>
+                                <option value="approved">Approved</option>
+                                <option value="pending">Pending</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 

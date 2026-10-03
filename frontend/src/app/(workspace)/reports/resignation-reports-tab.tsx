@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { api, Division, Department, Employee, Designation } from '@/lib/api';
+import { api, Division, Department, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import { 
     Download, 
@@ -77,6 +77,7 @@ export default function ResignationReportsTab() {
     // Hierarchy states
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [groups, setGroups] = useState<EmployeeGroup[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [designations, setDesignations] = useState<Designation[]>([]);
     
@@ -84,6 +85,7 @@ export default function ResignationReportsTab() {
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
+    const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
     
     // Date/Mode states
@@ -95,21 +97,16 @@ export default function ResignationReportsTab() {
     const [payrollStartDay, setPayrollStartDay] = useState<number>(1);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Specific extra date filters
+    // Additional Filters
     const [dateFilterTarget, setDateFilterTarget] = useState<'createdAt' | 'leftDate'>('createdAt');
-    const [lwdFrom, setLwdFrom] = useState('');
-    const [lwdTo, setLwdTo] = useState('');
-    const [appliedFrom, setAppliedFrom] = useState('');
-    const [appliedTo, setAppliedTo] = useState('');
+    const [requestTypeFilter, setRequestTypeFilter] = useState<string>('all');
     const [statusFilter, setStatusFilter] = useState('');
 
     // Report data states
     const [allRequests, setAllRequests] = useState<ResignationRequest[]>([]);
     
-    // Pagination states for different tables
-    const [pageSingle, setPageSingle] = useState(1);
-    const [pageApplied, setPageApplied] = useState(1);
-    const [pageLwd, setPageLwd] = useState(1);
+    // Pagination state for preview table
+    const [currentPage, setCurrentPage] = useState(1);
     const limit = 10;
 
     useEffect(() => {
@@ -120,13 +117,15 @@ export default function ResignationReportsTab() {
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, grpRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
                 api.getSetting('payroll_cycle_start_day'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
+            if (grpRes.success) setGroups(grpRes.data || []);
             if (settingRes?.success && settingRes.data?.value) {
                 setPayrollStartDay(parseInt(settingRes.data.value));
             }
@@ -224,12 +223,7 @@ export default function ResignationReportsTab() {
         return { start: startDate, end: endDate };
     }, [dateMode, selectedMonth, selectedYear, startDate, endDate, payrollStartDay]);
 
-    // Check if both additional date filters are set
-    const isBothFiltersSet = useMemo(() => {
-        return !!((appliedFrom || appliedTo) && (lwdFrom || lwdTo));
-    }, [appliedFrom, appliedTo, lwdFrom, lwdTo]);
-
-    // Base client-side filtering (excluding additional LWD & Applied ranges)
+    // Client-side filtering respecting all selected options
     const baseFilteredRequests = useMemo(() => {
         return allRequests.filter((req) => {
             // Search Query
@@ -262,10 +256,22 @@ export default function ResignationReportsTab() {
                 if (!desId || !designationIds.includes(desId)) return false;
             }
 
+            // Employee Group Filter
+            if (groupFilterIds.length > 0) {
+                const grpId = req.employeeId?.employee_group_id?._id;
+                if (!grpId || !groupFilterIds.includes(grpId)) return false;
+            }
+
             // Employee Filter
             if (employeeIds.length > 0) {
                 const empId = req.employeeId?._id;
                 if (!empId || !employeeIds.includes(empId)) return false;
+            }
+
+            // Request Type Filter
+            if (requestTypeFilter && requestTypeFilter !== 'all') {
+                const type = req.requestType || 'resignation';
+                if (type !== requestTypeFilter) return false;
             }
 
             // Status Filter
@@ -290,113 +296,27 @@ export default function ResignationReportsTab() {
 
             return true;
         });
-    }, [allRequests, searchQuery, divisionIds, departmentIds, designationIds, employeeIds, statusFilter, dateFilterTarget, effectiveDates]);
+    }, [allRequests, searchQuery, divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, requestTypeFilter, statusFilter, dateFilterTarget, effectiveDates]);
 
-    // Sub-array filtered by Date Applied only
-    const appliedFilteredRequests = useMemo(() => {
-        return baseFilteredRequests.filter((req) => {
-            if (appliedFrom) {
-                const target = dayjs(req.createdAt).startOf('day');
-                const from = dayjs(appliedFrom).startOf('day');
-                if (target.isBefore(from)) return false;
-            }
-            if (appliedTo) {
-                const target = dayjs(req.createdAt).endOf('day');
-                const to = dayjs(appliedTo).endOf('day');
-                if (target.isAfter(to)) return false;
-            }
-            return true;
-        });
-    }, [baseFilteredRequests, appliedFrom, appliedTo]);
-
-    // Sub-array filtered by LWD only
-    const lwdFilteredRequests = useMemo(() => {
-        return baseFilteredRequests.filter((req) => {
-            if (lwdFrom) {
-                if (!req.leftDate) return false;
-                const target = dayjs(req.leftDate).startOf('day');
-                const from = dayjs(lwdFrom).startOf('day');
-                if (target.isBefore(from)) return false;
-            }
-            if (lwdTo) {
-                if (!req.leftDate) return false;
-                const target = dayjs(req.leftDate).endOf('day');
-                const to = dayjs(lwdTo).endOf('day');
-                if (target.isAfter(to)) return false;
-            }
-            return true;
-        });
-    }, [baseFilteredRequests, lwdFrom, lwdTo]);
-
-    // Combined cumulative filters for the single table view
-    const singleFilteredRequests = useMemo(() => {
-        return baseFilteredRequests.filter((req) => {
-            if (appliedFrom) {
-                const target = dayjs(req.createdAt).startOf('day');
-                const from = dayjs(appliedFrom).startOf('day');
-                if (target.isBefore(from)) return false;
-            }
-            if (appliedTo) {
-                const target = dayjs(req.createdAt).endOf('day');
-                const to = dayjs(appliedTo).endOf('day');
-                if (target.isAfter(to)) return false;
-            }
-            if (lwdFrom) {
-                if (!req.leftDate) return false;
-                const target = dayjs(req.leftDate).startOf('day');
-                const from = dayjs(lwdFrom).startOf('day');
-                if (target.isBefore(from)) return false;
-            }
-            if (lwdTo) {
-                if (!req.leftDate) return false;
-                const target = dayjs(req.leftDate).endOf('day');
-                const to = dayjs(lwdTo).endOf('day');
-                if (target.isAfter(to)) return false;
-            }
-            return true;
-        });
-    }, [baseFilteredRequests, appliedFrom, appliedTo, lwdFrom, lwdTo]);
-
-    // Union list of unique records across both tables when both filters are set
-    const unionRequests = useMemo(() => {
-        const map = new Map<string, ResignationRequest>();
-        appliedFilteredRequests.forEach(r => map.set(r._id, r));
-        lwdFilteredRequests.forEach(r => map.set(r._id, r));
-        return Array.from(map.values());
-    }, [appliedFilteredRequests, lwdFilteredRequests]);
-
-    // Stats calculations based on current active list
+    // Stats calculations based on current filtered list
     const reportStats = useMemo(() => {
-        const activeList = isBothFiltersSet ? unionRequests : singleFilteredRequests;
-        const total = activeList.length;
-        const approved = activeList.filter(r => r.status === 'approved').length;
-        const pending = activeList.filter(r => r.status === 'pending').length;
-        const rejected = activeList.filter(r => ['rejected', 'cancelled'].includes(r.status)).length;
+        const total = baseFilteredRequests.length;
+        const approved = baseFilteredRequests.filter(r => r.status === 'approved').length;
+        const pending = baseFilteredRequests.filter(r => r.status === 'pending').length;
+        const rejected = baseFilteredRequests.filter(r => ['rejected', 'cancelled'].includes(r.status)).length;
         return { total, approved, pending, rejected };
-    }, [isBothFiltersSet, unionRequests, singleFilteredRequests]);
+    }, [baseFilteredRequests]);
 
-    // Paginated subsets
-    const paginatedSingleRequests = useMemo(() => {
-        const start = (pageSingle - 1) * limit;
-        return singleFilteredRequests.slice(start, start + limit);
-    }, [singleFilteredRequests, pageSingle]);
+    // Paginated subset for preview table
+    const paginatedRequests = useMemo(() => {
+        const start = (currentPage - 1) * limit;
+        return baseFilteredRequests.slice(start, start + limit);
+    }, [baseFilteredRequests, currentPage]);
 
-    const paginatedAppliedRequests = useMemo(() => {
-        const start = (pageApplied - 1) * limit;
-        return appliedFilteredRequests.slice(start, start + limit);
-    }, [appliedFilteredRequests, pageApplied]);
-
-    const paginatedLwdRequests = useMemo(() => {
-        const start = (pageLwd - 1) * limit;
-        return lwdFilteredRequests.slice(start, start + limit);
-    }, [lwdFilteredRequests, pageLwd]);
-
-    // Reset pagination pages on filter changes
+    // Reset pagination page on filter changes
     useEffect(() => {
-        setPageSingle(1);
-        setPageApplied(1);
-        setPageLwd(1);
-    }, [searchQuery, divisionIds, departmentIds, designationIds, employeeIds, statusFilter, dateFilterTarget, effectiveDates, appliedFrom, appliedTo, lwdFrom, lwdTo]);
+        setCurrentPage(1);
+    }, [searchQuery, divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, requestTypeFilter, statusFilter, dateFilterTarget, effectiveDates]);
 
     const getEmployeeName = (req: ResignationRequest) => {
         if (!req.employeeId) return req.emp_no || '—';
@@ -412,92 +332,230 @@ export default function ResignationReportsTab() {
 
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return '—';
-        return dayjs(dateStr).format('DD MMM YYYY');
+        const d = dayjs(dateStr);
+        if (!d.isValid()) return '—';
+        return d.format('DD MMM YYYY');
     };
 
-    const getDisplayStatus = (status: string) => {
-        switch (status) {
-            case 'approved':
-                return 'Approved';
-            case 'pending':
-                return 'Pending';
-            case 'rejected':
-            case 'cancelled':
-                return 'Rejected';
-            default:
-                return status;
+    const getLatestApprovedStep = (req: ResignationRequest) => {
+        return (req.workflow?.approvalChain || [])
+            .filter((step) => (step.status || '').toLowerCase() === 'approved')
+            .sort((a, b) => {
+                const aTime = new Date(a.updatedAt || '').getTime() || 0;
+                const bTime = new Date(b.updatedAt || '').getTime() || 0;
+                return bTime - aTime;
+            })[0];
+    };
+
+    const getFormattedApprovalDate = (req: ResignationRequest): string => {
+        const step = getLatestApprovedStep(req);
+        if (!step?.updatedAt) return '—';
+        return formatDate(step.updatedAt);
+    };
+
+    const getDisplayStatusText = (req?: ResignationRequest | null) => {
+        if (!req) return '—';
+        const baseStatus = (req.status || 'pending').toLowerCase();
+        if (baseStatus === 'rejected' || baseStatus === 'cancelled') return 'Rejected';
+        if (baseStatus === 'approved' || req.workflow?.isCompleted) return 'Approved';
+        
+        const approvedSteps = (req.workflow?.approvalChain || []).filter(
+            (step) => (step.status || '').toLowerCase() === 'approved'
+        );
+        if (approvedSteps.length > 0) {
+            const latestStep = approvedSteps[approvedSteps.length - 1];
+            const roleLabel = latestStep.label || latestStep.role || '';
+            const cleanRole = roleLabel.replace(/_/g, ' ').replace(/\s*approval\s*$/i, '').trim();
+            return cleanRole ? `${cleanRole.charAt(0).toUpperCase() + cleanRole.slice(1)} Approved` : 'Approved';
         }
+        return 'Pending';
+    };
+
+    const getWorkflowStageLabel = (req: ResignationRequest | undefined, index: number): string => {
+        const step = req?.workflow?.approvalChain?.[index];
+        if (!step) return `Stage ${index + 1}`;
+        const label = step.label || step.role || '';
+        const clean = String(label).replace(/_/g, ' ').replace(/\s*approval\s*$/i, '').trim();
+        return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : `Stage ${index + 1}`;
+    };
+
+    const getStageContent = (req: ResignationRequest, index: number): string => {
+        const step = req.workflow?.approvalChain?.[index];
+        if (!step) return 'N/A';
+        const status = (step.status || '').toLowerCase();
+        if (!status || status === 'pending') return 'Pending';
+        if (status === 'rejected') return 'Rejected';
+        
+        const userName = step.actionByName || step.actionByRole || '';
+        const dateStr = step.updatedAt ? formatDate(step.updatedAt) : '';
+        
+        if (userName && dateStr) return `Approved (${dateStr})`;
+        if (dateStr) return `Approved (${dateStr})`;
+        return 'Approved';
+    };
+
+    const getNocStatus = () => 'N/A';
+
+    const getSelectedFiltersSummary = (): string => {
+        const parts: string[] = [];
+        
+        if (divisionIds.length > 0) {
+            const names = divisions.filter(d => divisionIds.includes(d._id)).map(d => d.name);
+            parts.push(`Division: ${names.join(', ') || 'Selected'}`);
+        } else {
+            parts.push('Division: All');
+        }
+
+        if (departmentIds.length > 0) {
+            const names = departments.filter(d => departmentIds.includes(d._id)).map(d => d.name);
+            parts.push(`Department: ${names.join(', ') || 'Selected'}`);
+        } else {
+            parts.push('Department: All');
+        }
+
+        if (designationIds.length > 0) {
+            const names = designations.filter(d => designationIds.includes(d._id)).map(d => d.name);
+            parts.push(`Designation: ${names.join(', ') || 'Selected'}`);
+        } else {
+            parts.push('Designation: All');
+        }
+
+        if (groupFilterIds.length > 0) {
+            const names = groups.filter(g => groupFilterIds.includes(g._id)).map(g => g.name);
+            parts.push(`Group: ${names.join(', ') || 'Selected'}`);
+        } else {
+            parts.push('Group: All');
+        }
+
+        if (employeeIds.length > 0) {
+            parts.push(`Employee: ${employeeIds.length} selected`);
+        }
+
+        const targetLabel = dateFilterTarget === 'createdAt' ? 'Date Applied' : 'Last Working Date';
+        const formattedStart = formatDate(effectiveDates.start);
+        const formattedEnd = formatDate(effectiveDates.end);
+        parts.push(`Period (${targetLabel}): ${formattedStart} to ${formattedEnd}`);
+
+        if (requestTypeFilter && requestTypeFilter !== 'all') {
+            parts.push(`Request Type: ${requestTypeFilter.charAt(0).toUpperCase() + requestTypeFilter.slice(1)}`);
+        }
+
+        if (statusFilter) {
+            parts.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
+        } else {
+            parts.push('Status: All');
+        }
+
+        if (searchQuery.trim()) {
+            parts.push(`Search: "${searchQuery.trim()}"`);
+        }
+
+        return `Selected Filters: ${parts.join(' | ')}`;
     };
 
     // Excel Export
     const handleExportXLSX = () => {
-        const activeList = isBothFiltersSet ? unionRequests : singleFilteredRequests;
-        if (activeList.length === 0) {
+        if (baseFilteredRequests.length === 0) {
             toast.error('No resignation records to export.');
             return;
         }
         setLoadingExportExcel(true);
         try {
+            const sampleReq = baseFilteredRequests.find(r => r.workflow?.approvalChain?.length);
+            const stage1Label = getWorkflowStageLabel(sampleReq, 0);
+            const stage2Label = getWorkflowStageLabel(sampleReq, 1);
+            const stage3Label = getWorkflowStageLabel(sampleReq, 2);
+            const filterSummary = getSelectedFiltersSummary();
+
+            const aoa: any[][] = [
+                ['REPORT ON RESIGNATIONS'],
+                [filterSummary],
+                [],
+                [
+                    'S.No',
+                    'EC No.',
+                    'Name of the Employee',
+                    'Designation',
+                    'Division',
+                    'Department',
+                    'Group',
+                    'Date of Applied',
+                    'Date of approved', '', '',
+                    'Last Working Date',
+                    'Status',
+                    'NOC Completed (Y/N)',
+                    'Remarks'
+                ],
+                [
+                    '', '', '', '', '', '', '', '',
+                    stage1Label,
+                    stage2Label,
+                    stage3Label,
+                    '', '', '', ''
+                ]
+            ];
+
+            baseFilteredRequests.forEach((req, index) => {
+                aoa.push([
+                    index + 1,
+                    req.emp_no || '—',
+                    getEmployeeName(req),
+                    getDesignationName(req),
+                    req.employeeId?.division_id?.name || '—',
+                    req.employeeId?.department_id?.name || '—',
+                    req.employeeId?.employee_group_id?.name || '—',
+                    formatDate(req.createdAt),
+                    getStageContent(req, 0),
+                    getStageContent(req, 1),
+                    getStageContent(req, 2),
+                    formatDate(req.leftDate),
+                    getDisplayStatusText(req),
+                    getNocStatus(),
+                    req.remarks || '—',
+                ]);
+            });
+
             const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-            if (isBothFiltersSet) {
-                // Sheet 1: Filtered by Date Applied
-                const rowsApplied = appliedFilteredRequests.map(req => ({
-                    'Employee Code': req.emp_no || '—',
-                    'Employee Name': getEmployeeName(req),
-                    'Division': req.employeeId?.division_id?.name || '—',
-                    'Department': req.employeeId?.department_id?.name || '—',
-                    'Designation': getDesignationName(req),
-                    'Date Applied': formatDate(req.createdAt),
-                    'Last Working Date (LWD)': formatDate(req.leftDate),
-                    'Status': getDisplayStatus(req.status),
-                    'Remarks': req.remarks || '—'
-                }));
-                const wsApplied = XLSX.utils.json_to_sheet(rowsApplied);
-                wsApplied['!cols'] = [
-                    { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 12 }, { wch: 30 }
-                ];
-                XLSX.utils.book_append_sheet(wb, wsApplied, 'By Date Applied');
+            ws['!merges'] = [
+                { s: { r: 0, c: 0 }, e: { r: 0, c: 14 } },
+                { s: { r: 1, c: 0 }, e: { r: 1, c: 14 } },
+                { s: { r: 3, c: 0 }, e: { r: 4, c: 0 } },
+                { s: { r: 3, c: 1 }, e: { r: 4, c: 1 } },
+                { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
+                { s: { r: 3, c: 3 }, e: { r: 4, c: 3 } },
+                { s: { r: 3, c: 4 }, e: { r: 4, c: 4 } },
+                { s: { r: 3, c: 5 }, e: { r: 4, c: 5 } },
+                { s: { r: 3, c: 6 }, e: { r: 4, c: 6 } },
+                { s: { r: 3, c: 7 }, e: { r: 4, c: 7 } },
+                { s: { r: 3, c: 8 }, e: { r: 3, c: 10 } },
+                { s: { r: 3, c: 11 }, e: { r: 4, c: 11 } },
+                { s: { r: 3, c: 12 }, e: { r: 4, c: 12 } },
+                { s: { r: 3, c: 13 }, e: { r: 4, c: 13 } },
+                { s: { r: 3, c: 14 }, e: { r: 4, c: 14 } },
+            ];
 
-                // Sheet 2: Filtered by LWD
-                const rowsLwd = lwdFilteredRequests.map(req => ({
-                    'Employee Code': req.emp_no || '—',
-                    'Employee Name': getEmployeeName(req),
-                    'Division': req.employeeId?.division_id?.name || '—',
-                    'Department': req.employeeId?.department_id?.name || '—',
-                    'Designation': getDesignationName(req),
-                    'Date Applied': formatDate(req.createdAt),
-                    'Last Working Date (LWD)': formatDate(req.leftDate),
-                    'Status': getDisplayStatus(req.status),
-                    'Remarks': req.remarks || '—'
-                }));
-                const wsLwd = XLSX.utils.json_to_sheet(rowsLwd);
-                wsLwd['!cols'] = [
-                    { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 12 }, { wch: 30 }
-                ];
-                XLSX.utils.book_append_sheet(wb, wsLwd, 'By Last Working Date');
-                
-                XLSX.writeFile(wb, `Resignations_Double_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`);
-            } else {
-                const rows = singleFilteredRequests.map(req => ({
-                    'Employee Code': req.emp_no || '—',
-                    'Employee Name': getEmployeeName(req),
-                    'Division': req.employeeId?.division_id?.name || '—',
-                    'Department': req.employeeId?.department_id?.name || '—',
-                    'Designation': getDesignationName(req),
-                    'Date Applied': formatDate(req.createdAt),
-                    'Last Working Date (LWD)': formatDate(req.leftDate),
-                    'Status': getDisplayStatus(req.status),
-                    'Remarks': req.remarks || '—'
-                }));
-                const ws = XLSX.utils.json_to_sheet(rows);
-                ws['!cols'] = [
-                    { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 12 }, { wch: 30 }
-                ];
-                XLSX.utils.book_append_sheet(wb, ws, 'Resignations');
-                XLSX.writeFile(wb, `Resignations_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`);
-            }
-            
+            ws['!cols'] = [
+                { wch: 8 },  // S.No
+                { wch: 14 }, // EC No.
+                { wch: 25 }, // Name of Employee
+                { wch: 22 }, // Designation
+                { wch: 20 }, // Division
+                { wch: 20 }, // Department
+                { wch: 18 }, // Group
+                { wch: 16 }, // Date of Applied
+                { wch: 22 }, // Stage 1
+                { wch: 22 }, // Stage 2
+                { wch: 22 }, // Stage 3
+                { wch: 18 }, // Last Working Date
+                { wch: 16 }, // Status
+                { wch: 18 }, // NOC Completed
+                { wch: 30 }, // Remarks
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, 'Resignations');
+            XLSX.writeFile(wb, `Resignations_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`);
             toast.success('Excel downloaded successfully!');
         } catch (error) {
             console.error('Excel export error:', error);
@@ -527,8 +585,7 @@ export default function ResignationReportsTab() {
 
     // PDF Export
     const handleExportPDF = () => {
-        const activeList = isBothFiltersSet ? unionRequests : singleFilteredRequests;
-        if (activeList.length === 0) {
+        if (baseFilteredRequests.length === 0) {
             toast.error('No resignation records to export.');
             return;
         }
@@ -536,88 +593,111 @@ export default function ResignationReportsTab() {
         try {
             const doc = new jsPDF('l', 'mm', 'a4');
             const pageWidth = doc.internal.pageSize.getWidth();
-            let currentY = 10;
+            let currentY = 12;
+            let isFirstPage = true;
 
-            const generateSection = (requests: ResignationRequest[], sectionTitle: string) => {
-                let isFirstSection = true;
-                const grouped = groupRequestsByDivisionDepartment(requests);
+            const sampleReq = baseFilteredRequests.find(r => r.workflow?.approvalChain?.length);
+            const stage1Label = getWorkflowStageLabel(sampleReq, 0);
+            const stage2Label = getWorkflowStageLabel(sampleReq, 1);
+            const stage3Label = getWorkflowStageLabel(sampleReq, 2);
+            const filterSummary = getSelectedFiltersSummary();
 
-                Object.keys(grouped).sort().forEach((division) => {
-                    Object.keys(grouped[division]).sort().forEach((department) => {
-                        const divisionalRequests = grouped[division][department];
+            const grouped = groupRequestsByDivisionDepartment(baseFilteredRequests);
 
-                        if (!isFirstSection || currentY > 10) {
-                            doc.addPage();
-                            currentY = 10;
-                        }
+            Object.keys(grouped).sort().forEach((division) => {
+                Object.keys(grouped[division]).sort().forEach((department) => {
+                    const divisionalRequests = grouped[division][department];
 
-                        // Header banner
-                        doc.setFillColor(15, 23, 42); // slate-900
-                        doc.rect(14, currentY, pageWidth - 28, 25, 'F');
-                        doc.setTextColor(255, 255, 255);
-                        doc.setFontSize(13);
-                        doc.setFont('helvetica', 'bold');
-                        doc.text(`${sectionTitle} - ${division} / ${department}`, 18, currentY + 9);
-                        doc.setFontSize(9);
-                        doc.setFont('helvetica', 'normal');
-                        doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 18, currentY + 17);
-                        currentY += 28;
+                    if (!isFirstPage) {
+                        doc.addPage();
+                        currentY = 12;
+                    }
 
-                        const body = divisionalRequests.map((req) => [
-                            req.emp_no || '—',
-                            getEmployeeName(req),
-                            getDesignationName(req),
-                            req.employeeId?.employee_group_id?.name || '—',
-                            formatDate(req.createdAt),
-                            formatDate(req.leftDate),
-                            getDisplayStatus(req.status),
-                            req.remarks || '—',
-                        ]);
+                    // Top Banner / Title & Parameters Subtitle
+                    doc.setFillColor(15, 23, 42); // slate-900
+                    doc.rect(10, currentY, pageWidth - 20, 24, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(13);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`REPORT ON RESIGNATIONS — ${division} / ${department}`, 14, currentY + 8);
+                    doc.setFontSize(7.5);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(`${filterSummary}  |  Total Records: ${divisionalRequests.length}`, 14, currentY + 16);
+                    currentY += 28;
 
-                        autoTable(doc, {
-                            startY: currentY,
-                            head: [[
-                                'Emp No',
-                                'Employee Name',
-                                'Designation',
-                                'Group',
-                                'Date Applied',
-                                'Last Working Date (LWD)',
-                                'Status',
-                                'Remarks'
-                            ]],
-                            body,
-                            theme: 'grid',
-                            headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 },
-                            styles: { fontSize: 7.5, cellPadding: 2.5 },
-                            margin: { left: 14, right: 14 },
-                            columnStyles: {
-                                0: { cellWidth: 20 },
-                                1: { cellWidth: 35 },
-                                2: { cellWidth: 30 },
-                                3: { cellWidth: 22 },
-                                4: { cellWidth: 25 },
-                                5: { cellWidth: 35 },
-                                6: { cellWidth: 20 },
-                                7: { cellWidth: 80 },
-                            },
-                            didDrawPage: (data) => {
-                                currentY = data.cursor?.y || currentY;
-                            },
-                        });
+                    const body = divisionalRequests.map((req, index) => [
+                        (index + 1).toString(),
+                        req.emp_no || '—',
+                        getEmployeeName(req),
+                        getDesignationName(req),
+                        req.employeeId?.division_id?.name || '—',
+                        req.employeeId?.department_id?.name || '—',
+                        req.employeeId?.employee_group_id?.name || '—',
+                        formatDate(req.createdAt),
+                        getStageContent(req, 0),
+                        getStageContent(req, 1),
+                        getStageContent(req, 2),
+                        formatDate(req.leftDate),
+                        getDisplayStatusText(req),
+                        getNocStatus(),
+                        req.remarks || '—',
+                    ]);
 
-                        currentY = (doc as any).lastAutoTable?.finalY || currentY + 10;
-                        isFirstSection = false;
+                    autoTable(doc, {
+                        startY: currentY,
+                        head: [
+                            [
+                                { content: 'S.No', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'EC No.', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'Name of the Employee', rowSpan: 2, styles: { valign: 'middle' } },
+                                { content: 'Designation', rowSpan: 2, styles: { valign: 'middle' } },
+                                { content: 'Division', rowSpan: 2, styles: { valign: 'middle' } },
+                                { content: 'Department', rowSpan: 2, styles: { valign: 'middle' } },
+                                { content: 'Group', rowSpan: 2, styles: { valign: 'middle' } },
+                                { content: 'Date of Applied', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'Date of approved', colSpan: 3, styles: { halign: 'center' } },
+                                { content: 'Last Working Date', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'Status', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'NOC Completed', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+                                { content: 'Remarks', rowSpan: 2, styles: { valign: 'middle' } },
+                            ],
+                            [
+                                { content: stage1Label, styles: { halign: 'center' } },
+                                { content: stage2Label, styles: { halign: 'center' } },
+                                { content: stage3Label, styles: { halign: 'center' } },
+                            ]
+                        ],
+                        body,
+                        theme: 'grid',
+                        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+                        styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
+                        margin: { left: 10, right: 10 },
+                        columnStyles: {
+                            0: { cellWidth: 10 },  // S.No
+                            1: { cellWidth: 16 },  // EC No.
+                            2: { cellWidth: 28 },  // Employee Name
+                            3: { cellWidth: 22 },  // Designation
+                            4: { cellWidth: 20 },  // Division
+                            5: { cellWidth: 20 },  // Department
+                            6: { cellWidth: 18 },  // Group
+                            7: { cellWidth: 18 },  // Applied Date
+                            8: { cellWidth: 22 },  // Stage 1
+                            9: { cellWidth: 22 },  // Stage 2
+                            10: { cellWidth: 22 }, // Stage 3
+                            11: { cellWidth: 18 }, // LWD
+                            12: { cellWidth: 16 }, // Status
+                            13: { cellWidth: 16 }, // NOC Completed
+                            14: { cellWidth: 29 }, // Remarks
+                        },
+                        didDrawPage: (data) => {
+                            currentY = data.cursor?.y || currentY;
+                        },
                     });
-                });
-            };
 
-            if (isBothFiltersSet) {
-                generateSection(appliedFilteredRequests, 'Resignation Report (By Date Applied)');
-                generateSection(lwdFilteredRequests, 'Resignation Report (By Last Working Date)');
-            } else {
-                generateSection(singleFilteredRequests, 'Resignation Report');
-            }
+                    currentY = (doc as any).lastAutoTable?.finalY || currentY + 10;
+                    isFirstPage = false;
+                });
+            });
 
             doc.save(`Resignations_Report_${dayjs().format('YYYY-MM-DD')}.pdf`);
             toast.success('PDF downloaded successfully!');
@@ -629,133 +709,6 @@ export default function ResignationReportsTab() {
         }
     };
 
-    const renderTable = (
-        title: string, 
-        subtitle: string, 
-        requests: ResignationRequest[], 
-        paginated: ResignationRequest[], 
-        currentPage: number, 
-        setCurrentPage: React.Dispatch<React.SetStateAction<number>>
-    ) => {
-        return (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden dark:bg-slate-900 dark:border-slate-800">
-                <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 dark:bg-slate-800/50 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                        <h4 className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
-                            <Search className="h-3.5 w-3.5 text-slate-400" />
-                            {title}
-                        </h4>
-                        <p className="text-[10px] text-slate-500 mt-1 font-medium">
-                            {subtitle} (Showing {paginated.length} records out of {requests.length})
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            disabled={currentPage === 1 || loadingData}
-                            onClick={() => setCurrentPage(p => p - 1)}
-                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 dark:border-slate-700 transition-all dark:hover:bg-slate-800"
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </button>
-                        <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 px-2 uppercase tracking-widest">
-                            Page {currentPage} of {Math.max(1, Math.ceil(requests.length / limit))}
-                        </span>
-                        <button
-                            disabled={currentPage * limit >= requests.length || loadingData}
-                            onClick={() => setCurrentPage(p => p + 1)}
-                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 dark:border-slate-700 transition-all dark:hover:bg-slate-800"
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto min-h-[300px] relative">
-                    {loadingData && (
-                        <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                            <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-                        </div>
-                    )}
-                    
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/50 dark:bg-slate-800/30">
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Employee</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Division/Dept</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Designation</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Date Applied</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Working Date</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
-                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Remarks</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {paginated.length > 0 ? paginated.map((req) => (
-                                <tr key={req._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                                    <td className="px-5 py-3">
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-black text-slate-900 dark:text-white capitalize leading-tight">
-                                                {getEmployeeName(req)}
-                                            </span>
-                                            <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 mt-0.5 tracking-wider uppercase">
-                                                {req.emp_no || '—'}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-3">
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                                {req.employeeId?.division_id?.name || '—'}
-                                            </span>
-                                            <span className="text-[9px] font-medium text-slate-400 mt-0.5 uppercase">
-                                                {req.employeeId?.department_id?.name || '—'}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-3 text-xs font-medium text-slate-600 dark:text-slate-400">
-                                        {getDesignationName(req)}
-                                    </td>
-                                    <td className="px-5 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                        {formatDate(req.createdAt)}
-                                    </td>
-                                    <td className="px-5 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                        {formatDate(req.leftDate)}
-                                    </td>
-                                    <td className="px-5 py-3">
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                                            req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30' :
-                                            ['rejected', 'cancelled'].includes(req.status) ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30' :
-                                            'bg-amber-50 text-amber-600 dark:bg-amber-950/30'
-                                        }`}>
-                                            {getDisplayStatus(req.status)}
-                                        </span>
-                                    </td>
-                                    <td className="px-5 py-3 text-xs text-slate-500 max-w-[200px] truncate" title={req.remarks}>
-                                        {req.remarks || '—'}
-                                    </td>
-                                </tr>
-                            )) : (
-                                <tr>
-                                    <td colSpan={7} className="px-5 py-20 text-center">
-                                        <div className="flex flex-col items-center justify-center gap-3">
-                                            <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center dark:bg-slate-800/50">
-                                                <AlertCircle className="h-6 w-6 text-slate-300" />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No Records Found</p>
-                                                <p className="text-[10px] text-slate-400/60 mt-1 font-medium italic">Adjust filters to see preview data</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="space-y-6 w-full pb-10">
             {/* Header Section */}
@@ -763,7 +716,7 @@ export default function ResignationReportsTab() {
                 <div>
                     <h3 className="text-base font-bold text-slate-900 dark:text-white">Resignation Applications Report</h3>
                     <p className="text-xs text-slate-500 mt-1 dark:text-slate-400">
-                        Generate and export structured reports for employee resignation and termination requests.
+                        Generate and export structured reports for employee resignation and termination requests with all detailed columns.
                     </p>
                 </div>
 
@@ -771,19 +724,19 @@ export default function ResignationReportsTab() {
                     <button
                         onClick={handleExportPDF}
                         disabled={loadingExportPdf || loadingExportExcel || loadingData}
-                        className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:hover:bg-slate-700"
+                        className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:hover:bg-slate-700 shadow-sm"
                     >
                         {loadingExportPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        {loadingExportPdf ? 'Generating...' : 'Export PDF'}
+                        {loadingExportPdf ? 'Generating PDF...' : 'Export PDF'}
                     </button>
 
                     <button
                         onClick={handleExportXLSX}
                         disabled={loadingExportPdf || loadingExportExcel || loadingData}
-                        className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800/50"
+                        className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
                     >
                         {loadingExportExcel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        {loadingExportExcel ? 'Generating...' : 'Export XLSX'}
+                        {loadingExportExcel ? 'Generating Excel...' : 'Export Excel'}
                     </button>
                 </div>
             </div>
@@ -793,7 +746,7 @@ export default function ResignationReportsTab() {
                 <div className="space-y-3">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 ml-1">
                         <Filter className="h-3.5 w-3.5" />
-                        Hierarchy Filters
+                        Hierarchy & Group Filters
                     </h4>
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800 p-5 grid gap-4 grid-cols-1 sm:grid-cols-2">
                         <MultiSelect
@@ -818,12 +771,21 @@ export default function ResignationReportsTab() {
                             loading={fetchingFilters}
                         />
                         <MultiSelect
-                            label="Employee"
-                            options={employees.map(e => ({ id: e._id, name: `${e.employee_name} (${e.emp_no})` }))}
-                            selectedIds={employeeIds}
-                            onChange={employeeIds => setEmployeeIds(employeeIds)}
-                            disabled={departmentIds.length === 0}
+                            label="Employee Group"
+                            options={groups.map(g => ({ id: g._id, name: g.name }))}
+                            selectedIds={groupFilterIds}
+                            onChange={ids => setGroupFilterIds(ids)}
+                            loading={fetchingFilters}
                         />
+                        <div className="sm:col-span-2">
+                            <MultiSelect
+                                label="Employee"
+                                options={employees.map(e => ({ id: e._id, name: `${e.employee_name} (${e.emp_no})` }))}
+                                selectedIds={employeeIds}
+                                onChange={employeeIds => setEmployeeIds(employeeIds)}
+                                disabled={departmentIds.length === 0}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -832,7 +794,7 @@ export default function ResignationReportsTab() {
                     <div className="flex items-center justify-between ml-1">
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5" />
-                            Period & Search
+                            Period & Type Filters
                         </h4>
                         
                         <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
@@ -945,7 +907,20 @@ export default function ResignationReportsTab() {
                             </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Request Type</label>
+                                <select
+                                    value={requestTypeFilter}
+                                    onChange={(e) => setRequestTypeFilter(e.target.value)}
+                                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-slate-500/20 outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                >
+                                    <option value="all">All Types</option>
+                                    <option value="resignation">Resignation</option>
+                                    <option value="termination">Termination</option>
+                                </select>
+                            </div>
+
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status Filter</label>
                                 <select
@@ -1017,15 +992,141 @@ export default function ResignationReportsTab() {
                 </div>
             </div>
 
-            {/* Data Tables */}
-            {isBothFiltersSet ? (
-                <div className="space-y-6">
-                    {renderTable("Data Preview: Filtered by Date Applied", "Resignations applied within date applied range", appliedFilteredRequests, paginatedAppliedRequests, pageApplied, setPageApplied)}
-                    {renderTable("Data Preview: Filtered by Last Working Date (LWD)", "Resignations with last working date within LWD range", lwdFilteredRequests, paginatedLwdRequests, pageLwd, setPageLwd)}
+            {/* Data Preview Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden dark:bg-slate-900 dark:border-slate-800">
+                <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 dark:bg-slate-800/50 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <h4 className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                            <Search className="h-3.5 w-3.5 text-slate-400" />
+                            Data Preview
+                        </h4>
+                        <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                            Showing {paginatedRequests.length} records out of {baseFilteredRequests.length} matching filter criteria
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            disabled={currentPage === 1 || loadingData}
+                            onClick={() => setCurrentPage(p => p - 1)}
+                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 dark:border-slate-700 transition-all dark:hover:bg-slate-800"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 px-2 uppercase tracking-widest">
+                            Page {currentPage} of {Math.max(1, Math.ceil(baseFilteredRequests.length / limit))}
+                        </span>
+                        <button
+                            disabled={currentPage * limit >= baseFilteredRequests.length || loadingData}
+                            onClick={() => setCurrentPage(p => p + 1)}
+                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 dark:border-slate-700 transition-all dark:hover:bg-slate-800"
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </button>
+                    </div>
                 </div>
-            ) : (
-                renderTable("Data Preview", "All resignation records matching filter criteria", singleFilteredRequests, paginatedSingleRequests, pageSingle, setPageSingle)
-            )}
+
+                <div className="overflow-x-auto min-h-[300px] relative">
+                    {loadingData && (
+                        <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                        </div>
+                    )}
+                    
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Employee</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Division/Dept</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Designation/Group</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Type</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Date Applied</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Working Date</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
+                                <th className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {paginatedRequests.length > 0 ? paginatedRequests.map((req) => (
+                                <tr key={req._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                                    <td className="px-5 py-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-black text-slate-900 dark:text-white capitalize leading-tight">
+                                                {getEmployeeName(req)}
+                                            </span>
+                                            <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 mt-0.5 tracking-wider uppercase">
+                                                {req.emp_no || '—'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                                {req.employeeId?.division_id?.name || '—'}
+                                            </span>
+                                            <span className="text-[9px] font-medium text-slate-400 mt-0.5 uppercase">
+                                                {req.employeeId?.department_id?.name || '—'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                                {getDesignationName(req)}
+                                            </span>
+                                            <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 uppercase">
+                                                {req.employeeId?.employee_group_id?.name || '—'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        {req.requestType === 'termination' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 dark:bg-rose-950/30">
+                                                Termination
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-50 text-blue-600 dark:bg-blue-950/30">
+                                                Resignation
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="px-5 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        {formatDate(req.createdAt)}
+                                    </td>
+                                    <td className="px-5 py-3 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        {formatDate(req.leftDate)}
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                            req.status === 'approved' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30' :
+                                            ['rejected', 'cancelled'].includes(req.status) ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30' :
+                                            'bg-amber-50 text-amber-600 dark:bg-amber-950/30'
+                                        }`}>
+                                            {getDisplayStatusText(req)}
+                                        </span>
+                                    </td>
+                                    <td className="px-5 py-3 text-xs text-slate-500 max-w-[200px] truncate" title={req.remarks}>
+                                        {req.remarks || '—'}
+                                    </td>
+                                </tr>
+                            )) : (
+                                <tr>
+                                    <td colSpan={8} className="px-5 py-20 text-center">
+                                        <div className="flex flex-col items-center justify-center gap-3">
+                                            <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center dark:bg-slate-800/50">
+                                                <AlertCircle className="h-6 w-6 text-slate-300" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No Records Found</p>
+                                                <p className="text-[10px] text-slate-400/60 mt-1 font-medium italic">Adjust filters to see preview data</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 }

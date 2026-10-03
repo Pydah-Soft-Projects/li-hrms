@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, Department, Designation, Division, EmployeeGroup } from '@/lib/api';
+import { MultiSelect } from '@/components/MultiSelect';
+import { Download, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 interface PayrollTransaction {
   _id: string;
@@ -38,10 +40,81 @@ export default function PayrollTransactionsTab() {
   });
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [divisionIds, setDivisionIds] = useState<string[]>([]);
+  const [departmentIds, setDepartmentIds] = useState<string[]>([]);
+  const [designationIds, setDesignationIds] = useState<string[]>([]);
+  const [employeeGroupIds, setEmployeeGroupIds] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadTransactions();
   }, [selectedMonth]);
+
+  useEffect(() => {
+    const loadExportFilters = async () => {
+      const [divisionResponse, departmentResponse, designationResponse, groupResponse] = await Promise.all([
+        api.getDivisions(true),
+        api.getDepartments(true),
+        api.getAllDesignations(),
+        api.getEmployeeGroups(true),
+      ]);
+      if (divisionResponse.success) setDivisions(divisionResponse.data || []);
+      if (departmentResponse.success) setDepartments(departmentResponse.data || []);
+      if (designationResponse.success) setDesignations(designationResponse.data || []);
+      if (groupResponse.success) setEmployeeGroups(groupResponse.data || []);
+    };
+    loadExportFilters().catch((error) => console.error('Error loading payroll export filters:', error));
+  }, []);
+
+  useEffect(() => {
+    if (divisionIds.length === 0) {
+      api.getDepartments(true).then((response) => {
+        if (response.success) setDepartments(response.data || []);
+      });
+      return;
+    }
+    api.getDepartments(true, divisionIds[0]).then((response) => {
+      if (response.success) setDepartments(response.data || []);
+    });
+  }, [divisionIds]);
+
+  const exportPayrollSummary = async (format: 'xlsx' | 'pdf') => {
+    if (!selectedMonth) {
+      toast.error('Select a payroll month first');
+      return;
+    }
+    setExporting(true);
+    try {
+      const params = {
+        month: selectedMonth,
+        divisionIds,
+        departmentIds,
+        designationId: designationIds[0],
+        employeeGroupId: employeeGroupIds[0],
+        search: searchQuery.trim(),
+      };
+      const blob = format === 'xlsx'
+        ? await api.exportPayRegisterSummary(params)
+        : await api.exportPayRegisterSummaryPDF(params);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `payroll_summary_${selectedMonth}.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${format.toUpperCase()} payroll report downloaded`);
+    } catch (error: any) {
+      toast.error(error.message || 'Could not export payroll report');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const loadTransactions = async () => {
     if (!selectedMonth) return;
@@ -201,6 +274,31 @@ export default function PayrollTransactionsTab() {
           </div>
         </div>
       </div>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Payroll Summary Export</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Uses the selected payroll month and filters below.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => exportPayrollSummary('xlsx')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Excel
+            </button>
+            <button onClick={() => exportPayrollSummary('pdf')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              PDF
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MultiSelect label="Division" options={divisions.map(item => ({ id: item._id, name: item.name }))} selectedIds={divisionIds} onChange={(ids) => { setDivisionIds(ids.slice(-1)); setDepartmentIds([]); }} single />
+          <MultiSelect label="Department" options={departments.map(item => ({ id: item._id, name: item.name }))} selectedIds={departmentIds} onChange={(ids) => setDepartmentIds(ids.slice(-1))} disabled={divisionIds.length > 0 && departments.length === 0} single />
+          <MultiSelect label="Designation" options={designations.map(item => ({ id: item._id, name: item.name }))} selectedIds={designationIds} onChange={(ids) => setDesignationIds(ids.slice(-1))} single />
+          <MultiSelect label="Group" options={employeeGroups.map(item => ({ id: item._id, name: item.name }))} selectedIds={employeeGroupIds} onChange={(ids) => setEmployeeGroupIds(ids.slice(-1))} single />
+        </div>
+      </section>
 
       {/* Analytics Cards */}
       {analytics && (

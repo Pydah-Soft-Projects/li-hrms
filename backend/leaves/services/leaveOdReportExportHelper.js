@@ -7,20 +7,21 @@ const LeaveSettings = require('../model/LeaveSettings');
 
 const FIXED_HEADERS = [
   'S.No',
-  'Emp ID',
-  'Employee Name',
+  'EC No.',
+  'Name of the Employee',
+  'Designation',
   'Division',
   'Department',
-  'Type',
-  'Dates',
-  'Days',
+  'Group',
+  'Leave Type',
+  'From Date',
+  'To Date',
+  'No. of Days',
   'Applied Date',
 ];
 
 const FIXED_COL_WIDTHS = [26, 48, 90, 62, 62, 44, 78, 28, 46];
-
-// OD-specific column widths matching Image 2
-const OD_FIXED_COL_WIDTHS = [45, 90, 60, 55, 55, 50, 45, 70, 35, 35, 50];
+const OD_FIXED_COL_WIDTHS = [48, 90, 62, 62, 44, 52, 60, 60, 40, 40, 46];
 
 function toDisplayCase(value) {
   const s = String(value || '').trim();
@@ -55,9 +56,11 @@ function getCellAlign(colIndex, stageCount, isOd = false) {
   }
   const fixedCount = FIXED_HEADERS.length;
   const statusCol = fixedCount + stageCount;
+  const remarksCol = statusCol + 1;
   if (colIndex <= 2) return 'left';
   if (colIndex >= fixedCount && colIndex < statusCol) return 'left';
   if (colIndex === statusCol) return 'center';
+  if (colIndex === remarksCol) return 'left';
   return 'center';
 }
 
@@ -125,14 +128,15 @@ function buildStageColumnWidths(stageCount, pageWidth = 782, isOd = false) {
     return colWidths;
   }
   const fixedTotal = FIXED_COL_WIDTHS.reduce((a, b) => a + b, 0);
-  const statusWidth = 46;
-  const remaining = pageWidth - fixedTotal - statusWidth;
-  const stageWidth = Math.max(48, Math.floor(remaining / Math.max(stageCount, 1)));
-  let colWidths = [...FIXED_COL_WIDTHS, ...Array(stageCount).fill(stageWidth), statusWidth];
+  const statusWidth = 44;
+  const remarksWidth = 55;
+  const remaining = pageWidth - fixedTotal - statusWidth - remarksWidth;
+  const stageWidth = Math.max(45, Math.floor(remaining / Math.max(stageCount, 1)));
+  let colWidths = [...FIXED_COL_WIDTHS, ...Array(stageCount).fill(stageWidth), statusWidth, remarksWidth];
   const total = colWidths.reduce((a, b) => a + b, 0);
   if (total > pageWidth) {
     const factor = pageWidth / total;
-    colWidths = colWidths.map((w) => Math.max(22, Math.floor(w * factor)));
+    colWidths = colWidths.map((w) => Math.max(20, Math.floor(w * factor)));
   }
   return colWidths;
 }
@@ -173,14 +177,16 @@ function buildStageHeaderConfig(stageCount, stageLabels, isOd = false) {
 
   const mainHeaders = [
     ...FIXED_HEADERS.map((label) => ({ label, colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' })),
-    { label: 'Stages', colSpan: stageCount, bgColor: '#1e3a5f', textColor: '#ffffff' },
+    { label: 'Date of Approved', colSpan: stageCount, bgColor: '#1e3a5f', textColor: '#ffffff' },
     { label: 'Status', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
+    { label: 'Remarks', colSpan: 1, bgColor: '#2980b9', textColor: '#ffffff' },
   ];
 
   const subHeaders = [
     ...FIXED_HEADERS.map((label) => ({ label, colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' })),
     ...stageLabels.map((label) => ({ label, colSpan: 1, bgColor: '#e0e7ff', textColor: '#312e81' })),
     { label: 'Status', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
+    { label: 'Remarks', colSpan: 1, bgColor: '#dbeafe', textColor: '#1e3a5f' },
   ];
 
   return { mainHeaders, subHeaders };
@@ -207,38 +213,18 @@ function buildApplicationDetailRow(item, options) {
     getCleanEmpName,
   } = options;
 
-  if (isOd) {
-    const emp = item.employeeId;
-    const row = [
-      emp?.emp_no || item.emp_no || '-',
-      getCleanEmpName(emp),
-      emp?.designation?.name || emp?.designation_id?.name || '-',
-      emp?.division?.name || emp?.division_id?.name || '-',
-      emp?.department?.name || emp?.department_id?.name || '-',
-      emp?.employee_group_id?.name || emp?.employee_group?.name || '-',
-      String(item.odType || '').replace(/_/g, ' '),
-      getOdSlotType(item),
-      item.odStartTime || '-',
-      item.odEndTime || '-',
-      formatAppliedDate(item.createdAt),
-    ];
-
-    const chain = item.workflow?.approvalChain || [];
-    for (let i = 0; i < stageCount; i++) {
-      row.push(formatStageCell(chain[i]));
-    }
-    return row;
-  }
-
   const row = [
     rowIndex + 1,
-    item.employeeId?.emp_no || '-',
-    getCleanEmpName(item.employeeId),
-    item.employeeId?.division?.name || '-',
-    item.employeeId?.department?.name || '-',
-    isOd ? String(item.odType || '').replace(/_/g, ' ') : item.leaveType,
-    `${formatDate(item.fromDate)}${item.fromDate !== item.toDate ? ` - ${formatDate(item.toDate)}` : ''}`,
-    item.numberOfDays,
+    emp.emp_no || item.emp_no || '-',
+    getCleanEmpName(emp),
+    designationName,
+    divisionName,
+    departmentName,
+    groupName,
+    isOd ? String(item.odType || '').replace(/_/g, ' ') : item.leaveType || 'General',
+    formatDate(item.fromDate),
+    formatDate(item.toDate),
+    item.numberOfDays ?? 0,
     formatAppliedDate(item.createdAt),
   ];
 
@@ -247,6 +233,7 @@ function buildApplicationDetailRow(item, options) {
     row.push(formatStageCell(chain[i]));
   }
   row.push(String(item.status || '').toUpperCase());
+  row.push(item.reason || item.remarks || item.comments || '-');
   return row;
 }
 
@@ -259,8 +246,7 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
     cellPaddingX = 3,
     cellPaddingY = 3,
     lineBreak = true,
-    isOd = false,
-    stageCount = Math.max(1, colWidths.length - (isOd ? OD_FIXED_COL_WIDTHS.length : FIXED_HEADERS.length + 1)),
+    stageCount = Math.max(1, colWidths.length - FIXED_HEADERS.length - 1),
   } = options;
 
   let y = startY;
@@ -352,6 +338,76 @@ function drawMultiHeaderPdfTable(doc, headerConfig, rows, startX, startY, colWid
   return y;
 }
 
+function calculateExcelColumnWidths(aoa, stageCount) {
+  const maxCols = Math.max(...aoa.map((row) => (row ? row.length : 0)));
+  const minWidths = [
+    8,   // S.No
+    14,  // EC No.
+    28,  // Name of the Employee
+    24,  // Designation
+    22,  // Division
+    22,  // Department
+    18,  // Group
+    16,  // Leave Type
+    14,  // From Date
+    14,  // To Date
+    14,  // No. of Days
+    15,  // Applied Date
+  ];
+
+  for (let i = 0; i < stageCount; i++) {
+    minWidths.push(26);
+  }
+  minWidths.push(16); // Status
+  minWidths.push(32); // Remarks
+
+  const cols = [];
+  for (let col = 0; col < maxCols; col++) {
+    let maxLen = minWidths[col] || 15;
+    for (let r = 3; r < aoa.length; r++) {
+      const cell = aoa[r]?.[col];
+      if (cell !== undefined && cell !== null) {
+        const lines = String(cell).split('\n');
+        for (const line of lines) {
+          if (line.length > maxLen) {
+            maxLen = line.length;
+          }
+        }
+      }
+    }
+    cols.push({ wch: Math.min(Math.max(maxLen + 3, minWidths[col] || 12), 55) });
+  }
+  return cols;
+}
+
+function calculateExcelRowHeights(aoa) {
+  const rows = [];
+  for (let r = 0; r < aoa.length; r++) {
+    if (r === 0) {
+      rows.push({ hpt: 28 });
+    } else if (r === 1) {
+      rows.push({ hpt: 22 });
+    } else if (r === 2) {
+      rows.push({ hpt: 10 });
+    } else if (r === 3) {
+      rows.push({ hpt: 24 });
+    } else if (r === 4) {
+      rows.push({ hpt: 20 });
+    } else {
+      const row = aoa[r] || [];
+      let maxLines = 1;
+      for (const cell of row) {
+        if (cell) {
+          const lines = String(cell).split('\n').length;
+          if (lines > maxLines) maxLines = lines;
+        }
+      }
+      rows.push({ hpt: Math.max(20, maxLines * 15) });
+    }
+  }
+  return rows;
+}
+
 function buildExcelSheetAoA(title, periodLine, dataRows, stageCount, stageLabels, isOd = false, orgName = '') {
   const titleRows = [];
   if (orgName) titleRows.push([orgName]);
@@ -400,41 +456,50 @@ function buildExcelSheetAoA(title, periodLine, dataRows, stageCount, stageLabels
     }
     merges.push({ s: { r: rOffset, c: 8 }, e: { r: rOffset, c: 9 } }); // Time OD (From, To)
     merges.push({ s: { r: rOffset, c: 10 }, e: { r: rOffset + 1, c: 10 } }); // Applied Date
-    if (stageCount > 1) {
+    if (stageCount >= 1) {
       merges.push({ s: { r: rOffset, c: 11 }, e: { r: rOffset, c: 11 + stageCount - 1 } }); // approved date stages
     }
 
-    return { aoa, merges };
+    const cols = calculateExcelColumnWidths(aoa, stageCount);
+    const rows = calculateExcelRowHeights(aoa);
+
+    return { aoa, merges, cols, rows };
   }
 
   const fixedCount = FIXED_HEADERS.length;
   const stageStart = fixedCount;
   const statusCol = fixedCount + stageCount;
+  const remarksCol = statusCol + 1;
 
   const mainHeaderRow = [...FIXED_HEADERS];
-  mainHeaderRow.push('Stages');
+  mainHeaderRow.push('Date of Approved');
   for (let i = 1; i < stageCount; i++) mainHeaderRow.push('');
   mainHeaderRow.push('Status');
+  mainHeaderRow.push('Remarks');
 
-  const subHeaderRow = [...FIXED_HEADERS, ...stageLabels, 'Status'];
+  const subHeaderRow = [...FIXED_HEADERS, ...stageLabels, 'Status', 'Remarks'];
 
   const aoa = [...titleRows, mainHeaderRow, subHeaderRow, ...dataRows];
   const rOffset = titleRows.length;
 
   const merges = [];
   titleRows.forEach((_, idx) => {
-    merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: statusCol } });
+    merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: remarksCol } });
   });
 
   for (let c = 0; c < fixedCount; c++) {
     merges.push({ s: { r: rOffset, c }, e: { r: rOffset + 1, c } });
   }
-  if (stageCount > 1) {
+  if (stageCount >= 1) {
     merges.push({ s: { r: rOffset, c: stageStart }, e: { r: rOffset, c: stageStart + stageCount - 1 } });
   }
   merges.push({ s: { r: rOffset, c: statusCol }, e: { r: rOffset + 1, c: statusCol } });
+  merges.push({ s: { r: rOffset, c: remarksCol }, e: { r: rOffset + 1, c: remarksCol } });
 
-  return { aoa, merges };
+  const cols = calculateExcelColumnWidths(aoa, stageCount);
+  const rows = calculateExcelRowHeights(aoa);
+
+  return { aoa, merges, cols, rows };
 }
 
 module.exports = {

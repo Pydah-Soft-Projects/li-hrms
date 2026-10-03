@@ -17,6 +17,7 @@ export type PayRegisterExportFilters = {
   month: string;
   divisionIds?: string[];
   departmentIds?: string[];
+  designationId?: string;
   search?: string;
   employeeGroupId?: string;
 };
@@ -28,6 +29,7 @@ export function payRegisterExportQueryParams(params: PayRegisterExportFilters): 
     divisionIds: params.divisionIds,
     departmentIds: params.departmentIds,
   });
+  if (params.designationId) query.append('designationId', params.designationId);
   if (params.search) query.append('search', params.search);
   if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
   return query;

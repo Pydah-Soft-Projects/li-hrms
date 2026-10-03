@@ -2,6 +2,8 @@ const PayRegisterSummary = require('../model/PayRegisterSummary');
 const { compareEmpNo, EMP_NO_SORT, EMP_NO_COLLATION } = require('../../shared/utils/employeeSort');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
+const PayrollRecord = require('../../payroll/model/PayrollRecord');
+const SecondSalaryRecord = require('../../payroll/model/SecondSalaryRecord');
 const {
   populatePayRegisterFromSources,
   getSummaryData,
@@ -1396,7 +1398,7 @@ function drawPayRegisterPdfTable(doc, headers, rows, startX, startY, colWidths, 
     }
 
     if (y + rowHeight > threshold) {
-      doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+      doc.addPage({ size: [doc.page.width, doc.page.height], layout: 'landscape', margin: 25 });
       if (onPageAdd) onPageAdd();
       y = 60;
       drawHeaderRow();
@@ -1451,9 +1453,10 @@ function drawPayRegisterPdfTableWithMultiHeader(doc, headerConfig, rows, startX,
   const drawHeaderRows = () => {
     // First header row with main headers
     let x = startX;
-    headerConfig.mainHeaders.forEach((headerObj, colIndex) => {
+    let columnIndex = 0;
+    headerConfig.mainHeaders.forEach((headerObj) => {
       const colSpan = headerObj.colSpan || 1;
-      const headerWidth = colWidths.slice(colIndex, colIndex + colSpan).reduce((a, b) => a + b, 0);
+      const headerWidth = colWidths.slice(columnIndex, columnIndex + colSpan).reduce((a, b) => a + b, 0);
       
       // Background color
       if (headerObj.bgColor) {
@@ -1476,6 +1479,7 @@ function drawPayRegisterPdfTableWithMultiHeader(doc, headerConfig, rows, startX,
       });
       
       x += headerWidth;
+      columnIndex += colSpan;
     });
     y += 20;
 
@@ -1529,7 +1533,7 @@ function drawPayRegisterPdfTableWithMultiHeader(doc, headerConfig, rows, startX,
     }
 
     if (y + rowHeight > threshold) {
-      doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+      doc.addPage({ size: [doc.page.width, doc.page.height], layout: 'landscape', margin: 25 });
       if (onPageAdd) onPageAdd();
       y = 60;
       drawHeaderRows();
@@ -1567,13 +1571,81 @@ function drawPayRegisterPdfTableWithMultiHeader(doc, headerConfig, rows, startX,
   return y;
 }
 
+function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, secondaryRecord) {
+  const totals = payRegister?.totals || {};
+  const leaveBreakdown = Array.isArray(totals.leaveTypeBreakdown) ? totals.leaveTypeBreakdown : [];
+  const leaveDays = { cl: 0, ccl: 0, lop: 0 };
+  for (const leave of leaveBreakdown) {
+    const label = String(leave.leaveType || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
+    const days = Number(leave.days) || 0;
+    if (leave.kind === 'lop') leaveDays.lop += days;
+    else if (label === 'CCL') leaveDays.ccl += days;
+    else if (label === 'CL' || label.includes('CASUAL')) leaveDays.cl += days;
+  }
+
+  const deductions = primaryRecord?.deductions || {};
+  const statutory = Array.isArray(deductions.statutoryDeductions) ? deductions.statutoryDeductions : [];
+  const statutoryAmount = (codes) => statutory.reduce((sum, item) => {
+    const code = String(item.code || item.name || '').toUpperCase().replace(/[^A-Z]/g, '');
+    return codes.some(value => code === value || code.includes(value)) ? sum + (Number(item.employeeAmount) || 0) : sum;
+  }, 0);
+  const otherDeductions = Array.isArray(deductions.otherDeductions) ? deductions.otherDeductions : [];
+  const punishment = otherDeductions.reduce((sum, item) =>
+    /punish/i.test(String(item.name || '')) ? sum + (Number(item.amount) || 0) : sum, 0);
+  const primaryAdvance = Number(primaryRecord?.loanAdvance?.advanceDeduction) || 0;
+  const totalDeductions = (Number(deductions.totalDeductions) || 0)
+    + primaryAdvance
+    + (Number(primaryRecord?.loanAdvance?.totalEMI) || 0);
+  const primaryGross = Number(primaryRecord?.earnings?.grossSalary) || 0;
+  const secondaryGross = Number(secondaryRecord?.earnings?.grossSalary) || 0;
+  const primaryNet = Number(primaryRecord?.netSalary) || 0;
+  const secondaryNet = Number(secondaryRecord?.netSalary) || 0;
+  const totalDays = Number(payRegister?.totalDaysInMonth) || 0;
+  const absent = Number(totals.totalAbsentDays) || 0;
+  const lopDeduction = Number(totals.totalLopDays) || leaveDays.lop;
+  const lateEarlyDeduction = Number(payRegister?.totalAttendanceDeductionDays) || 0;
+
+  return {
+    employeeCode: employee.emp_no || '',
+    employeeName: employee.employee_name || '',
+    designation: employee.designation_id?.name || '',
+    division: employee.division_id?.name || '',
+    department: employee.department_id?.name || '',
+    group: employee.employee_group_id?.name || '',
+    presentDays: Number(totals.totalPresentDays) || 0,
+    absentDays: absent,
+    paidCL: leaveDays.cl,
+    paidCCL: leaveDays.ccl,
+    lopDays: lopDeduction,
+    weekOffs: Number(totals.totalWeeklyOffs) || 0,
+    totalDays,
+    lateEarlyOuts: (Number(totals.lateCount) || 0) + (Number(totals.earlyOutCount) || 0),
+    absentDeduction: absent,
+    lopDeduction,
+    lateEarlyDeduction,
+    totalPaidDays: Math.max(0, totalDays - absent - lopDeduction - lateEarlyDeduction),
+    primaryGross,
+    secondaryGross,
+    grossDifference: secondaryGross - primaryGross,
+    pf: statutoryAmount(['PF', 'PROVIDENTFUND']),
+    esi: statutoryAmount(['ESI', 'EMPLOYEESTATEINSURANCE']),
+    professionalTax: statutoryAmount(['PT', 'PROFESSIONTAX', 'PROFESSIONALTAX']),
+    advance: primaryAdvance,
+    punishment,
+    totalDeductions,
+    primaryNet,
+    secondaryNet,
+    netDifference: secondaryNet - primaryNet,
+  };
+}
+
 // @desc    Export monthly summary as Excel
 // @route   GET /api/pay-register/export-summary/:month
 // @access  Private (exclude employee)
 exports.exportSummaryExcel = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, employeeGroupId, search } = req.query;
+    const { departmentId, divisionId, designationId, employeeGroupId, search } = req.query;
 
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -1593,53 +1665,81 @@ exports.exportSummaryExcel = async (req, res) => {
     const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
       departmentId,
       divisionId,
+      designationId,
       employeeGroupId,
       search,
       scopeFilter: req.scopeFilter,
     });
 
     const employees = await Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id division_id')
+      .select('_id employee_name emp_no department_id designation_id division_id employee_group_id')
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
+      .populate('employee_group_id', 'name')
       .sort(EMP_NO_SORT)
       .collation(EMP_NO_COLLATION);
 
     const employeeIds = employees.map(e => e._id);
 
-    const payRegisters = await PayRegisterSummary.find({
-      employeeId: { $in: employeeIds },
-      month
-    }).lean();
+    const [payRegisters, primaryRecords, secondaryRecords] = await Promise.all([
+      PayRegisterSummary.find({ employeeId: { $in: employeeIds }, month }).lean(),
+      PayrollRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
+      SecondSalaryRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
+    ]);
+    const registerMap = new Map(payRegisters.map(record => [String(record.employeeId), record]));
+    const primaryMap = new Map(primaryRecords.map(record => [String(record.employeeId), record]));
+    const secondaryMap = new Map(secondaryRecords.map(record => [String(record.employeeId), record]));
+    const rows = employees.map(employee => buildPayrollSummaryExportRow(
+      employee,
+      registerMap.get(String(employee._id)),
+      primaryMap.get(String(employee._id)),
+      secondaryMap.get(String(employee._id)),
+    ));
 
-    const prMap = new Map(payRegisters.map(pr => [pr.employeeId.toString(), pr]));
-
-    const rows = employees.map(emp => {
-      const pr = prMap.get(emp._id.toString());
-      const totals = pr?.totals || {};
-
-      return {
-        'Employee Code': emp.emp_no,
-        'Employee Name': emp.employee_name,
-        'Division': emp.division_id?.name || 'N/A',
-        'Department': emp.department_id?.name || 'N/A',
-        'Designation': emp.designation_id?.name || 'N/A',
-        'Total OD': totals.totalODDays || 0,
-        'Total Present': totals.totalPresentDays || 0,
-        'Paid Leaves': totals.totalPaidLeaveDays || 0,
-        'LOP Count': totals.totalLopDays || 0,
-        'Total Absent': totals.totalAbsentDays || 0,
-        'Holiday Count': (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0),
-        'Late Count': (Number(totals.lateCount) || 0) + (Number(totals.earlyOutCount) || 0),
-        'OT Hours': totals.totalOTHours || 0,
-        'Extra Days': totals.extraDays || 0,
-      };
-    });
+    const columns = [
+      ['EC No.', 'employeeCode'], ['Name of the Employee', 'employeeName'], ['Designation', 'designation'],
+      ['Division', 'division'], ['Department', 'department'], ['Group', 'group'],
+      ['Present Days', 'presentDays'], ['Absent Days', 'absentDays'], ['CL', 'paidCL'], ['CCL', 'paidCCL'],
+      ['LOP', 'lopDays'], ['Week Offs', 'weekOffs'], ['Total Days', 'totalDays'],
+      ['Lates/Early Outs', 'lateEarlyOuts'], ['ABS (extra LOP)', 'absentDeduction'], ['LOP Deduction', 'lopDeduction'],
+      ['Late/Early Out Related', 'lateEarlyDeduction'], ['Total Paid Days', 'totalPaidDays'],
+      ['Primary Salary Gross', 'primaryGross'], ['Secondary Salary Gross', 'secondaryGross'], ['Difference Gross', 'grossDifference'],
+      ['PF', 'pf'], ['ESI', 'esi'], ['Professional Tax', 'professionalTax'], ['Advance', 'advance'],
+      ['Punishments', 'punishment'], ['Total Deductions', 'totalDeductions'],
+      ['Primary Salary Net', 'primaryNet'], ['Secondary Salary Net', 'secondaryNet'], ['Difference Net', 'netDifference'],
+    ];
+    const mainHeaders = columns.map(([label]) => label);
+    mainHeaders[8] = 'Leave Days';
+    mainHeaders[9] = '';
+    mainHeaders[10] = '';
+    mainHeaders[14] = 'Deduction Days';
+    mainHeaders[15] = '';
+    mainHeaders[16] = '';
+    mainHeaders[21] = 'Deductions';
+    mainHeaders[22] = '';
+    mainHeaders[23] = '';
+    mainHeaders[24] = '';
+    mainHeaders[25] = '';
+    const subHeaders = columns.map(([label]) => label);
+    [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 17, 18, 19, 20, 26, 27, 28, 29].forEach(index => { subHeaders[index] = ''; });
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['REPORT ON PAYROLL'],
+      [`Period: ${startDate} to ${endDate}`],
+      mainHeaders,
+      subHeaders,
+      ...rows.map(row => columns.map(([, key]) => row[key])),
+    ]);
+    worksheet['!merges'] = [
+      ...[0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 17, 18, 19, 20, 26, 27, 28, 29].map(column => ({ s: { r: 2, c: column }, e: { r: 3, c: column } })),
+      { s: { r: 2, c: 8 }, e: { r: 2, c: 10 } },
+      { s: { r: 2, c: 14 }, e: { r: 2, c: 16 } },
+      { s: { r: 2, c: 21 }, e: { r: 2, c: 25 } },
+    ];
+    worksheet['!cols'] = [12, 24, 17, 18, 18, 16, 12, 12, 10, 10, 10, 12, 12, 16, 14, 12, 20, 14, 17, 19, 16, 11, 11, 17, 12, 14, 16, 17, 19, 16].map(wch => ({ wch }));
 
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Monthly Summary');
+    XLSX.utils.book_append_sheet(wb, worksheet, 'Monthly Summary');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const filename = `PayRegister_Summary_${month}.xlsx`;
@@ -1662,7 +1762,7 @@ exports.exportSummaryExcel = async (req, res) => {
 exports.exportSummaryPDF = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, employeeGroupId, search } = req.query;
+    const { departmentId, divisionId, designationId, employeeGroupId, search } = req.query;
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -1679,16 +1779,18 @@ exports.exportSummaryPDF = async (req, res) => {
     const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
       departmentId,
       divisionId,
+      designationId,
       employeeGroupId,
       search,
       scopeFilter: req.scopeFilter,
     });
 
     const employees = await Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id division_id doj leftDate')
+      .select('_id employee_name emp_no department_id designation_id division_id employee_group_id doj leftDate')
       .populate('department_id', 'name')
       .populate('division_id', 'name')
       .populate('designation_id', 'name')
+      .populate('employee_group_id', 'name')
       .sort(EMP_NO_SORT)
       .collation(EMP_NO_COLLATION)
       .lean();
@@ -1698,14 +1800,17 @@ exports.exportSummaryPDF = async (req, res) => {
     }
 
     const employeeIds = employees.map((emp) => emp._id);
-    const payRegisters = await PayRegisterSummary.find({
-      employeeId: { $in: employeeIds },
-      month,
-    })
-      .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
-      .lean();
+    const [payRegisters, primaryRecords, secondaryRecords] = await Promise.all([
+      PayRegisterSummary.find({ employeeId: { $in: employeeIds }, month })
+        .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
+        .lean(),
+      PayrollRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
+      SecondSalaryRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
+    ]);
 
     const prMap = new Map(payRegisters.map((pr) => [String(pr.employeeId), pr]));
+    const primaryMap = new Map(primaryRecords.map((record) => [String(record.employeeId), record]));
+    const secondaryMap = new Map(secondaryRecords.map((record) => [String(record.employeeId), record]));
 
     const daysArray = [];
     let cursor = dayjs(startDate);
@@ -1724,49 +1829,35 @@ exports.exportSummaryPDF = async (req, res) => {
       grouped[divName][deptName].push(emp);
     }
 
-    const doc = new PDFDocument({ margin: 25, size: 'A4', layout: 'landscape', bufferPages: true });
+    const doc = new PDFDocument({ margin: 25, size: 'A3', layout: 'landscape', bufferPages: true });
     const filename = `PayRegister_Summary_${month}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     doc.pipe(res);
 
-    const pageWidth = 841.89;
+    const pageWidth = doc.page.width;
     const margin = 25;
     
     // Define multi-level header structure matching the user's request
+    const singleHeader = (label) => ({ label, colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' });
     const mainHeaders = [
-      { label: 'Employee', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Present Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Week Offs', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Holidays', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Total Leaves', colSpan: 3, bgColor: '#fffbeb', textColor: '#92400e' },
-      { label: 'OD Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Absents', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Total Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
-      { label: 'Lates (L+E)', colSpan: 1, bgColor: '#f1f5f9', textColor: '#1e293b' },
+      singleHeader('EC No.'), singleHeader('Employee'), singleHeader('Designation'), singleHeader('Division'), singleHeader('Department'), singleHeader('Group'),
+      singleHeader('Present Days'), singleHeader('Absent Days'),
+      { label: 'Leave Days', colSpan: 3, bgColor: '#fffbeb', textColor: '#92400e' },
+      singleHeader('Week Offs'), singleHeader('Total Days'), singleHeader('Lates/Early Outs'),
       { label: 'Deduction Days', colSpan: 3, bgColor: '#fff1f2', textColor: '#9f1239' },
-      { label: 'Paid Days', colSpan: 1, bgColor: '#f0fdf4', textColor: '#166534' },
+      singleHeader('Total Paid Days'), singleHeader('Primary Salary Gross'), singleHeader('Secondary Salary Gross'), singleHeader('Difference Gross'),
+      { label: 'Deductions', colSpan: 5, bgColor: '#fef3c7', textColor: '#92400e' },
+      singleHeader('Total Deductions'), singleHeader('Primary Salary Net'), singleHeader('Secondary Salary Net'), singleHeader('Difference Net'),
     ];
-
-    const subHeaders = [
-      { label: 'Employee', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Total', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
-      { label: 'Paid', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
-      { label: 'LOP', colSpan: 1, bgColor: '#fef3c7', textColor: '#92400e' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Days', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Count', colSpan: 1, bgColor: '#f1f5f9', textColor: '#475569' },
-      { label: 'Absent', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
-      { label: 'LOP', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
-      { label: 'Att.Ded', colSpan: 1, bgColor: '#ffe4e6', textColor: '#9f1239' },
-      { label: 'Final', colSpan: 1, bgColor: '#dcfce7', textColor: '#166534' },
+    const subLabels = [
+      'EC No.', 'Employee', 'Designation', 'Division', 'Department', 'Group', 'Present', 'Absent', 'CL', 'CCL', 'LOP',
+      'Week Offs', 'Total Days', 'Lates/Early Outs', 'ABS (extra LOP)', 'LOP', 'Late/Early Out Related', 'Paid Days',
+      'Gross', 'Gross', 'Difference', 'PF', 'ESI', 'Professional Tax', 'Advance', 'Punishments', 'Total',
+      'Net', 'Net', 'Difference',
     ];
-
-    const colWidths = [120, 48, 45, 45, 45, 45, 45, 45, 45, 50, 45, 45, 45, 45, 58];
+    const subHeaders = subLabels.map(label => ({ label, colSpan: 1, bgColor: '#e2e8f0', textColor: '#334155' }));
+    const colWidths = [29, 58, 39, 38, 40, 32, 32, 32, 24, 24, 24, 30, 30, 37, 32, 26, 42, 34, 40, 42, 36, 26, 26, 42, 32, 37, 38, 40, 42, 36];
     const gridHeaders = ['Employee Name', 'E.No', ...daysArray.map((d) => String(dayjs(d).date()))];
     const nameWidth = 92;
     const enoWidth = 32;
@@ -1779,7 +1870,7 @@ exports.exportSummaryPDF = async (req, res) => {
     for (const divName of sortedDivisions) {
       const sortedDepartments = Object.keys(grouped[divName]).sort();
       for (const deptName of sortedDepartments) {
-        if (!firstPage) doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+        if (!firstPage) doc.addPage({ size: 'A3', layout: 'landscape', margin: 25 });
         firstPage = false;
 
         let y = drawPayRegisterPdfHeader(
@@ -1797,6 +1888,12 @@ exports.exportSummaryPDF = async (req, res) => {
 
         for (const emp of deptEmployees) {
           const pr = prMap.get(String(emp._id));
+          const payrollRow = buildPayrollSummaryExportRow(
+            emp,
+            pr,
+            primaryMap.get(String(emp._id)),
+            secondaryMap.get(String(emp._id)),
+          );
           const totals = pr?.totals || {};
           const dailyRecords = Array.isArray(pr?.dailyRecords) ? pr.dailyRecords : [];
           const filteredTotals = filterPdfSummaryTotalsForEmploymentBounds(dailyRecords, totals, startDate, endDate, emp);
@@ -1805,14 +1902,11 @@ exports.exportSummaryPDF = async (req, res) => {
           
           const totalPresent = Number(filteredTotals.totalPresentDays) || 0;
           const totalAbsent = Number(filteredTotals.totalAbsentDays) || 0;
-          const totalLeaves = Number(filteredTotals.totalLeaveDays) || 0;
-          const paidLeaves = Number(filteredTotals.totalPaidLeaveDays) || 0;
-          const lopLeaves = Math.max(0, totalLeaves - paidLeaves);
-          const totalOD = Number(filteredTotals.totalODDays) || 0;
+          const lopLeaves = Number(filteredTotals.totalLopDays)
+            || Math.max(0, (Number(filteredTotals.totalLeaveDays) || 0) - (Number(filteredTotals.totalPaidLeaveDays) || 0));
           const lateCount = (Number(filteredTotals.lateCount) || 0) + (Number(filteredTotals.earlyOutCount) || 0);
           
           const weekOffs = Number(filteredTotals.totalWeeklyOffs) || 0;
-          const holidays = Number(filteredTotals.totalHolidays) || 0;
           const monthDays = eligibleDayCount || daysArray.length;
           
           const lopDed = Number(filteredTotals.totalLopDays) || 0;
@@ -1821,24 +1915,13 @@ exports.exportSummaryPDF = async (req, res) => {
           // Paid Days = Total Days - Absent - LOP - Att.Ded
           const paidDays = Math.max(0, monthDays - totalAbsent - lopDed - attDed);
 
-          const designationLabel = emp.designation_id?.name || '-';
-
           summaryRows.push([
-            { label: `${emp.employee_name || '-'}\n${emp.emp_no || '-'} | ${designationLabel}`, align: 'left' },
-            pdfNum(totalPresent),
-            pdfNum(weekOffs),
-            pdfNum(holidays),
-            pdfNum(totalLeaves),
-            pdfNum(paidLeaves),
-            pdfNum(lopLeaves),
-            pdfNum(totalOD),
-            pdfNum(totalAbsent),
-            pdfNum(monthDays),
-            pdfNum(lateCount),
-            pdfNum(totalAbsent), // Absent Deduction
-            pdfNum(lopDed),      // LOP Deduction
-            pdfNum(attDed),      // Att.Ded
-            pdfNum(paidDays),
+            payrollRow.employeeCode, payrollRow.employeeName, payrollRow.designation, payrollRow.division, payrollRow.department, payrollRow.group,
+            pdfNum(totalPresent), pdfNum(totalAbsent), pdfNum(payrollRow.paidCL), pdfNum(payrollRow.paidCCL), pdfNum(lopLeaves),
+            pdfNum(weekOffs), pdfNum(monthDays), pdfNum(lateCount), pdfNum(totalAbsent), pdfNum(lopDed), pdfNum(attDed), pdfNum(paidDays),
+            pdfNum(payrollRow.primaryGross), pdfNum(payrollRow.secondaryGross), pdfNum(payrollRow.grossDifference), pdfNum(payrollRow.pf),
+            pdfNum(payrollRow.esi), pdfNum(payrollRow.professionalTax), pdfNum(payrollRow.advance), pdfNum(payrollRow.punishment),
+            pdfNum(payrollRow.totalDeductions), pdfNum(payrollRow.primaryNet), pdfNum(payrollRow.secondaryNet), pdfNum(payrollRow.netDifference),
           ]);
 
           const dojStr = emp.doj ? dayjs(emp.doj).tz('Asia/Kolkata').format('YYYY-MM-DD') : null;
@@ -1874,7 +1957,7 @@ exports.exportSummaryPDF = async (req, res) => {
         );
 
         // Always start Day Breakdown on a new page for clarity
-        doc.addPage({ size: 'A4', layout: 'landscape', margin: 25 });
+        doc.addPage({ size: 'A3', layout: 'landscape', margin: 25 });
         y = drawPayRegisterPdfHeader(doc, `PAY REGISTER DAY BREAKDOWN - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()} | Period: ${startDate} to ${endDate}`);
         
         doc.fillColor('#f8fafc').rect(margin, y, pageWidth - 2 * margin, 16).fill();

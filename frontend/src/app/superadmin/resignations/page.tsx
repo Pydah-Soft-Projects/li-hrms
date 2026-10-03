@@ -16,6 +16,7 @@ import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -711,28 +712,33 @@ const getApprovalStageStatus = (req: ResignationRequest, index: number) => {
   return String(step.label || step.role || '').trim();
 };
 
-const getWorkflowStageLabel = (req: ResignationRequest, index: number): string => {
-  const step = req.workflow?.approvalChain?.[index];
+const getDesignationName = (req: ResignationRequest) => {
+  const des = req.employeeId?.designation_id || req.employeeId?.designation;
+  if (typeof des === 'object' && des?.name) return des.name;
+  return '—';
+};
+
+const getWorkflowStageLabel = (req: ResignationRequest | undefined, index: number): string => {
+  const step = req?.workflow?.approvalChain?.[index];
   if (!step) return `Stage ${index + 1}`;
   const label = step.label || step.role || '';
-  return String(label).trim() || `Stage ${index + 1}`;
+  const clean = String(label).replace(/_/g, ' ').replace(/\s*approval\s*$/i, '').trim();
+  return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : `Stage ${index + 1}`;
 };
 
 const getStageContent = (req: ResignationRequest, index: number): string => {
   const step = req.workflow?.approvalChain?.[index];
   if (!step) return 'N/A';
-  
   const status = (step.status || '').toLowerCase();
-  const statusDisplay = toDisplayCase(status) || 'Pending';
+  if (!status || status === 'pending') return 'Pending';
+  if (status === 'rejected') return 'Rejected';
   
-  if (!status || status === 'pending') {
-    return statusDisplay;
-  }
+  const userName = step.actionByName || step.actionByRole || '';
+  const dateStr = step.updatedAt ? formatDate(step.updatedAt) : '';
   
-  const userName = step.actionByName || step.actionByRole || '—';
-  const dateTime = step.updatedAtIST || (step.updatedAt ? formatDateTime(step.updatedAt) : '');
-  
-  return `${statusDisplay}\n${userName}${dateTime ? `\n${dateTime}` : ''}`;
+  if (userName && dateStr) return `Approved (${dateStr})`;
+  if (dateStr) return `Approved (${dateStr})`;
+  return 'Approved';
 };
 
 const groupRequestsByDivisionDepartment = (requests: ResignationRequest[]) => {
@@ -1670,11 +1676,51 @@ export default function SuperAdminResignationsPage() {
     });
   }, [baseFiltered, baseFilteredPending, activeTab]);
 
+  const getSelectedFiltersSummary = (): string => {
+    const parts: string[] = [];
+    const divName = divisions.find(d => d._id === filters.division_id)?.name;
+    parts.push(`Division: ${divName || 'All'}`);
+
+    const deptName = departments.find(d => d._id === filters.department_id)?.name;
+    parts.push(`Department: ${deptName || 'All'}`);
+
+    const grpName = groups.find(g => g._id === filters.employee_group_id)?.name;
+    parts.push(`Group: ${grpName || 'All'}`);
+
+    if (selectedPayPeriodKey) {
+      parts.push(`Pay Period: ${selectedPayPeriodKey}`);
+    }
+
+    if (activeTab && activeTab !== 'all') {
+      parts.push(`Tab: ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}`);
+    }
+
+    if (filters.status) {
+      parts.push(`Status: ${filters.status.charAt(0).toUpperCase() + filters.status.slice(1)}`);
+    } else {
+      parts.push('Status: All');
+    }
+
+    if (filters.search.trim()) {
+      parts.push(`Search: "${filters.search.trim()}"`);
+    }
+
+    return `Selected Filters: ${parts.join(' | ')}`;
+  };
+
   const generateResignationPdf = (requests: ResignationRequest[]) => {
     const doc = new jsPDF('l', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
-    let currentY = 10;
-    let isFirstSection = true;
+    let currentY = 12;
+    let isFirstPage = true;
+
+    if (requests.length === 0) return doc;
+
+    const sampleReq = requests.find(r => r.workflow?.approvalChain?.length);
+    const stage1Label = getWorkflowStageLabel(sampleReq, 0);
+    const stage2Label = getWorkflowStageLabel(sampleReq, 1);
+    const stage3Label = getWorkflowStageLabel(sampleReq, 2);
+    const filterSummary = getSelectedFiltersSummary();
 
     const grouped = groupRequestsByDivisionDepartment(requests);
 
@@ -1682,77 +1728,85 @@ export default function SuperAdminResignationsPage() {
       Object.keys(grouped[division]).sort().forEach((department) => {
         const divisionalRequests = grouped[division][department];
 
-        if (!isFirstSection) {
+        if (!isFirstPage) {
           doc.addPage();
-          currentY = 10;
+          currentY = 12;
         }
 
         doc.setFillColor(15, 23, 42);
-        doc.rect(14, currentY, pageWidth - 28, 25, 'F');
+        doc.rect(10, currentY, pageWidth - 20, 24, 'F');
         doc.setTextColor(255, 255, 255);
-        doc.setFontSize(14);
+        doc.setFontSize(13);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Resignation Report - ${division} / ${department}`, 14, currentY + 8);
-        doc.setFontSize(9);
+        doc.text(`REPORT ON RESIGNATIONS — ${division} / ${department}`, 14, currentY + 8);
+        doc.setFontSize(7.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, currentY + 16);
+        doc.text(`${filterSummary}  |  Total Records: ${divisionalRequests.length}`, 14, currentY + 16);
         currentY += 28;
 
-        const stageLabels: string[] = [];
-        if (divisionalRequests.length > 0) {
-          const firstReq = divisionalRequests[0];
-          for (let i = 0; i < 3; i++) {
-            stageLabels.push(getWorkflowStageLabel(firstReq, i));
-          }
-        }
-
-        const body = divisionalRequests.map((req) => [
+        const body = divisionalRequests.map((req, index) => [
+          (index + 1).toString(),
           req.emp_no || '—',
           getEmployeeName(req),
-          ((typeof req.employeeId?.designation_id === 'object' && req.employeeId?.designation_id?.name)
-            ? String(req.employeeId.designation_id.name)
-            : (typeof req.employeeId?.designation === 'object' && req.employeeId?.designation?.name)
-              ? String(req.employeeId.designation.name)
-              : '—'),
+          getDesignationName(req),
+          req.employeeId?.division_id?.name || '—',
+          req.employeeId?.department_id?.name || '—',
           req.employeeId?.employee_group_id?.name || '—',
           formatDate(req.createdAt),
-          getFormattedApprovalDate(req) || '—',
           getStageContent(req, 0),
           getStageContent(req, 1),
           getStageContent(req, 2),
+          formatDate(req.leftDate),
+          getDisplayStatusText(req),
           getNocStatus(),
+          req.remarks || '—',
         ]);
 
         autoTable(doc, {
           startY: currentY,
-          head: [[
-            'EC No',
-            'Name of the Employee',
-            'Designation',
-            'Group',
-            'Date Applied',
-            'Date Approved',
-            stageLabels[0],
-            stageLabels[1],
-            stageLabels[2],
-            'NOC Completed',
-          ]],
+          head: [
+            [
+              { content: 'S.No', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'EC No.', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'Name of the Employee', rowSpan: 2, styles: { valign: 'middle' } },
+              { content: 'Designation', rowSpan: 2, styles: { valign: 'middle' } },
+              { content: 'Division', rowSpan: 2, styles: { valign: 'middle' } },
+              { content: 'Department', rowSpan: 2, styles: { valign: 'middle' } },
+              { content: 'Group', rowSpan: 2, styles: { valign: 'middle' } },
+              { content: 'Date of Applied', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'Date of approved', colSpan: 3, styles: { halign: 'center' } },
+              { content: 'Last Working Date', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'Status', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'NOC Completed', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+              { content: 'Remarks', rowSpan: 2, styles: { valign: 'middle' } },
+            ],
+            [
+              { content: stage1Label, styles: { halign: 'center' } },
+              { content: stage2Label, styles: { halign: 'center' } },
+              { content: stage3Label, styles: { halign: 'center' } },
+            ]
+          ],
           body,
           theme: 'grid',
-          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8 },
-          styles: { fontSize: 7, cellPadding: 2 },
-          margin: { left: 14, right: 14 },
+          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+          styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
+          margin: { left: 10, right: 10 },
           columnStyles: {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 35 },
+            0: { cellWidth: 10 },
+            1: { cellWidth: 16 },
             2: { cellWidth: 28 },
             3: { cellWidth: 22 },
-            4: { cellWidth: 22 },
-            5: { cellWidth: 22 },
-            6: { cellWidth: 28 },
-            7: { cellWidth: 28 },
-            8: { cellWidth: 28 },
-            9: { cellWidth: 18 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 20 },
+            6: { cellWidth: 18 },
+            7: { cellWidth: 18 },
+            8: { cellWidth: 22 },
+            9: { cellWidth: 22 },
+            10: { cellWidth: 22 },
+            11: { cellWidth: 18 },
+            12: { cellWidth: 16 },
+            13: { cellWidth: 16 },
+            14: { cellWidth: 29 },
           },
           didDrawPage: (data) => {
             currentY = data.cursor?.y || currentY;
@@ -1760,11 +1814,119 @@ export default function SuperAdminResignationsPage() {
         });
 
         currentY = (doc as any).lastAutoTable?.finalY || currentY + 10;
-        isFirstSection = false;
+        isFirstPage = false;
       });
     });
 
     return doc;
+  };
+
+  const handleExportResignationsXlsx = (requests: ResignationRequest[]) => {
+    if (requests.length === 0) {
+      toast.info('No resignation records to export.');
+      return;
+    }
+    try {
+      const sampleReq = requests.find(r => r.workflow?.approvalChain?.length);
+      const stage1Label = getWorkflowStageLabel(sampleReq, 0);
+      const stage2Label = getWorkflowStageLabel(sampleReq, 1);
+      const stage3Label = getWorkflowStageLabel(sampleReq, 2);
+      const filterSummary = getSelectedFiltersSummary();
+
+      const aoa: any[][] = [
+        ['REPORT ON RESIGNATIONS'],
+        [filterSummary],
+        [],
+        [
+          'S.No',
+          'EC No.',
+          'Name of the Employee',
+          'Designation',
+          'Division',
+          'Department',
+          'Group',
+          'Date of Applied',
+          'Date of approved', '', '',
+          'Last Working Date',
+          'Status',
+          'NOC Completed (Y/N)',
+          'Remarks'
+        ],
+        [
+          '', '', '', '', '', '', '', '',
+          stage1Label,
+          stage2Label,
+          stage3Label,
+          '', '', '', ''
+        ]
+      ];
+
+      requests.forEach((req, index) => {
+        aoa.push([
+          index + 1,
+          req.emp_no || '—',
+          getEmployeeName(req),
+          getDesignationName(req),
+          req.employeeId?.division_id?.name || '—',
+          req.employeeId?.department_id?.name || '—',
+          req.employeeId?.employee_group_id?.name || '—',
+          formatDate(req.createdAt),
+          getStageContent(req, 0),
+          getStageContent(req, 1),
+          getStageContent(req, 2),
+          formatDate(req.leftDate),
+          getDisplayStatusText(req),
+          getNocStatus(),
+          req.remarks || '—',
+        ]);
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 14 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 14 } },
+        { s: { r: 3, c: 0 }, e: { r: 4, c: 0 } },
+        { s: { r: 3, c: 1 }, e: { r: 4, c: 1 } },
+        { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
+        { s: { r: 3, c: 3 }, e: { r: 4, c: 3 } },
+        { s: { r: 3, c: 4 }, e: { r: 4, c: 4 } },
+        { s: { r: 3, c: 5 }, e: { r: 4, c: 5 } },
+        { s: { r: 3, c: 6 }, e: { r: 4, c: 6 } },
+        { s: { r: 3, c: 7 }, e: { r: 4, c: 7 } },
+        { s: { r: 3, c: 8 }, e: { r: 3, c: 10 } },
+        { s: { r: 3, c: 11 }, e: { r: 4, c: 11 } },
+        { s: { r: 3, c: 12 }, e: { r: 4, c: 12 } },
+        { s: { r: 3, c: 13 }, e: { r: 4, c: 13 } },
+        { s: { r: 3, c: 14 }, e: { r: 4, c: 14 } },
+      ];
+
+      ws['!cols'] = [
+        { wch: 8 },  // S.No
+        { wch: 14 }, // EC No.
+        { wch: 25 }, // Name of Employee
+        { wch: 22 }, // Designation
+        { wch: 20 }, // Division
+        { wch: 20 }, // Department
+        { wch: 18 }, // Group
+        { wch: 16 }, // Date of Applied
+        { wch: 22 }, // Stage 1
+        { wch: 22 }, // Stage 2
+        { wch: 22 }, // Stage 3
+        { wch: 18 }, // Last Working Date
+        { wch: 16 }, // Status
+        { wch: 18 }, // NOC Completed
+        { wch: 30 }, // Remarks
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Resignations');
+      XLSX.writeFile(wb, `Resignations_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Excel exported successfully.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to export Excel.');
+    }
   };
 
   const handleExportResignationsPdf = async (requests: ResignationRequest[]) => {
@@ -1849,6 +2011,34 @@ export default function SuperAdminResignationsPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleExportResignationsXlsx(filteredRequests)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-semibold shadow-sm transition active:scale-95 whitespace-nowrap"
+            >
+              <Save className="w-4 h-4" />
+              <span>Export Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportResignationsPdf(filteredRequests)}
+              disabled={exportingPdf}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-semibold shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
+            >
+              <Save className="w-4 h-4" />
+              <span>{exportingPdf ? 'Exporting PDF...' : 'Export PDF'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintResignations}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 text-xs font-semibold shadow-sm transition active:scale-95 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 whitespace-nowrap"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Print</span>
+            </button>
           </div>
 
           {canCreateResignation(currentUser) && (
