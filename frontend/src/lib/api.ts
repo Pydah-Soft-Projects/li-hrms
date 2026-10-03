@@ -3344,6 +3344,7 @@ export const api = {
     department?: string | string[]; 
     division?: string | string[];
     designation?: string | string[];
+    group?: string | string[];
     employeeId?: string | string[];
     search?: string;
     includeLeaves?: boolean;
@@ -3358,6 +3359,7 @@ export const api = {
     if (filters.department) params.append('department', Array.isArray(filters.department) ? filters.department.join(',') : filters.department);
     if (filters.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
+    if (filters.group) params.append('group', Array.isArray(filters.group) ? filters.group.join(',') : filters.group);
     if (filters.employeeId) params.append('employeeId', Array.isArray(filters.employeeId) ? filters.employeeId.join(',') : filters.employeeId);
     if (filters.search) params.append('search', filters.search);
     if (filters.includeLeaves !== undefined) params.append('includeLeaves', String(filters.includeLeaves));
@@ -3385,6 +3387,7 @@ export const api = {
     department?: string | string[]; 
     division?: string | string[];
     designation?: string | string[];
+    group?: string | string[];
     employeeId?: string | string[];
     search?: string;
     includeLeaves?: boolean;
@@ -3399,6 +3402,7 @@ export const api = {
     if (filters.department) params.append('department', Array.isArray(filters.department) ? filters.department.join(',') : filters.department);
     if (filters.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
+    if (filters.group) params.append('group', Array.isArray(filters.group) ? filters.group.join(',') : filters.group);
     if (filters.employeeId) params.append('employeeId', Array.isArray(filters.employeeId) ? filters.employeeId.join(',') : filters.employeeId);
     if (filters.search) params.append('search', filters.search);
     if (filters.includeLeaves !== undefined) params.append('includeLeaves', String(filters.includeLeaves));

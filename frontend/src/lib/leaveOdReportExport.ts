@@ -20,6 +20,7 @@ export type LeaveODReportExportFilters = {
   division?: string[];
   department?: string[];
   designation?: string[];
+  group?: string[];
   employeeId?: string[];
   status?: string;
   leaveType?: string;
@@ -59,6 +60,7 @@ export function buildLeaveODExportPayload(
     division: filters.division?.length ? filters.division : undefined,
     department: filters.department?.length ? filters.department : undefined,
     designation: filters.designation?.length ? filters.designation : undefined,
+    group: filters.group?.length ? filters.group : undefined,
     employeeId: filters.employeeId?.length ? filters.employeeId : undefined,
     status: filters.status || undefined,
     leaveType: filters.leaveType || undefined,
