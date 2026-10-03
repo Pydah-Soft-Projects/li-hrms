@@ -197,22 +197,22 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
 
   const toggleOption = (id: string) => {
     if (single) {
-      onChange([String(id)]);
+      onChange?.([String(id)]);
       setIsOpen(false);
       return;
     }
     if (isSelected(selectedIds, id)) {
-      onChange(selectedIds.filter((selectedId) => !idsMatch(selectedId, id)));
+      onChange?.(selectedIds.filter((selectedId) => !idsMatch(selectedId, id)));
     } else {
-      onChange([...selectedIds, String(id)]);
+      onChange?.([...selectedIds, String(id)]);
     }
   };
 
   const toggleAll = () => {
     if (selectedIds.length === options.length) {
-      onChange([]);
+      onChange?.([]);
     } else {
-      onChange(options.map((opt) => String(opt.id)));
+      onChange?.(options.map((opt) => String(opt.id)));
     }
   };
 

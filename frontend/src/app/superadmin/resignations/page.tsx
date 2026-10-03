@@ -825,12 +825,20 @@ export default function SuperAdminResignationsPage() {
   const [resignationSettings, setResignationSettings] = useState<any>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<{
+    search: string;
+    requestType: string;
+    division_id: string;
+    department_id: string;
+    employee_group_id: string;
+    status?: string;
+  }>({
     search: '',
     requestType: 'all',
     division_id: 'all',
     department_id: 'all',
     employee_group_id: 'all',
+    status: 'all',
   });
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
