@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import type { CompanyProfile } from '@/lib/companyProfile';
 import { drawPayslipCompanyHeader } from '@/lib/payslipPdf';
 import { api, type PayrollOutputColumn } from '@/lib/api';
@@ -438,23 +439,12 @@ function identifyDeductionColumns(
 ): DeductionColumn[] {
     const deductionColumns: DeductionColumn[] = [];
     const seen = new Set<string>();
-    const anyMarked = hasAnyExportMarkedColumns(outputColumns);
-    const allowBreakdown = anyMarked && markedAllowsDeductionBreakdown(outputColumns);
 
     for (const header of headers) {
         if (header === 'S.No' || seen.has(header)) continue;
 
         const configured = outputColumns?.length ? findOutputColumnForHeader(header, outputColumns) : undefined;
         const field = configured?.field ?? '';
-
-        if (anyMarked) {
-            if (configured) {
-                if (!configured.includeInExport) continue;
-            } else if (!allowBreakdown) {
-                // Unconfigured header (e.g. expanded breakdown) with no marked cumulative parent
-                continue;
-            }
-        }
 
         if (isEmployeeOrEarningColumn(header, field)) continue;
         if (isCumulativeOrMetaColumn(header, field)) continue;
@@ -469,6 +459,8 @@ function identifyDeductionColumns(
             } else if (section === 'none' && fieldIsDeductionAmount(field)) {
                 include = true;
             } else if (section === 'none' && configured.source === 'formula') {
+                include = headerLooksLikeDeductionAmount(header);
+            } else {
                 include = headerLooksLikeDeductionAmount(header);
             }
         } else if (fieldIsDeductionAmount(field)) {
@@ -875,42 +867,31 @@ export async function generateDeductionsReportPdf(
 
     const periodLabel = `${params.month} ${params.year}`;
     const titleSuffix = params.salaryKindLabel ? ` (${params.salaryKindLabel})` : '';
-    let y = await drawPayslipCompanyHeader(doc, profile, {
-        periodLabel: pdfAscii(`Deductions Report - ${periodLabel}${titleSuffix}`),
-        confidentialLabel: 'CONFIDENTIAL',
-    });
+    let y = 14;
+    const orgTitle = params.filters?.division || profile.companyName || 'Deductions Report';
 
-    y += 4;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(DED_HEADER[0], DED_HEADER[1], DED_HEADER[2]);
+    doc.text(pdfAscii(orgTitle), marginX, y);
+    y += 6;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-    doc.text(
-        pdfAscii(
-            `${allEmployeeData.length} employee(s) | ${deductionColumns.length} deduction column(s) | Amounts in INR`
-        ),
-        marginX,
-        y
-    );
-    y += 4;
-
-    if (format === 'by_department') {
-        doc.setFontSize(7.5);
-        doc.text(pdfAscii('Layout: By division and department'), marginX, y);
-        y += 5;
-    }
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(INK[0], INK[1], INK[2]);
+    doc.text(pdfAscii(`Deductions Report - ${periodLabel}${titleSuffix}`), marginX, y);
+    y += 6;
 
     if (params.filters) {
         const filterLines: string[] = [];
         if (params.filters.division) filterLines.push(`Division: ${params.filters.division}`);
         if (params.filters.department) filterLines.push(`Department: ${params.filters.department}`);
-        if (params.filters.designation) filterLines.push(`Designation: ${params.filters.designation}`);
-        if (params.filters.group) filterLines.push(`Group: ${params.filters.group}`);
-        if (params.filters.ecNo) filterLines.push(`EC No: ${params.filters.ecNo}`);
 
         if (filterLines.length > 0) {
-            doc.setFontSize(7.5);
-            doc.text(pdfAscii(`Filters: ${filterLines.join(' | ')}`), marginX, y);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+            doc.text(pdfAscii(filterLines.join(' | ')), marginX, y);
             y += 5;
         }
     }
@@ -1062,12 +1043,132 @@ export async function exportDeductionsReport(
     await generateDeductionsReportPdf(rows, headers, params, profile, outputColumns);
 }
 
-/** Export regular deductions PDF; also 2nd salary PDF when enabled and data exists. */
+export async function generateDeductionsReportExcel(
+    rows: Record<string, unknown>[],
+    headers: string[],
+    params: DeductionsReportParams,
+    profile: CompanyProfile,
+    outputColumns?: PayrollOutputColumn[],
+    fileName?: string
+): Promise<void> {
+    if (!rows.length) {
+        throw new Error('No data available for deductions report');
+    }
+
+    const deductionColumns = identifyDeductionColumns(headers, outputColumns);
+    if (deductionColumns.length === 0) {
+        throw new Error('No deduction columns found in paysheet data');
+    }
+
+    const allEmployeeData = rows.map((row) =>
+        extractEmployeeDeductionData(row, deductionColumns, headers)
+    );
+
+    const periodLabel = `${params.month} ${params.year}`;
+    const titleSuffix = params.salaryKindLabel ? ` (${params.salaryKindLabel})` : '';
+
+    const wb = XLSX.utils.book_new();
+    const worksheetData: (string | number)[][] = [];
+
+    // Title Header (NO parameter notes line per user instruction)
+    const orgTitle = optionsOrgName(params.filters?.division, profile);
+    worksheetData.push([orgTitle]);
+    worksheetData.push([`Deductions Report - ${periodLabel}${titleSuffix}`]);
+    const filterInfo: string[] = [];
+    if (params.filters?.division) filterInfo.push(`Division: ${params.filters.division}`);
+    if (params.filters?.department) filterInfo.push(`Department: ${params.filters.department}`);
+    if (filterInfo.length > 0) {
+        worksheetData.push([filterInfo.join(' | ')]);
+    }
+    worksheetData.push([]);
+
+    // Table Header
+    const tableHeader = [
+        'S.No',
+        'EC No.',
+        'Name of the Employee',
+        'Designation',
+        'Division',
+        'Department',
+        'Group',
+        ...deductionColumns.map((col) => col.header),
+        'TOTAL',
+    ];
+    worksheetData.push(tableHeader);
+
+    // Data rows
+    allEmployeeData.forEach((emp, index) => {
+        const row: (string | number)[] = [
+            index + 1,
+            emp.ecNo,
+            emp.name,
+            emp.designation,
+            emp.division,
+            emp.department,
+            emp.group,
+        ];
+
+        deductionColumns.forEach((col) => {
+            row.push(emp.deductions[col.header] || 0);
+        });
+
+        row.push(emp.total);
+        worksheetData.push(row);
+    });
+
+    // Grand Total Row
+    const totalRow: (string | number)[] = ['', '', '', '', '', '', 'Grand Total'];
+    deductionColumns.forEach((col) => {
+        const colSum = allEmployeeData.reduce(
+            (sum, emp) => sum + (emp.deductions[col.header] || 0),
+            0
+        );
+        totalRow.push(colSum);
+    });
+    const grandTotal = allEmployeeData.reduce((sum, emp) => sum + emp.total, 0);
+    totalRow.push(grandTotal);
+    worksheetData.push(totalRow);
+
+    const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    const colWidths = [
+        { wch: 6 },
+        { wch: 12 },
+        { wch: 28 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 20 },
+        { wch: 14 },
+        ...deductionColumns.map(() => ({ wch: 16 })),
+        { wch: 16 },
+    ];
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Deductions Report');
+
+    const kindSlug = params.salaryKindLabel
+        ? params.salaryKindLabel.toLowerCase().replace(/\s+/g, '_')
+        : 'regular';
+    const saveName =
+        fileName ??
+        `Deductions_Report_${kindSlug}_${params.month}_${params.year}_${Date.now()}.xlsx`;
+    XLSX.writeFile(wb, saveName);
+}
+
+function optionsOrgName(selectedDivision?: string, profile?: CompanyProfile): string {
+    if (selectedDivision && String(selectedDivision).trim()) {
+        return String(selectedDivision).trim();
+    }
+    return profile?.companyName || 'Deductions Report';
+}
+
+/** Export regular deductions PDF/Excel; also 2nd salary PDF/Excel when enabled and data exists. */
 export async function exportDeductionsReportBundle(
     month: string,
     profile: CompanyProfile,
     options: {
         format: DeductionsExportFormat;
+        exportType?: 'pdf' | 'excel';
         secondSalaryEnabled: boolean;
         fetchPaysheet: (secondSalary: boolean) => Promise<{ headers: string[]; rows: Record<string, unknown>[] }>;
         filters?: {
@@ -1082,6 +1183,7 @@ export async function exportDeductionsReportBundle(
     const outputColumns = await loadOutputColumns();
     const [year, monthNum] = month.split('-').map(Number);
     const monthName = new Date(year, monthNum - 1).toLocaleDateString('en-US', { month: 'long' });
+    const isExcel = options.exportType === 'excel';
 
     const exportOne = async (secondSalary: boolean) => {
         const { headers, rows } = await options.fetchPaysheet(secondSalary);
@@ -1096,7 +1198,11 @@ export async function exportDeductionsReportBundle(
             filters: options.filters,
         };
 
-        await generateDeductionsReportPdf(rows, headers, params, profile, outputColumns);
+        if (isExcel) {
+            await generateDeductionsReportExcel(rows, headers, params, profile, outputColumns);
+        } else {
+            await generateDeductionsReportPdf(rows, headers, params, profile, outputColumns);
+        }
         exported.push(salaryKindLabel);
     };
 
