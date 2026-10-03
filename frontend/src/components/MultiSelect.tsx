@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Loader2 } from 'lucide-react';
 import {
@@ -11,9 +11,10 @@ import { PAYSLIP_ACCENT_FALLBACK, payslipAccentCssVars } from '@/lib/payslipThem
 
 interface MultiSelectProps {
   label?: string;
-  options: { id: string; name: string }[];
-  selectedIds: string[];
-  onChange: (ids: string[]) => void;
+  options?: any[];
+  selectedIds?: string[];
+  selected?: string[];
+  onChange?: (ids: string[]) => void;
   placeholder?: string;
   disabled?: boolean;
   loading?: boolean;
@@ -64,14 +65,16 @@ function idsMatch(a: string, b: string): boolean {
   return String(a) === String(b);
 }
 
-function isSelected(selectedIds: string[], optionId: string): boolean {
+function isSelected(selectedIds: string[] = [], optionId: string): boolean {
+  if (!Array.isArray(selectedIds)) return false;
   return selectedIds.some((id) => idsMatch(id, optionId));
 }
 
 export const MultiSelect: React.FC<MultiSelectProps> = ({
   label,
-  options,
-  selectedIds,
+  options: rawOptions = [],
+  selectedIds: rawSelectedIds,
+  selected: rawSelected,
   onChange,
   placeholder = 'Select options...',
   disabled = false,
@@ -82,6 +85,14 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   compact = false,
   pill = false,
 }) => {
+  const selectedIds = rawSelectedIds || rawSelected || [];
+  const options = useMemo(() => {
+    return (rawOptions || []).map((opt) => ({
+      id: opt?.id ?? opt?.value ?? String(opt),
+      name: opt?.name ?? opt?.label ?? String(opt),
+    }));
+  }, [rawOptions]);
+
   const isLedger = variant === 'ledger';
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -142,14 +153,26 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       left = Math.max(viewportPad, window.innerWidth - viewportPad - menuWidth);
     }
 
-    setDropdownStyles({
-      position: 'fixed',
-      top: rect.bottom + 4,
-      left,
-      minWidth: minMenuWidth,
-      width: menuWidth,
-      maxWidth: maxMenuWidth,
-      zIndex: 9999,
+    setDropdownStyles((prev) => {
+      if (
+        prev.position === 'fixed' &&
+        prev.top === rect.bottom + 4 &&
+        prev.left === left &&
+        prev.minWidth === minMenuWidth &&
+        prev.width === menuWidth &&
+        prev.maxWidth === maxMenuWidth
+      ) {
+        return prev;
+      }
+      return {
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left,
+        minWidth: minMenuWidth,
+        width: menuWidth,
+        maxWidth: maxMenuWidth,
+        zIndex: 9999,
+      };
     });
   }, [isOpen, options, single]);
 

@@ -7038,5 +7038,65 @@ export const api = {
 
   getCommunicationStats: async () => {
     return apiRequest<any>('/communications/stats', { method: 'GET' });
+  },
+
+  downloadHolidaysPDF: async (params: { year?: string; division?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params.year) query.append('year', params.year);
+    if (params.division) query.append('division', params.division);
+    if (params.search) query.append('search', params.search);
+
+    const token = auth.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/holidays/export/pdf?${query.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to export PDF');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `Holidays_Report_${params.year || 'All'}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  downloadHolidaysXLSX: async (params: { year?: string; division?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params.year) query.append('year', params.year);
+    if (params.division) query.append('division', params.division);
+    if (params.search) query.append('search', params.search);
+
+    const token = auth.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/holidays/export/xlsx?${query.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to export Excel report');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `Holidays_Report_${params.year || 'All'}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   }
 };
