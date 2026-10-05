@@ -144,15 +144,50 @@ function resolveMonthlySalaryZ(employee, salaryBasis, useSecondSalary) {
   return num(employee.gross_salary, 0);
 }
 
+function parseHoursFromGroupName(nameOrCode) {
+  if (!nameOrCode) return null;
+  const str = String(nameOrCode).trim();
+  const match = str.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?)/i) || str.match(/^(\d+(?:\.\d+)?)/);
+  if (match) {
+    const val = parseFloat(match[1]);
+    if (Number.isFinite(val) && val > 0) return val;
+  }
+  return null;
+}
+
+let groupHoursCacheMap = null;
+let groupHoursCacheTime = 0;
+
+function getCachedGroupHours(gid) {
+  if (!gid) return null;
+  if (!groupHoursCacheMap || Date.now() - groupHoursCacheTime > 60000) {
+    try {
+      const EmployeeGroup = require('../../employees/model/EmployeeGroup');
+      EmployeeGroup.find({}).select('_id name code').lean().then((groups) => {
+        const map = new Map();
+        for (const g of groups) {
+          const parsed = parseHoursFromGroupName(g.name) || parseHoursFromGroupName(g.code);
+          if (parsed) map.set(g._id.toString(), parsed);
+        }
+        groupHoursCacheMap = map;
+        groupHoursCacheTime = Date.now();
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  return groupHoursCacheMap?.get(String(gid)) || null;
+}
+
 /**
- * Working hours per day (x): group override → department default → global default.
+ * Working hours per day (x): group override → employee group name/code → department default → global default.
  */
 function resolveWorkingHoursPerDay(merged, employee) {
   const fallback = num(merged.defaultWorkingHoursPerDay, 8) || 8;
   const gid =
     employee?.employee_group_id?._id?.toString?.() ||
-    employee?.employee_group_id?.toString?.() ||
+    (typeof employee?.employee_group_id === 'string' ? employee.employee_group_id : null) ||
     null;
+
+  // 1. Explicit Department OT Settings Group Matrix Override
   if (gid && merged.groupWorkingHours?.length) {
     const row = merged.groupWorkingHours.find(
       (r) => String(r.employeeGroupId) === String(gid)
@@ -161,9 +196,26 @@ function resolveWorkingHoursPerDay(merged, employee) {
       return num(row.hoursPerDay, fallback);
     }
   }
+
+  // 2. Direct Employee Group Name/Code/Doc parsing
+  const groupObj = typeof employee?.employee_group_id === 'object' ? employee.employee_group_id : null;
+  const groupName = groupObj?.name || groupObj?.code || employee?.employeeGroup || employee?.groupName || null;
+  if (groupName) {
+    const parsed = parseHoursFromGroupName(groupName);
+    if (parsed) return parsed;
+  }
+
+  // 3. Employee Group ID cached lookup
+  if (gid) {
+    const cachedHours = getCachedGroupHours(gid);
+    if (cachedHours) return cachedHours;
+  }
+
+  // 4. Department Working Hours
   if (merged.workingHoursPerDay != null && num(merged.workingHoursPerDay, 0) > 0) {
     return num(merged.workingHoursPerDay, fallback);
   }
+
   return fallback;
 }
 
@@ -171,5 +223,6 @@ module.exports = {
   getMergedOtConfig,
   resolveMonthlySalaryZ,
   resolveWorkingHoursPerDay,
+  parseHoursFromGroupName,
   num,
 };
