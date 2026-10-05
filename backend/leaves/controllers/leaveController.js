@@ -2399,73 +2399,100 @@ exports.getDashboardStats = async (req, res) => {
       return validIds.length > 0 ? (validIds.length > 1 ? { $in: validIds } : validIds[0]) : null;
     };
 
+    const empQuery = { is_active: { $ne: false } };
+    let hasEmpFilter = false;
+
     if (employeeId && employeeId !== 'all') {
       const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.employeeId = val;
-        odFilter.employeeId = val;
-      }
-    }
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.department = val;
-        odFilter.department = val;
-      }
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.division_id = val;
-        odFilter.division_id = val;
-      }
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.designation = val;
-        odFilter.designation = val;
-      }
-    }
-    if (group && group !== 'all') {
-      const ids = String(group).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) {
-        const matchedEmps = await Employee.find({ employee_group_id: ids.length > 1 ? { $in: ids } : ids[0] }).select('_id').lean();
-        const empIds = matchedEmps.map(e => e._id);
-        const val = convertToObjectId(empIds.map(String));
+        const val = convertToObjectId(ids);
         if (val) {
-          leaveFilter.employeeId = val;
-          odFilter.employeeId = val;
+          empQuery._id = val;
+          hasEmpFilter = true;
         }
       }
     }
+
+    if (department && department !== 'all') {
+      const ids = String(department).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const val = convertToObjectId(ids);
+        if (val) {
+          empQuery.department_id = val;
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (division && division !== 'all') {
+      const ids = String(division).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const divObjIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+        if (divObjIds.length > 0) {
+          const divisions = await Division.find({ _id: { $in: divObjIds } }).select('departments').lean();
+          let divisionLinkedDeptIds = [];
+          divisions.forEach(div => {
+            if (div.departments) divisionLinkedDeptIds = [...divisionLinkedDeptIds, ...div.departments];
+          });
+          const depts = await Department.find({
+            $or: [{ divisions: { $in: divObjIds } }, { _id: { $in: divisionLinkedDeptIds } }]
+          }).select('_id');
+          const deptIds = depts.map(d => d._id);
+
+          empQuery.$or = [
+            { division_id: { $in: divObjIds } },
+            { department_id: { $in: deptIds } }
+          ];
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (designation && designation !== 'all') {
+      const ids = String(designation).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const val = convertToObjectId(ids);
+        if (val) {
+          empQuery.designation_id = val;
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (group && group !== 'all') {
+      const ids = String(group).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        empQuery.employee_group_id = ids.length > 1 ? { $in: ids } : ids[0];
+        hasEmpFilter = true;
+      }
+    }
+
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      empQuery.$or = [
+        { emp_no: regex },
+        { employee_name: regex },
+        { first_name: regex },
+        { last_name: regex }
+      ];
+      hasEmpFilter = true;
+    }
+
+    if (hasEmpFilter) {
+      const matchedEmps = await Employee.find(empQuery).select('_id').lean();
+      const empIds = matchedEmps.map(e => e._id);
+      const val = convertToObjectId(empIds.map(String));
+      leaveFilter.employeeId = val || { $in: [] };
+      odFilter.employeeId = val || { $in: [] };
+    }
+
     if (leaveType) {
       leaveFilter.leaveType = leaveType;
     }
 
     applyLeaveOdDateRangeOverlap(leaveFilter, fromDate, toDate);
     applyLeaveOdDateRangeOverlap(odFilter, fromDate, toDate);
-
-    if (search && String(search).trim()) {
-      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(searchStr, 'i');
-      const matchedEmployees = await Employee.find({
-        $or: [
-          { emp_no: regex },
-          { employee_name: regex },
-          { first_name: regex },
-          { last_name: regex }
-        ]
-      }).select('_id').lean();
-      const ids = matchedEmployees.map(e => e._id);
-      const idFilter = ids.length > 0 ? { $in: ids } : { $in: [] };
-      leaveFilter.employeeId = idFilter;
-      odFilter.employeeId = idFilter;
-    }
 
     const legacyStatus = status && String(status).trim() ? String(status).trim() : null;
     const leaveStatusVal = leaveStatus != null && String(leaveStatus).trim() !== '' ? String(leaveStatus).trim() : null;

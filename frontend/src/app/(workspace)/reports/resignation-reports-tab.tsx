@@ -25,6 +25,8 @@ import dayjs from 'dayjs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface ResignationRequest {
   _id: string;
@@ -73,6 +75,78 @@ export default function ResignationReportsTab() {
     const [loadingExportPdf, setLoadingExportPdf] = useState(false);
     const [loadingExportExcel, setLoadingExportExcel] = useState(false);
     const [fetchingFilters, setFetchingFilters] = useState(false);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+    const RESIGNATION_COLUMNS: ColumnOption[] = [
+        { key: 'emp_no', label: 'Emp No / EC No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+        { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row.employee_name || row.employeeName || '—' },
+        { key: 'designation', label: 'Designation', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const des = emp.designation_id || emp.designation;
+                if (des && typeof des === 'object' && des.name) return des.name;
+                if (typeof des === 'string' && des.length !== 24) return des;
+            }
+            const raw = row.designation_id || row.designation || row.designationName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const div = emp.division_id || emp.division;
+                if (div && typeof div === 'object' && div.name) return div.name;
+                if (typeof div === 'string' && div.length !== 24) return div;
+            }
+            const raw = row.division_id || row.division || row.divisionName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const dept = emp.department_id || emp.department;
+                if (dept && typeof dept === 'object' && dept.name) return dept.name;
+                if (typeof dept === 'string' && dept.length !== 24) return dept;
+            }
+            const raw = row.department_id || row.department || row.departmentName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'resignationDate', label: 'Resignation Date', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.resignationDate ? dayjs(row.resignationDate).format('YYYY-MM-DD') : '—' },
+        { key: 'noticePeriodDays', label: 'Notice Period (Days)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.noticePeriodDays ?? '—' },
+        { key: 'expectedLastWorkingDay', label: 'Expected LWD', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.expectedLastWorkingDay ? dayjs(row.expectedLastWorkingDay).format('YYYY-MM-DD') : '—' },
+        { key: 'actualLastWorkingDay', label: 'Actual LWD', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.actualLastWorkingDay ? dayjs(row.actualLastWorkingDay).format('YYYY-MM-DD') : '—' },
+        { key: 'reason', label: 'Reason', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.reason || '—' },
+        { key: 'status', label: 'Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.status || '—' },
+    ];
+
+    const openExportModal = (fmt: 'excel' | 'pdf') => {
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
+    };
+
+    const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        try {
+            exportReportWithColumns({
+                title: 'Employee Resignations Report',
+                subtitle: `Exported on ${dayjs().format('YYYY-MM-DD')}`,
+                data: baseFilteredRequests,
+                columns: RESIGNATION_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `Resignations_Report_${dayjs().format('YYYY-MM-DD')}`,
+            });
+            toast.success(`${format.toUpperCase()} downloaded successfully!`);
+            setIsColumnModalOpen(false);
+        } catch (error: any) {
+            toast.error(error.message || 'Export failed');
+        }
+    };
     
     // Hierarchy states
     const [divisions, setDivisions] = useState<Division[]>([]);
@@ -722,21 +796,19 @@ export default function ResignationReportsTab() {
 
                 <div className="flex flex-wrap gap-2">
                     <button
-                        onClick={handleExportPDF}
-                        disabled={loadingExportPdf || loadingExportExcel || loadingData}
+                        onClick={() => openExportModal('pdf')}
                         className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:hover:bg-slate-700 shadow-sm"
                     >
-                        {loadingExportPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        {loadingExportPdf ? 'Generating PDF...' : 'Export PDF'}
+                        <Download className="h-3.5 w-3.5" />
+                        Export PDF
                     </button>
 
                     <button
-                        onClick={handleExportXLSX}
-                        disabled={loadingExportPdf || loadingExportExcel || loadingData}
+                        onClick={() => openExportModal('excel')}
                         className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
                     >
-                        {loadingExportExcel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        {loadingExportExcel ? 'Generating Excel...' : 'Export Excel'}
+                        <Download className="h-3.5 w-3.5" />
+                        Export Excel
                     </button>
                 </div>
             </div>
@@ -1127,6 +1199,16 @@ export default function ResignationReportsTab() {
                     </table>
                 </div>
             </div>
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="Employee Resignations Report"
+                exportFormat={exportFormat}
+                columns={RESIGNATION_COLUMNS}
+                onConfirmExport={handleConfirmExport}
+                loading={loadingExportPdf || loadingExportExcel}
+            />
         </div>
     );
 }

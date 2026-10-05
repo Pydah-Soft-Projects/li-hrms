@@ -281,91 +281,79 @@ exports.getAttendanceReport = async (req, res) => {
                     ]
                 }).select('_id name').lean();
             } else if (groupBy === 'employee') {
-                const activeDivId = Array.isArray(divisionId) ? divisionId[0] : (String(divisionId).split(',').filter(id => id && id !== 'all')[0]);
-                const activeDeptId = Array.isArray(departmentId) ? departmentId[0] : (String(departmentId).split(',').filter(id => id && id !== 'all')[0]);
+                const empFilter = { is_active: { $ne: false } };
 
-                if (!activeDeptId) {
-                    return res.status(400).json({ success: false, message: 'Department ID is required for employee grouping' });
+                if (employeeId && employeeId !== 'all') {
+                    const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+                    if (empIds.length > 0) empFilter._id = empIds.length > 1 ? { $in: empIds } : empIds[0];
                 }
 
-                // Prioritize department_id for employee grouping
-                const empFilter = { is_active: { $ne: false }, department_id: activeDeptId };
+                if (departmentId && departmentId !== 'all') {
+                    const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+                    if (deptIds.length > 0) empFilter.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
+                }
+
+                if (divisionId && divisionId !== 'all') {
+                    const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+                    if (divIds.length > 0) {
+                        const divisions = await Division.find({ _id: { $in: divIds } }).select('departments').lean();
+                        let divisionLinkedDeptIds = [];
+                        divisions.forEach(div => {
+                            if (div.departments) divisionLinkedDeptIds = [...divisionLinkedDeptIds, ...div.departments];
+                        });
+                        const depts = await Department.find({
+                            $or: [{ divisions: { $in: divIds } }, { _id: { $in: divisionLinkedDeptIds } }]
+                        }).select('_id');
+                        const deptIds = depts.map(d => d._id);
+
+                        empFilter.$or = [
+                            { division_id: { $in: divIds } },
+                            { department_id: { $in: deptIds } }
+                        ];
+                    }
+                }
+
                 if (employeeGroupId && employeeGroupId !== 'all') {
                     const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
-                    empFilter.employee_group_id = { $in: groupIds };
+                    if (groupIds.length > 0) empFilter.employee_group_id = { $in: groupIds };
                 }
 
                 if (designationId && designationId !== 'all') {
                     const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
-                    empFilter.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+                    if (desigIds.length > 0) empFilter.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
                 }
 
-                if (activeDivId) {
-                    // Division is already implicitly handled by depts, but we can add it for strictness if needed
-                }
-
-                const emps = await Employee.find(empFilter).select('employee_name emp_no').lean();
+                const emps = await Employee.find(empFilter)
+                    .select('employee_name emp_no department_id division_id designation_id employee_group_id')
+                    .populate('department_id', 'name')
+                    .populate('division_id', 'name')
+                    .populate('designation_id', 'name')
+                    .populate('employee_group_id', 'name')
+                    .lean();
                 children = emps.map(e => ({
                     _id: e._id,
                     name: `${e.employee_name} (${e.emp_no})`,
                     employee_name: e.employee_name,
-                    emp_no: e.emp_no
+                    emp_no: e.emp_no,
+                    department_id: e.department_id,
+                    division_id: e.division_id,
+                    designation_id: e.designation_id,
+                    employee_group_id: e.employee_group_id,
+                    employee: e
                 }));
             }
 
-            // For each child, calculate stats
-            for (const child of children) {
-                let childEmpNos = [];
-                let total = 0;
-
-                if (groupBy === 'employee') {
-                    childEmpNos = [child.emp_no];
-                    total = 1;
-                } else {
-                    const childEmpFilter = { is_active: { $ne: false } };
-
-                    if (groupBy === 'division') {
-                        // Get departments linked to this division
-                        const division = await Division.findById(child._id).select('departments').lean();
-                        const divisionLinkedDeptIds = (division && division.departments) ? division.departments : [];
-                        const depts = await Department.find({
-                            $or: [
-                                { divisions: child._id },
-                                { _id: { $in: divisionLinkedDeptIds } }
-                            ]
-                        }).select('_id');
-                        const deptIds = depts.map(d => d._id);
-
-                        childEmpFilter.$or = [
-                            { division_id: child._id },
-                            { department_id: { $in: deptIds } }
-                        ];
-                    } else {
-                        // groupBy department
-                        childEmpFilter.department_id = child._id;
-                        // If we are showing departments for a specific division, filter employees by that division too
-                        if (divisionId && divisionId !== 'all') {
-                            childEmpFilter.division_id = divisionId;
-                        }
-                    }
-
-                    const childEmployees = await Employee.find(childEmpFilter).select('emp_no');
-                    childEmpNos = childEmployees.map(e => e.emp_no);
-                    total = childEmployees.length;
-                }
-
+            if (groupBy === 'employee') {
+                const allEmpNos = children.map(c => c.emp_no).filter(Boolean);
                 const scopedEmpNos = query.employeeNumber?.$in;
-                const childQuery = {
-                    ...query,
-                    employeeNumber: { $in: scopedEmpNos ? childEmpNos.filter(empNo => scopedEmpNos.includes(empNo)) : childEmpNos }
-                };
+                const batchEmpNos = scopedEmpNos ? allEmpNos.filter(eno => scopedEmpNos.includes(eno)) : allEmpNos;
 
-                const [childStatsData, childLeaveCount] = await Promise.all([
+                const [batchStats, batchLeaves] = await Promise.all([
                     AttendanceDaily.aggregate([
-                        { $match: childQuery },
+                        { $match: { ...query, employeeNumber: { $in: batchEmpNos } } },
                         {
                             $group: {
-                                _id: null,
+                                _id: "$employeeNumber",
                                 present: { $sum: "$payableShifts" },
                                 absent: { $sum: { $cond: [{ $eq: ['$status', 'ABSENT'] }, 1, 0] } },
                                 late: { $sum: { $cond: [{ $gt: ['$totalLateInMinutes', 0] }, 1, 0] } },
@@ -375,64 +363,260 @@ exports.getAttendanceReport = async (req, res) => {
                             }
                         }
                     ]),
-                    Leave.countDocuments({
-                        status: 'approved',
-                        isActive: true,
-                        $or: [{ fromDate: { $lte: endDate || new Date() }, toDate: { $gte: startDate || new Date() } }],
-                        emp_no: { $in: childEmpNos }
-                    })
+                    Leave.aggregate([
+                        {
+                            $match: {
+                                status: 'approved',
+                                isActive: true,
+                                emp_no: { $in: batchEmpNos },
+                                $or: [{ fromDate: { $lte: endDate || new Date() }, toDate: { $gte: startDate || new Date() } }]
+                            }
+                        },
+                        { $group: { _id: "$emp_no", count: { $sum: 1 } } }
+                    ])
                 ]);
 
-                const cStats = childStatsData[0] || { present: 0, absent: 0, holiday: 0, late: 0, od: 0 };
+                const statsMap = {};
+                batchStats.forEach(s => { statsMap[s._id] = s; });
 
-                // Calculate expected working days for this child group
-                let totalWO = 0, totalHOL = 0;
-                childEmpNos.forEach(eno => {
+                const leaveMap = {};
+                batchLeaves.forEach(l => { leaveMap[l._id] = l.count; });
+
+                for (const child of children) {
+                    const eno = child.emp_no;
+                    const cStats = statsMap[eno] || { present: 0, absent: 0, late: 0, od: 0, lateMinutes: 0, onDuty: 0 };
+                    const childLeaveCount = leaveMap[eno] || 0;
                     const nw = nonWorkingMap[eno] || { wo: 0, hol: 0 };
-                    totalWO += nw.wo;
-                    totalHOL += nw.hol;
-                });
-                const avgWO = total > 0 ? totalWO / total : 0;
-                const avgHOL = total > 0 ? totalHOL / total : 0;
+                    const avgWO = nw.wo;
+                    const avgHOL = nw.hol;
+                    const expectedWorkingDays = Math.max(0, daysInRange - avgWO - avgHOL);
+                    const trueAbsent = Math.max(0, expectedWorkingDays - (cStats.present || 0) - (cStats.od || 0) - childLeaveCount);
 
-                const expectedWorkingDays = Math.max(0, daysInRange - avgWO - avgHOL);
-                const trueAbsent = Math.max(0, expectedWorkingDays - (cStats.present || 0) - (cStats.od || 0) - (childLeaveCount || 0));
+                    summaries.push({
+                        id: child._id,
+                        name: child.name || child.employee_name,
+                        employee_name: child.employee_name,
+                        emp_no: child.emp_no,
+                        employee: child.employee || {
+                            emp_no: child.emp_no,
+                            employee_name: child.employee_name,
+                            department_id: child.department_id,
+                            division_id: child.division_id,
+                            designation_id: child.designation_id
+                        },
+                        department_id: child.department_id,
+                        division_id: child.division_id,
+                        designation_id: child.designation_id,
+                        totalCount: 1,
+                        present: Number((cStats.present || 0).toFixed(1)),
+                        absent: Number(trueAbsent.toFixed(1)),
+                        avgPresent: Number((cStats.present || 0).toFixed(1)),
+                        avgAbsent: Number(trueAbsent.toFixed(1)),
+                        late: cStats.late || 0,
+                        lateMinutes: cStats.lateMinutes || 0,
+                        onDuty: cStats.onDuty || 0,
+                        onLeave: childLeaveCount,
+                        presentPercent: expectedWorkingDays > 0 ?
+                            Math.min(100, (((cStats.present || 0) + (cStats.od || 0)) / expectedWorkingDays * 100)).toFixed(1) : "0.0",
+                        lates: cStats.late || 0,
+                        leave: childLeaveCount,
+                        od: cStats.od || 0,
+                        wo: Number(avgWO.toFixed(1)),
+                        hol: Number(avgHOL.toFixed(1)),
+                        totalPresent: cStats.present || 0,
+                        totalAbsent: trueAbsent,
+                        totalLate: cStats.late || 0,
+                        totalOD: cStats.od || 0,
+                        totalWO: Number(avgWO.toFixed(1)),
+                        totalHOL: Number(avgHOL.toFixed(1))
+                    });
+                }
+            } else {
+                const [allDivisions, allDepartments, allEmployees] = await Promise.all([
+                    Division.find({ isActive: { $ne: false } }).select('_id name departments').lean(),
+                    Department.find({ isActive: { $ne: false } }).select('_id divisions').lean(),
+                    Employee.find({ is_active: { $ne: false } }).select('emp_no division_id department_id').lean()
+                ]);
 
-                summaries.push({
-                    id: child._id,
-                    name: child.name || child.employee_name,
-                    totalCount: total,
-                    present: Number((cStats.present || 0).toFixed(1)),
-                    absent: Number(trueAbsent.toFixed(1)),
-                    avgPresent: total > 0 ? Number(((cStats.present || 0) / total).toFixed(1)) : 0,
-                    avgAbsent: total > 0 ? Number((trueAbsent / total).toFixed(1)) : 0,
-                    late: cStats.late,
-                    lateMinutes: cStats.lateMinutes || 0,
-                    onDuty: cStats.onDuty || 0,
-                    onLeave: childLeaveCount,
-                    presentPercent: expectedWorkingDays > 0 ?
-                        Math.min(100, (((cStats.present || 0) + (cStats.od || 0)) / (expectedWorkingDays * total) * 100)).toFixed(1) : "0.0",
-                    lates: cStats.late,
-                    leave: childLeaveCount,
-                    od: cStats.od,
-                    wo: Number(avgWO.toFixed(1)),
-                    hol: Number(avgHOL.toFixed(1)),
-                    totalPresent: cStats.present,
-                    totalAbsent: trueAbsent,
-                    totalLate: cStats.late,
-                    totalOD: cStats.od,
-                    totalWO: Number(avgWO.toFixed(1)),
-                    totalHOL: Number(avgHOL.toFixed(1))
+                // deptId (string) -> Set of divisionId (string)
+                const deptToDivMap = {};
+                allDepartments.forEach(dept => {
+                    const deptId = String(dept._id);
+                    if (!deptToDivMap[deptId]) deptToDivMap[deptId] = new Set();
+                    if (Array.isArray(dept.divisions)) {
+                        dept.divisions.forEach(divId => deptToDivMap[deptId].add(String(divId)));
+                    }
                 });
+
+                allDivisions.forEach(div => {
+                    const divId = String(div._id);
+                    if (Array.isArray(div.departments)) {
+                        div.departments.forEach(deptId => {
+                            const dStr = String(deptId);
+                            if (!deptToDivMap[dStr]) deptToDivMap[dStr] = new Set();
+                            deptToDivMap[dStr].add(divId);
+                        });
+                    }
+                });
+
+                const childEmpNosMap = {};
+                if (groupBy === 'division') {
+                    const divToEmpNosMap = {};
+                    allDivisions.forEach(div => { divToEmpNosMap[String(div._id)] = new Set(); });
+
+                    allEmployees.forEach(emp => {
+                        if (!emp.emp_no) return;
+                        if (emp.division_id) {
+                            const divId = String(emp.division_id);
+                            if (divToEmpNosMap[divId]) divToEmpNosMap[divId].add(emp.emp_no);
+                        }
+                        if (emp.department_id) {
+                            const deptId = String(emp.department_id);
+                            const divSet = deptToDivMap[deptId];
+                            if (divSet) {
+                                divSet.forEach(divId => {
+                                    if (divToEmpNosMap[divId]) divToEmpNosMap[divId].add(emp.emp_no);
+                                });
+                            }
+                        }
+                    });
+
+                    for (const child of children) {
+                        childEmpNosMap[String(child._id)] = Array.from(divToEmpNosMap[String(child._id)] || []);
+                    }
+                } else {
+                    const deptToEmpNosMap = {};
+                    allDepartments.forEach(dept => { deptToEmpNosMap[String(dept._id)] = new Set(); });
+
+                    allEmployees.forEach(emp => {
+                        if (!emp.emp_no || !emp.department_id) return;
+                        const deptId = String(emp.department_id);
+                        if (deptToEmpNosMap[deptId]) deptToEmpNosMap[deptId].add(emp.emp_no);
+                    });
+
+                    for (const child of children) {
+                        childEmpNosMap[String(child._id)] = Array.from(deptToEmpNosMap[String(child._id)] || []);
+                    }
+                }
+
+                const allChildEmpNos = [...new Set(Object.values(childEmpNosMap).flat())];
+                const scopedEmpNos = query.employeeNumber?.$in;
+                const batchEmpNos = scopedEmpNos ? allChildEmpNos.filter(eno => scopedEmpNos.includes(eno)) : allChildEmpNos;
+
+                const [batchStats, batchLeaves] = await Promise.all([
+                    AttendanceDaily.aggregate([
+                        { $match: { ...query, employeeNumber: { $in: batchEmpNos } } },
+                        {
+                            $group: {
+                                _id: "$employeeNumber",
+                                present: { $sum: "$payableShifts" },
+                                absent: { $sum: { $cond: [{ $eq: ['$status', 'ABSENT'] }, 1, 0] } },
+                                late: { $sum: { $cond: [{ $gt: ['$totalLateInMinutes', 0] }, 1, 0] } },
+                                od: { $sum: { $cond: [{ $gt: ['$odHours', 0] }, 1, 0] } },
+                                lateMinutes: { $sum: "$totalLateInMinutes" },
+                                onDuty: { $sum: { $cond: [{ $gt: ["$odHours", 0] }, 1, 0] } }
+                            }
+                        }
+                    ]),
+                    Leave.aggregate([
+                        {
+                            $match: {
+                                status: 'approved',
+                                isActive: true,
+                                emp_no: { $in: batchEmpNos },
+                                $or: [{ fromDate: { $lte: endDate || new Date() }, toDate: { $gte: startDate || new Date() } }]
+                            }
+                        },
+                        { $group: { _id: "$emp_no", count: { $sum: 1 } } }
+                    ])
+                ]);
+
+                const statsMap = {};
+                batchStats.forEach(s => { statsMap[s._id] = s; });
+
+                const leaveMap = {};
+                batchLeaves.forEach(l => { leaveMap[l._id] = l.count; });
+
+                for (const child of children) {
+                    const rawEmpNos = childEmpNosMap[String(child._id)] || [];
+                    const childEmpNos = scopedEmpNos ? rawEmpNos.filter(eno => scopedEmpNos.includes(eno)) : rawEmpNos;
+                    const total = childEmpNos.length;
+
+                    let cStats = { present: 0, absent: 0, late: 0, od: 0, lateMinutes: 0, onDuty: 0 };
+                    let childLeaveCount = 0;
+                    let totalWO = 0, totalHOL = 0;
+
+                    childEmpNos.forEach(eno => {
+                        const s = statsMap[eno];
+                        if (s) {
+                            cStats.present += s.present || 0;
+                            cStats.absent += s.absent || 0;
+                            cStats.late += s.late || 0;
+                            cStats.od += s.od || 0;
+                            cStats.lateMinutes += s.lateMinutes || 0;
+                            cStats.onDuty += s.onDuty || 0;
+                        }
+                        childLeaveCount += leaveMap[eno] || 0;
+                        const nw = nonWorkingMap[eno] || { wo: 0, hol: 0 };
+                        totalWO += nw.wo;
+                        totalHOL += nw.hol;
+                    });
+
+                    const avgWO = total > 0 ? totalWO / total : 0;
+                    const avgHOL = total > 0 ? totalHOL / total : 0;
+
+                    const expectedWorkingDays = Math.max(0, daysInRange - avgWO - avgHOL);
+                    const trueAbsent = Math.max(0, expectedWorkingDays - (cStats.present || 0) - (cStats.od || 0) - (childLeaveCount || 0));
+
+                    summaries.push({
+                        id: child._id,
+                        name: child.name || child.employee_name,
+                        employee_name: child.employee_name,
+                        emp_no: child.emp_no,
+                        employee: child.employee || {
+                            emp_no: child.emp_no,
+                            employee_name: child.employee_name,
+                            department_id: child.department_id,
+                            division_id: child.division_id,
+                            designation_id: child.designation_id
+                        },
+                        department_id: child.department_id,
+                        division_id: child.division_id,
+                        designation_id: child.designation_id,
+                        totalCount: total,
+                        present: Number((cStats.present || 0).toFixed(1)),
+                        absent: Number(trueAbsent.toFixed(1)),
+                        avgPresent: total > 0 ? Number(((cStats.present || 0) / total).toFixed(1)) : 0,
+                        avgAbsent: total > 0 ? Number((trueAbsent / total).toFixed(1)) : 0,
+                        late: cStats.late || 0,
+                        lateMinutes: cStats.lateMinutes || 0,
+                        onDuty: cStats.onDuty || 0,
+                        onLeave: childLeaveCount,
+                        presentPercent: expectedWorkingDays > 0 ?
+                            Math.min(100, (((cStats.present || 0) + (cStats.od || 0)) / (expectedWorkingDays * (total || 1)) * 100)).toFixed(1) : "0.0",
+                        lates: cStats.late || 0,
+                        leave: childLeaveCount,
+                        od: cStats.od || 0,
+                        wo: Number(avgWO.toFixed(1)),
+                        hol: Number(avgHOL.toFixed(1)),
+                        totalPresent: cStats.present || 0,
+                        totalAbsent: trueAbsent,
+                        totalLate: cStats.late || 0,
+                        totalOD: cStats.od || 0,
+                        totalWO: Number(avgWO.toFixed(1)),
+                        totalHOL: Number(avgHOL.toFixed(1))
+                    });
+                }
             }
         }
 
         // Manual join for employee details
         const allEmpNos = [...new Set(attendance.map(a => a.employeeNumber))];
         const employeesDetails = await Employee.find({ emp_no: { $in: allEmpNos } })
-            .select('emp_no employee_name department_id division_id doj leftDate')
+            .select('emp_no employee_name department_id division_id designation_id doj leftDate')
             .populate('department_id', 'name')
             .populate('division_id', 'name')
+            .populate('designation_id', 'name')
             .lean();
 
         const employeeMap = employeesDetails.reduce((acc, e) => {

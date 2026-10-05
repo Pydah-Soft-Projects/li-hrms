@@ -21,6 +21,8 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { format } from 'date-fns';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface AttendanceSummary {
     id: string;
@@ -43,6 +45,7 @@ interface AttendanceSummary {
     totalLate?: number;
     totalOD?: number;
     lateMinutes: number;
+    employee?: any;
 }
 
 interface AttendanceRecord {
@@ -116,6 +119,7 @@ export default function AttendanceReportsTab() {
     const [summaries, setSummaries] = useState<AttendanceSummary[]>([]);
 
     // Export Dialog states
+    const [isExportLoading, setIsExportLoading] = useState(false);
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [exportParams, setExportParams] = useState({
         startDate: dayjs().startOf('month').format('YYYY-MM-DD'),
@@ -129,12 +133,13 @@ export default function AttendanceReportsTab() {
     const loadReport = useCallback(async (pageToLoad: number = page) => {
         setLoading(true);
         try {
-            // Determine groupBy based on drilldownLevel
-            let groupBy: string | undefined;
-            if (viewMode === 'abstract') {
-                if (drilldownLevel === 'all') groupBy = 'division';
-                else if (drilldownLevel === 'division') groupBy = 'department';
-                else if (drilldownLevel === 'department') groupBy = 'employee';
+            let groupBy: string | undefined = undefined;
+            if (drilldownLevel === 'all') {
+                groupBy = 'division';
+            } else if (drilldownLevel === 'division') {
+                groupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                groupBy = 'employee';
             }
 
             const params: any = {
@@ -169,11 +174,11 @@ export default function AttendanceReportsTab() {
                 params.endDate = endDate;
             }
 
-            if (departmentIds.length > 0) params.departmentId = departmentIds;
-            if (divisionIds.length > 0) params.divisionId = divisionIds;
-            if (designationIds.length > 0) params.designationId = designationIds;
-            if (employeeIds.length > 0) params.employeeId = employeeIds;
-            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds;
+            if (departmentIds.length > 0) params.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) params.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) params.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) params.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds.join(',');
 
             const response = await api.getAttendanceReportSummary(params);
             if (response.success) {
@@ -339,81 +344,251 @@ export default function AttendanceReportsTab() {
         }
     };
 
-    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', usePageFilters: boolean = false) => {
-        const toastId = toast.loading(`Preparing your ${format.toUpperCase()} report...`);
+    const ATTENDANCE_COLUMNS: ColumnOption[] = useMemo(() => [
+        { key: 'emp_no', label: 'EC No.', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : null) || (typeof row.employeeNumber === 'string' && row.employeeNumber.length !== 24 ? row.employeeNumber : null) || (typeof row.empNo === 'string' && row.empNo.length !== 24 ? row.empNo : null) || (typeof row.id === 'string' && row.id.length !== 24 ? row.id : null) || '—' },
+        { key: 'employee_name', label: 'Name of the Employee', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.employee_name || row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee_name || row.name || '—' },
+        { key: 'designation', label: 'Designation', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employee || row.employeeId || row.employee_id;
+            if (emp && typeof emp === 'object') {
+                const des = emp.designation_id || emp.designation;
+                if (des && typeof des === 'object' && des.name) return des.name;
+                if (typeof des === 'string' && des.length !== 24) return des;
+            }
+            const raw = row.designation_id || row.designation || row.designationName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.division_id?.name || row.employeeId?.division_id?.name || row.division_id?.name || row.division || '—' },
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.department_id?.name || row.employeeId?.department_id?.name || row.department_id?.name || row.department || '—' },
+        { key: 'group', label: 'Group', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.employee?.group_id?.name || row.employeeId?.group_id?.name || row.group || '—' },
+        { key: 'present', label: 'PRESENT DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.present === 'number') return row.present;
+            if (typeof row.totalPresent === 'number') return row.totalPresent;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('PRESENT_FULL') || st === 'PRESENT') return 1;
+                if (st.includes('HALF_DAY') || st === 'PARTIAL') return 0.5;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'absent', label: 'ABSENT DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.absent === 'number') return row.absent;
+            if (typeof row.totalAbsent === 'number') return row.totalAbsent;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('ABSENT')) return 1;
+                if (st.includes('HALF_DAY')) return 0.5;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'leave', label: 'LEAVE DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.leave === 'number') return row.leave;
+            if (typeof row.totalLeave === 'number') return row.totalLeave;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('LEAVE')) return 1;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'cl', label: 'LEAVE DAYS - CL', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.cl ?? 0 },
+        { key: 'ccl', label: 'LEAVE DAYS - CCL', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.ccl ?? 0 },
+        { key: 'lop', label: 'LEAVE DAYS - LOP', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.lop ?? 0 },
+        { key: 'wo', label: 'WEEK OFFS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.wo === 'number') return row.wo;
+            if (typeof row.totalWO === 'number') return row.totalWO;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('WEEK_OFF') || st === 'WO') return 1;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'totalDays', label: 'TOTAL DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.totalCount ?? row.daysInRange ?? row.totalDays ?? 1 },
+        { key: 'late', label: 'LATES / EARLY OUTS', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.late ?? row.totalLateInMinutes ?? 0 },
+        { key: 'absDeduction', label: 'Deduction Days - ABS (extra)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.absDeduction ?? row.absentDeduction ?? 0 },
+        { key: 'lopDeduction', label: 'Deduction Days - LOP', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lopDeduction ?? row.lop ?? 0 },
+        { key: 'lateDeduction', label: 'Deduction Days - Late/Early out related', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lateDeduction ?? 0 },
+        { key: 'totalPaidDays', label: 'Total Paid Days', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.totalPaidDays === 'number') return row.totalPaidDays;
+            if (typeof row.paidDays === 'number') return row.paidDays;
+            if (typeof row.payableShifts === 'number') return row.payableShifts;
+            const p = (typeof row.status === 'string' && (row.status.toUpperCase().includes('PRESENT_FULL') || row.status.toUpperCase() === 'PRESENT')) ? 1 : (typeof row.status === 'string' && (row.status.toUpperCase().includes('HALF_DAY') || row.status.toUpperCase() === 'PARTIAL')) ? 0.5 : (row.present || 0);
+            const w = (typeof row.status === 'string' && (row.status.toUpperCase().includes('WEEK_OFF') || row.status.toUpperCase() === 'WO')) ? 1 : (row.wo || 0);
+            return p + w;
+        }},
+    ], []);
+
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+    const openColumnExportModal = (fmt: 'excel' | 'pdf') => {
+        setIsExportDialogOpen(false);
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
+    };
+
+    const aggregateRecordsByEmployee = (rawRecords: any[]) => {
+        if (!rawRecords || rawRecords.length === 0) return [];
+
+        const empCountMap = new Map<string, number>();
+        rawRecords.forEach((row: any) => {
+            const empNo = row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || row.emp_no || row.employeeNumber || row.empNo || row.id;
+            const key = empNo && empNo !== '—' ? String(empNo) : (row.employee?.employee_name || row.employeeId?.employee_name || row.employee_name || row.name || 'unknown');
+            empCountMap.set(key, (empCountMap.get(key) || 0) + 1);
+        });
+
+        const hasDuplicates = Array.from(empCountMap.values()).some(count => count > 1);
+        if (!hasDuplicates) {
+            return rawRecords;
+        }
+
+        const empMap = new Map<string, any>();
+        rawRecords.forEach((row: any) => {
+            const empNo = row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || row.emp_no || row.employeeNumber || row.empNo || row.id;
+            const empKey = empNo && empNo !== '—' ? String(empNo) : (row.employee?.employee_name || row.employeeId?.employee_name || row.employee_name || row.name || 'unknown');
+
+            if (!empMap.has(empKey)) {
+                empMap.set(empKey, {
+                    ...row,
+                    emp_no: empNo,
+                    present: 0,
+                    absent: 0,
+                    leave: 0,
+                    cl: 0,
+                    ccl: 0,
+                    lop: 0,
+                    wo: 0,
+                    totalDays: 0,
+                    late: 0,
+                    absDeduction: 0,
+                    lopDeduction: 0,
+                    lateDeduction: 0,
+                    totalPaidDays: 0,
+                });
+            }
+
+            const aggregated = empMap.get(empKey)!;
+            aggregated.totalDays += 1;
+
+            if (typeof row.present === 'number') aggregated.present += row.present;
+            else if (typeof row.totalPresent === 'number') aggregated.present += row.totalPresent;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('PRESENT_FULL') || st === 'PRESENT') aggregated.present += 1;
+                else if (st.includes('HALF_DAY') || st === 'PARTIAL') aggregated.present += 0.5;
+            }
+
+            if (typeof row.absent === 'number') aggregated.absent += row.absent;
+            else if (typeof row.totalAbsent === 'number') aggregated.absent += row.totalAbsent;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('ABSENT')) aggregated.absent += 1;
+                else if (st.includes('HALF_DAY')) aggregated.absent += 0.5;
+            }
+
+            if (typeof row.wo === 'number') aggregated.wo += row.wo;
+            else if (typeof row.totalWO === 'number') aggregated.wo += row.totalWO;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('WEEK_OFF') || st === 'WO') aggregated.wo += 1;
+            }
+
+            if (typeof row.leave === 'number') aggregated.leave += row.leave;
+            else if (typeof row.totalLeave === 'number') aggregated.leave += row.totalLeave;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('LEAVE')) aggregated.leave += 1;
+            }
+
+            if (typeof row.late === 'number') aggregated.late += row.late;
+            else if (typeof row.totalLateInMinutes === 'number') aggregated.late += row.totalLateInMinutes;
+
+            aggregated.totalPaidDays = aggregated.present + aggregated.wo;
+        });
+
+        return Array.from(empMap.values());
+    };
+
+    const handleConfirmColumnExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        setIsExportLoading(true);
         try {
+            let rawData: any[] = [];
             const params: any = {
-                divisionId: divisionIds,
-                departmentId: departmentIds,
-                designationId: designationIds,
-                employeeId: employeeIds,
-                employeeGroupId: employeeGroupIds,
+                page: 1,
+                limit: 100000,
+                search: searchQuery,
                 groupBy: 'employee'
             };
 
-            if (usePageFilters) {
-                if (dateMode === 'monthly') {
-                    params.month = selectedMonth;
-                    params.year = selectedYear;
-                } else if (dateMode === 'pay_cycle') {
-                    const startDay = payrollStartDay;
-                    const year = parseInt(selectedYear);
-                    const month = parseInt(selectedMonth);
-                    if (startDay === 1) {
-                        params.startDate = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
-                        params.endDate = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
-                    } else {
-                        const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
-                        const prevMonthStart = currentMonthStart.subtract(1, 'month');
-                        params.startDate = prevMonthStart.format('YYYY-MM-DD');
-                        params.endDate = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
-                    }
+            if (dateMode === 'monthly') {
+                params.month = selectedMonth;
+                params.year = selectedYear;
+            } else if (dateMode === 'pay_cycle') {
+                const startDay = payrollStartDay;
+                const year = parseInt(selectedYear);
+                const month = parseInt(selectedMonth);
+                if (startDay === 1) {
+                    params.startDate = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
+                    params.endDate = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
                 } else {
-                    params.startDate = startDate;
-                    params.endDate = endDate;
+                    const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
+                    const prevMonthStart = currentMonthStart.subtract(1, 'month');
+                    params.startDate = prevMonthStart.format('YYYY-MM-DD');
+                    params.endDate = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
                 }
             } else {
-                params.startDate = exportParams.startDate;
-                params.endDate = exportParams.endDate;
-                if (exportParams.strict) params.strict = true;
-
-                // Sync with page's month/year if not in range mode
-                if (dateMode === 'monthly') {
-                    params.month = selectedMonth;
-                    params.year = selectedYear;
-                    delete params.startDate;
-                    delete params.endDate;
-                }
+                params.startDate = startDate;
+                params.endDate = endDate;
             }
 
-            let blob;
-            let extension;
-            if (format === 'xlsx') {
-                blob = await api.exportAttendanceReport(params);
-                extension = 'xlsx';
+            if (departmentIds.length > 0) params.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) params.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) params.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) params.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds.join(',');
+
+            const response = await api.getAttendanceReportSummary(params);
+            if (response.success && response.summaries && response.summaries.length > 0) {
+                rawData = response.summaries;
+            } else if (response.success && response.data && response.data.length > 0) {
+                rawData = response.data;
             } else {
-                blob = await api.exportAttendanceReportPDF(params);
-                extension = 'pdf';
+                rawData = records && records.length > 0 ? records : summaries;
             }
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const dateStr = params.startDate ? `${params.startDate}_to_${params.endDate}` : `${params.month}_${params.year}`;
-            a.download = `attendance_report_${dateStr}.${extension}`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            toast.success(`${format.toUpperCase()} report downloaded successfully`, { id: toastId });
+            const dataToExport = aggregateRecordsByEmployee(rawData);
+            exportReportWithColumns({
+                title: 'REPORT ON ATTENDANCE',
+                subtitle: 'Parameters are as per Department, Division, Designation, Group, Date Range, etc',
+                data: dataToExport,
+                columns: ATTENDANCE_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `Attendance_Report_${startDate}_to_${endDate}`,
+            });
+            toast.success(`${format.toUpperCase()} attendance report downloaded successfully!`);
+            setIsColumnModalOpen(false);
             setIsExportDialogOpen(false);
         } catch (error: any) {
             console.error('Export error:', error);
-            toast.error(error.message || 'Export failed', { id: toastId });
+            toast.error(error.message || 'Export failed');
+        } finally {
+            setIsExportLoading(false);
         }
     };
 
+    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', usePageFilters: boolean = false) => {
+        openColumnExportModal(format === 'xlsx' ? 'excel' : 'pdf');
+    };
+
     const navigateTo = (level: 'all' | 'division' | 'department' | 'employee', id?: string) => {
+        setLoading(true);
+        setSummaries([]);
+        setRecords([]);
         if (level === 'employee') {
             setViewMode('detailed');
             if (id) setEmployeeIds([id]);
@@ -514,11 +689,13 @@ export default function AttendanceReportsTab() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {loading && summaries.length === 0 ? (
+                                {loading ? (
                                     <tr>
                                         <td colSpan={12} className="py-20 text-center">
                                             <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mx-auto" />
-                                            <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Aggregating Data...</p>
+                                            <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                Loading {drilldownLevel === 'all' ? 'Divisions' : drilldownLevel === 'division' ? 'Departments' : 'Employees'}...
+                                            </p>
                                         </td>
                                     </tr>
                                 ) : summaries.length === 0 ? (
@@ -1118,6 +1295,16 @@ export default function AttendanceReportsTab() {
                     </div>
                 </div>
             )}
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="Attendance Report"
+                exportFormat={exportFormat}
+                columns={ATTENDANCE_COLUMNS}
+                onConfirmExport={handleConfirmColumnExport}
+                loading={isExportLoading}
+            />
         </div>
     );
 }

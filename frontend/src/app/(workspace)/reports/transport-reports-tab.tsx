@@ -31,6 +31,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface TransportRequest {
   _id: string;
@@ -272,23 +274,50 @@ export default function TransportReportsTab() {
     }
   }, [subView, fetchRequests, fetchBusReports]);
 
-  // Export Requests to Excel
-  const handleExportRequests = async () => {
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const TRANSPORT_COLUMNS: ColumnOption[] = [
+    { key: 'emp_no', label: 'Emp No / ID', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+    { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row.employee_name || '—' },
+    { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.department_id?.name || row.employee_id?.department_id?.name || row.department || '—' },
+    { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.division_id?.name || row.employee_id?.division_id?.name || row.division || '—' },
+    { key: 'route_name', label: 'Route Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.routeName || row.route?.name || '—' },
+    { key: 'pickup_point', label: 'Pickup Point', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.pickupPoint || row.stopName || '—' },
+    { key: 'vehicle_no', label: 'Vehicle / Bus No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.vehicleNo || row.busNo || '—' },
+    { key: 'status', label: 'Pass / Request Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.status || '—' },
+    { key: 'academicYear', label: 'Academic Year', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.academicYear || '—' },
+  ];
+
+  const openExportModal = (fmt: 'excel' | 'pdf') => {
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    setExportingRequests(true);
     try {
-      setExportingRequests(true);
-      toast.loading('Generating Excel export...', { id: 'transport-export' });
-      await api.exportTransportReports({
-        search: debouncedSearchRequests,
-        status: statusFilter,
-        academicYear: academicYearFilter,
+      exportReportWithColumns({
+        title: 'Transport Pass & Allocations Report',
+        subtitle: `Generated on ${dayjs().format('YYYY-MM-DD')}`,
+        data: requests,
+        columns: TRANSPORT_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Transport_Report_${dayjs().format('YYYY-MM-DD')}`,
       });
-      toast.success('Transport report downloaded successfully', { id: 'transport-export' });
+      toast.success(`${format.toUpperCase()} transport report downloaded successfully`);
+      setIsColumnModalOpen(false);
     } catch (err: any) {
       console.error('Export error:', err);
-      toast.error(err.message || 'Failed to export transport report', { id: 'transport-export' });
+      toast.error(err.message || 'Failed to export transport report');
     } finally {
       setExportingRequests(false);
     }
+  };
+
+  const handleExportRequests = async () => {
+    openExportModal('excel');
   };
 
   const toggleExpandBus = (id: string) => {
@@ -1403,6 +1432,16 @@ export default function TransportReportsTab() {
           </div>
         </div>
       )}
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Transport Pass & Allocations Report"
+        exportFormat={exportFormat}
+        columns={TRANSPORT_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={exportingRequests}
+      />
     </div>
   );
 }

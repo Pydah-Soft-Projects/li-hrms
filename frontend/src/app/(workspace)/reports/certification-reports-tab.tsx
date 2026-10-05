@@ -22,6 +22,8 @@ import {
   mergeOverallQualificationStatusOptions,
   qualificationStatusBadgeClass,
 } from '@/lib/qualificationStatus';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface CertificationQualification {
   rowNum: number | '';
@@ -258,49 +260,42 @@ export default function CertificationReportsTab() {
     setPage(1);
   }, [divisionIds, departmentIds, designationIds, employeeIds, qualificationStatusIds, searchQuery, includeLeft]);
 
-  const handleExportPDF = async () => {
-    const toastId = toast.loading('Generating PDF report...');
-    setLoading(true);
-    try {
-      const { page: _p, limit: _l, ...exportFilters } = buildFilters();
-      const blob = await api.exportCertificationReportPDF(exportFilters);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Certification_Report_${dayjs().format('YYYY-MM-DD')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
-      toast.success('PDF downloaded successfully!', { id: toastId });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to export PDF';
-      toast.error(msg, { id: toastId });
-    } finally {
-      setLoading(false);
-    }
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const CERTIFICATION_COLUMNS: ColumnOption[] = [
+    { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row) => row.emp_no || '—' },
+    { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row) => row.employee_name || '—' },
+    { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row) => row.division || '—' },
+    { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row) => row.department || '—' },
+    { key: 'designation', label: 'Designation', defaultChecked: true, isNecessary: true, getValue: (row) => row.designation || '—' },
+    { key: 'overallCertificationStatus', label: 'Overall Status', defaultChecked: true, isNecessary: true, getValue: (row) => row.overallCertificationStatus || '—' },
+    { key: 'qualificationsCount', label: 'Qualifications Count', defaultChecked: true, isNecessary: false, getValue: (row) => row.qualifications?.length || 0 },
+  ];
+
+  const openExportModal = (fmt: 'excel' | 'pdf') => {
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
   };
 
-  const handleExportXLSX = async () => {
-    const toastId = toast.loading('Generating Excel report...');
-    setLoadingXlsx(true);
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    setLoading(true);
     try {
-      const { page: _p, limit: _l, ...exportFilters } = buildFilters();
-      const blob = await api.exportCertificationReport(exportFilters);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Certification_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
-      toast.success('Excel downloaded successfully!', { id: toastId });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to export Excel';
-      toast.error(msg, { id: toastId });
+      exportReportWithColumns({
+        title: 'Employee Certification Report',
+        subtitle: `Generated on ${dayjs().format('YYYY-MM-DD')}`,
+        data: employeeGroups,
+        columns: CERTIFICATION_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Certification_Report_${dayjs().format('YYYY-MM-DD')}`,
+      });
+      toast.success(`${format.toUpperCase()} downloaded successfully!`);
+      setIsColumnModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Export failed');
     } finally {
-      setLoadingXlsx(false);
+      setLoading(false);
     }
   };
 
@@ -349,20 +344,20 @@ export default function CertificationReportsTab() {
 
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={handleExportPDF}
-              disabled={loading || loadingXlsx}
+              onClick={() => openExportModal('pdf')}
+              disabled={loading}
               className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-violet-600/20 active:scale-95 disabled:opacity-50"
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              {loading ? 'Generating...' : 'Export PDF'}
+              Export PDF
             </button>
             <button
-              onClick={handleExportXLSX}
-              disabled={loading || loadingXlsx}
+              onClick={() => openExportModal('excel')}
+              disabled={loading}
               className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-violet-600 border border-violet-200 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-900 dark:border-violet-800 dark:text-violet-300"
             >
-              {loadingXlsx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              {loadingXlsx ? 'Generating...' : 'Export XLSX'}
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Export XLSX
             </button>
           </div>
         </div>
@@ -647,6 +642,16 @@ export default function CertificationReportsTab() {
           </div>
         )}
       </div>
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Employee Certification Report"
+        exportFormat={exportFormat}
+        columns={CERTIFICATION_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={loading}
+      />
     </div>
   );
 }

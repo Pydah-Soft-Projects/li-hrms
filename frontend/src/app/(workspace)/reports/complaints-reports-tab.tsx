@@ -1,8 +1,12 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import { ChevronRight, X, ExternalLink } from 'lucide-react';
+import { ChevronRight, X, ExternalLink, Download } from 'lucide-react';
+import toast from 'react-hot-toast';
+import dayjs from 'dayjs';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 export default function ComplaintsReportsTab() {
   const [allComplaints, setAllComplaints] = useState<any[]>([]);
@@ -18,6 +22,44 @@ export default function ComplaintsReportsTab() {
   const [selectedComplaint, setSelectedComplaint] = useState<any | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const COMPLAINT_COLUMNS: ColumnOption[] = [
+    { key: 'ticket_no', label: 'Ticket / Complaint No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.ticket_no || row.complaint_no || (typeof row._id === 'string' && row._id.length !== 24 ? row._id : '—') },
+    { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee_id?.emp_no || row.employeeId?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+    { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee_id?.employee_name || row.employeeId?.employee_name || row.employee?.employee_name || row.employee_name || '—' },
+    { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.department_name || row.department_id?.name || row.employee_id?.department_id?.name || '—' },
+    { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.division_name || row.division_id?.name || row.employee_id?.division_id?.name || '—' },
+    { key: 'category', label: 'Category', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.category || '—' },
+    { key: 'subject', label: 'Subject', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.subject || row.title || '—' },
+    { key: 'status', label: 'Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.status || '—' },
+    { key: 'priority', label: 'Priority', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.priority || '—' },
+    { key: 'createdAt', label: 'Date Filed', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.createdAt ? dayjs(row.createdAt).format('YYYY-MM-DD') : '—' },
+  ];
+
+  const openExportModal = (fmt: 'excel' | 'pdf') => {
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    try {
+      exportReportWithColumns({
+        title: 'Complaints & Grievances Report',
+        subtitle: `Exported on ${dayjs().format('YYYY-MM-DD')}`,
+        data: allComplaints,
+        columns: COMPLAINT_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Complaints_Report_${dayjs().format('YYYY-MM-DD')}`,
+      });
+      toast.success(`${format.toUpperCase()} downloaded successfully!`);
+      setIsColumnModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Export failed');
+    }
+  };
 
   useEffect(() => {
     api.getDivisions(true).then(res => { if (res.success) setDivisions(res.data || []); }).catch(() => {});
@@ -224,7 +266,22 @@ export default function ComplaintsReportsTab() {
             )}
             <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">{tableTitle}</h3>
           </div>
-          {historyDrilldownLevel !== 'department' && <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Click row to drill-down</p>}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openExportModal('excel')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Excel
+            </button>
+            <button
+              onClick={() => openExportModal('pdf')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs dark:bg-slate-800 dark:hover:bg-slate-700"
+            >
+              <Download className="w-3.5 h-3.5" />
+              PDF
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -273,6 +330,16 @@ export default function ComplaintsReportsTab() {
           </table>
         </div>
       </div>
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Complaints & Grievances Report"
+        exportFormat={exportFormat}
+        columns={COMPLAINT_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={loading}
+      />
     </div>
   );
 }

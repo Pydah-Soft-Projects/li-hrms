@@ -5,6 +5,8 @@ import { api, Department, Designation, Division, EmployeeGroup } from '@/lib/api
 import { MultiSelect } from '@/components/MultiSelect';
 import { Download, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 interface PayrollTransaction {
   _id: string;
   employeeName: string;
@@ -82,33 +84,43 @@ export default function PayrollTransactionsTab() {
     });
   }, [divisionIds]);
 
-  const exportPayrollSummary = async (format: 'xlsx' | 'pdf') => {
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const PAYROLL_COLUMNS: ColumnOption[] = [
+    { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true },
+    { key: 'employeeName', label: 'Employee Name', defaultChecked: true, isNecessary: true },
+    { key: 'category', label: 'Category', defaultChecked: true, isNecessary: true },
+    { key: 'transactionType', label: 'Transaction Type', defaultChecked: true, isNecessary: true },
+    { key: 'description', label: 'Description', defaultChecked: true, isNecessary: true },
+    { key: 'amount', label: 'Amount (₹)', defaultChecked: true, isNecessary: true },
+    { key: 'month', label: 'Month', defaultChecked: true, isNecessary: true },
+    { key: 'createdAt', label: 'Date', defaultChecked: false, isNecessary: false },
+  ];
+
+  const triggerExportModal = (format: 'excel' | 'pdf') => {
     if (!selectedMonth) {
       toast.error('Select a payroll month first');
       return;
     }
+    setExportFormat(format);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
     setExporting(true);
     try {
-      const params = {
-        month: selectedMonth,
-        divisionIds,
-        departmentIds,
-        designationId: designationIds[0],
-        employeeGroupId: employeeGroupIds[0],
-        search: searchQuery.trim(),
-      };
-      const blob = format === 'xlsx'
-        ? await api.exportPayRegisterSummary(params)
-        : await api.exportPayRegisterSummaryPDF(params);
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `payroll_summary_${selectedMonth}.${format}`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      exportReportWithColumns({
+        title: 'Payroll Transactions Report',
+        subtitle: `Month: ${selectedMonth}`,
+        data: filteredTransactions,
+        columns: PAYROLL_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Payroll_Transactions_${selectedMonth}`,
+      });
       toast.success(`${format.toUpperCase()} payroll report downloaded`);
+      setIsColumnModalOpen(false);
     } catch (error: any) {
       toast.error(error.message || 'Could not export payroll report');
     } finally {
@@ -282,11 +294,11 @@ export default function PayrollTransactionsTab() {
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Uses the selected payroll month and filters below.</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => exportPayrollSummary('xlsx')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+            <button onClick={() => triggerExportModal('excel')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Excel
             </button>
-            <button onClick={() => exportPayrollSummary('pdf')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+            <button onClick={() => triggerExportModal('pdf')} disabled={exporting} className="inline-flex h-9 items-center gap-2 rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               PDF
             </button>
@@ -533,6 +545,16 @@ export default function PayrollTransactionsTab() {
           )}
         </div>
       </div>
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Payroll Transactions Report"
+        exportFormat={exportFormat}
+        columns={PAYROLL_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={exporting}
+      />
     </div>
   );
 }
