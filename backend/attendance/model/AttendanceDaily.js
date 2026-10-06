@@ -68,6 +68,10 @@ const attendanceDailySchema = new mongoose.Schema(
         ref: 'Shift',
         default: null,
       },
+      isManualShift: {
+        type: Boolean,
+        default: false,
+      },
       shiftName: {
         type: String,
         default: null,

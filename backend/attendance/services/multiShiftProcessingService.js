@@ -345,6 +345,7 @@ async function applyShiftEditPatch(processedShifts, shiftEdit, employeeNumber, d
     }
 
     const row = sorted[idx];
+    row.isManualShift = true;
     await recalculateShiftMetrics(row, employeeNumber, date, approvedODs, configWithMode, shiftEdit.shiftId);
     return sorted;
 }
@@ -1072,6 +1073,33 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             );
             processedShifts.length = 0;
             processedShifts.push(...patched);
+        } else {
+            // Preserve existing manual shift edits if this day had shifts manually assigned
+            try {
+                const existingDaily = await AttendanceDaily.findOne({ employeeNumber, date }).select('shifts editHistory isEdited').lean();
+                if (existingDaily?.shifts?.length > 0) {
+                    const hasShiftChangeHistory = existingDaily.editHistory?.some(h => h.action === 'SHIFT_CHANGE');
+                    for (let idx = 0; idx < existingDaily.shifts.length; idx++) {
+                        const existingSeg = existingDaily.shifts[idx];
+                        if (existingSeg && (existingSeg.isManualShift || (hasShiftChangeHistory && existingSeg.shiftId))) {
+                            if (idx < processedShifts.length) {
+                                const patched = await applyShiftEditPatch(
+                                    processedShifts,
+                                    { segmentIndex: idx, shiftId: existingSeg.shiftId },
+                                    employeeNumber,
+                                    date,
+                                    approvedODs,
+                                    configWithMode
+                                );
+                                processedShifts.length = 0;
+                                processedShifts.push(...patched);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('[MultiShift] Failed to preserve existing manual shift edit:', err.message);
+            }
         }
 
         try {
