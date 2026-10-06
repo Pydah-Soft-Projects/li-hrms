@@ -90,13 +90,26 @@ function detectAndPairShifts(rawLogs, date, maxShifts = 3) {
     // We need INs that specifically belong to the target date.
     const allPunches = rawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
+    const isPunchIN = (p) => {
+        if (p.punch_state === 0 || p.punch_state === '0' || p.type === 'IN') return true;
+        if (p.subType && p.subType.toUpperCase().includes('IN')) return true;
+        if (p.rawData && (p.rawData.resolvedType === 'IN' || p.rawData.logType === 'CHECK-IN')) return true;
+        return false;
+    };
+
+    const isPunchOUT = (p) => {
+        if (p.punch_state === 1 || p.punch_state === '1' || p.type === 'OUT') return true;
+        if (p.subType && p.subType.toUpperCase().includes('OUT')) return true;
+        if (p.rawData && (p.rawData.resolvedType === 'OUT' || p.rawData.logType === 'CHECK-OUT' || p.rawData.logType === 'OVERTIME-OUT')) return true;
+        return false;
+    };
+
     const targetDateIns = allPunches.filter(p => {
         const isTargetDate = isSameDay(new Date(p.timestamp), date);
-        const isIN = p.punch_state === 0 || p.punch_state === '0' || p.type === 'IN';
-        return isTargetDate && isIN;
+        return isTargetDate && isPunchIN(p);
     });
 
-    const allOuts = allPunches.filter(p => p.punch_state === 1 || p.punch_state === '1' || p.type === 'OUT');
+    const allOuts = allPunches.filter(p => isPunchOUT(p));
 
     console.log(`[Multi-Shift] Target Date INs: ${targetDateIns.length}, Available OUTs: ${allOuts.length}`);
 
@@ -147,7 +160,25 @@ function detectAndPairShifts(rawLogs, date, maxShifts = 3) {
         console.log(`[Multi-Shift] Shift ${i + 1}: IN=${inPunch.timestamp}, OUT=${outPunch ? outPunch.timestamp : 'INCOMPLETE'}, Duration=${shift.duration || 0} min`);
     }
 
-    return shifts;
+    // Filter out micro-segments (< 10 minutes) in early morning if multiple shifts exist (leftover C-shift exits)
+    const validShifts = shifts.filter(s => {
+        if (shifts.length > 1 && s.duration && s.duration <= 10) {
+            const inDate = new Date(s.inTime);
+            const istHour = new Date(inDate.getTime() + 5.5 * 3600 * 1000).getUTCHours();
+            if (istHour >= 5 && istHour <= 8) {
+                console.log(`[Multi-Shift] Dropping residual C-shift exit micro-segment: IN=${s.inTime}, OUT=${s.outTime}, Duration=${s.duration} min`);
+                return false;
+            }
+        }
+        return true;
+    });
+
+    // Re-number remaining shifts
+    validShifts.forEach((s, idx) => {
+        s.shiftNumber = idx + 1;
+    });
+
+    return validShifts;
 }
 
 /**

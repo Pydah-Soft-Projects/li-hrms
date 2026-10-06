@@ -165,7 +165,7 @@ const attendanceDailySchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF', 'OD'],
+      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF', 'OD', 'LEAVE'],
       default: 'ABSENT',
     },
     rosterFirstHalfNonWorking: {
@@ -208,7 +208,7 @@ const attendanceDailySchema = new mongoose.Schema(
     }],
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'roster-sync'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'roster-sync', 'dynamic-roster-import'],
       default: [],
     },
     lastSyncedAt: {
