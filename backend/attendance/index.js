@@ -19,6 +19,7 @@ const liveAttendanceReportController = require('./controllers/liveAttendanceRepo
 const reportsController = require('./controllers/reportsController');
 const attendanceShiftSegmentRefreshController = require('./controllers/attendanceShiftSegmentRefreshController');
 const attendanceAuditController = require('./controllers/attendanceAuditController');
+const securityDivisionAttendanceController = require('./controllers/securityDivisionAttendanceController');
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -134,6 +135,41 @@ router.post(
   authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
   applyScopeFilter,
   attendanceAuditController.runAudit
+);
+
+// ─── Security Division Attendance Routes ──────────────────────────────────
+// Separate, isolated engine for Security Division & Department only.
+// All routes require at least manager-level auth; write routes require hr/admin.
+router.get(
+  '/security-division/payroll-cycle',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  securityDivisionAttendanceController.getPayrollCycle
+);
+router.get(
+  '/security-division/employees',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  securityDivisionAttendanceController.getEmployees
+);
+router.get(
+  '/security-division/shifts',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  securityDivisionAttendanceController.getShifts
+);
+router.get(
+  '/security-division/status',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  securityDivisionAttendanceController.getStatus
+);
+router.get(
+  '/security-division/summary',
+  applyScopeFilter,
+  authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'),
+  securityDivisionAttendanceController.getSummary
+);
+router.post(
+  '/security-division/run-engine',
+  authorize('super_admin', 'sub_admin', 'hr'),
+  securityDivisionAttendanceController.runEngine
 );
 
 module.exports = router;
