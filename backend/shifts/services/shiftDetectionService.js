@@ -127,9 +127,10 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
  * @param {String} employeeGender - Employee's gender (Male/Female/Other)
  * @param {String|null} employeeGroupId - Employee's custom group ObjectId
  * @param {Boolean} groupingEnabled - Whether custom grouping feature is enabled
+ * @param {Object} [options] - Optional settings ({ forManualAssignment: boolean })
  * @returns {Array} - Array of Shift IDs
  */
-const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employeeGroupId, groupingEnabled = false) => {
+const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employeeGroupId, groupingEnabled = false, options = {}) => {
   if (!shiftConfigs || !Array.isArray(shiftConfigs) || shiftConfigs.length === 0) {
     return [];
   }
@@ -144,6 +145,25 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
 
   // Align with assign APIs: expand employee_group_ids[] to one row per group before filtering
   const configs = flattenShiftConfigsWithGroups(shiftConfigs);
+
+  // If forManualAssignment, return all shifts in this tier matching gender (so HR can select any shift configured for the department/designation)
+  if (options && options.forManualAssignment) {
+    const validConfigs = configs.filter(config => {
+      if (!config || !config.shiftId) return false;
+      if (!config.gender || config.gender === 'All') return true;
+      return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+    });
+    const seen = new Set();
+    const result = [];
+    for (const c of validConfigs) {
+      const idStr = c.shiftId.toString();
+      if (!seen.has(idStr)) {
+        seen.add(idStr);
+        result.push(c.shiftId);
+      }
+    }
+    return result;
+  }
 
   // If grouping is enabled and employee has a group, try to find shifts matching this group first
   if (groupingEnabled && employeeGroupId) {
@@ -167,8 +187,8 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
     }
   }
 
-  // Fallback: Filter configurations that do not specify any employee group (default or ALL)
-  return configs
+  // Fallback 1: Filter configurations that do not specify any employee group (default or ALL)
+  const defaultMatches = configs
     .filter(config => {
       if (!config || !config.shiftId) return false;
 
@@ -184,6 +204,32 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
       return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
     })
     .map(config => config.shiftId);
+
+  if (defaultMatches.length > 0) {
+    return defaultMatches;
+  }
+
+  // Fallback 2: If grouping is enabled, but NONE of the configs matched the employee's group AND
+  // no default/group-agnostic configs exist in this tier (e.g. department has shifts configured,
+  // but all are tagged with other groups and employee's group is not among them or employee has no group):
+  // We fall back to all shifts in this tier (filtered by gender).
+  // Why? An employee assigned to a department (e.g. Office) should ALWAYS receive their department's
+  // shifts rather than abandoning the department and falling back to Division/Global baseline factory shifts!
+  if (groupingEnabled && configs.length > 0) {
+    const genderMatches = configs
+      .filter(config => {
+        if (!config || !config.shiftId) return false;
+        if (!config.gender || config.gender === 'All') return true;
+        return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+      })
+      .map(config => config.shiftId);
+
+    if (genderMatches.length > 0) {
+      return Array.from(new Set(genderMatches.map(id => id.toString())));
+    }
+  }
+
+  return [];
 };
 
 /**
@@ -265,79 +311,97 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     }
 
     // 2. Designation shifts (Context-Specific & Division Defaults)
-    if (designation_id && employee.designation_id) {
-      let shiftIds = [];
-      const desig = employee.designation_id;
-
-      // Tier 2: (Division + Department) Specific Override
-      if (division_id && department_id && desig.departmentShifts) {
-        const contextOverride = desig.departmentShifts.find(
-          ds => ds.division?.toString() === division_id.toString() &&
-            ds.department?.toString() === department_id.toString()
-        );
-        if (contextOverride && contextOverride.shifts?.length > 0) {
-          shiftIds = filterShiftsByEmployeeAttributes(contextOverride.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
+    if (designation_id) {
+      let desig = employee.designation_id;
+      if (!desig || (typeof desig === 'object' && !desig.departmentShifts && !desig.divisionDefaults && !desig.shifts)) {
+        desig = await Designation.findById(designation_id);
       }
 
-      // Tier 3: Division-Global Designation Default
-      if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
-        const divisionDefault = desig.divisionDefaults.find(
-          dd => dd.division?.toString() === division_id.toString()
-        );
-        if (divisionDefault && divisionDefault.shifts?.length > 0) {
-          shiftIds = filterShiftsByEmployeeAttributes(divisionDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
-      }
+      if (desig) {
+        let shiftIds = [];
 
-      // Tier 4: Backward Compatibility Fallback (Global designation shifts)
-      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
-        shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, employeeGroupId, groupingEnabled);
-      }
-
-      if (shiftIds.length > 0) {
-        const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
-        designationShifts.forEach(s => {
-          s.sourcePriority = 2; // Designation Priority
-          allCandidateShifts.set(s._id.toString(), s);
-        });
-      }
-    }
-
-    // 3. Department shifts (Tier 3)
-    if (department_id && employee.department_id) {
-      let deptShiftIds = [];
-      const dept = employee.department_id;
-
-      if (division_id && dept.divisionDefaults) {
-        const divDeptDefault = dept.divisionDefaults.find(
-          dd => dd.division?.toString() === division_id.toString()
-        );
-        if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
-          deptShiftIds = filterShiftsByEmployeeAttributes(divDeptDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
-      }
-
-      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
-        deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, employeeGroupId, groupingEnabled);
-      }
-
-      if (deptShiftIds.length > 0) {
-        const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
-        departmentShifts.forEach(s => {
-          if (!allCandidateShifts.has(s._id.toString())) {
-            s.sourcePriority = 3; // Department Priority
-            allCandidateShifts.set(s._id.toString(), s);
+        // Tier 2: (Division + Department) Specific Override
+        if (division_id && department_id && desig.departmentShifts) {
+          const contextOverride = desig.departmentShifts.find(
+            ds => ds.division?.toString() === division_id.toString() &&
+              ds.department?.toString() === department_id.toString()
+          );
+          if (contextOverride && contextOverride.shifts?.length > 0) {
+            shiftIds = filterShiftsByEmployeeAttributes(contextOverride.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
           }
-        });
+        }
+
+        // Tier 3: Division-Global Designation Default
+        if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
+          const divisionDefault = desig.divisionDefaults.find(
+            dd => dd.division?.toString() === division_id.toString()
+          );
+          if (divisionDefault && divisionDefault.shifts?.length > 0) {
+            shiftIds = filterShiftsByEmployeeAttributes(divisionDefault.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+          }
+        }
+
+        // Tier 4: Global designation shifts (fallback when division defaults not found or empty)
+        if (shiftIds.length === 0 && desig.shifts?.length > 0) {
+          shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+        }
+
+        if (shiftIds.length > 0) {
+          const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
+          designationShifts.forEach(s => {
+            s.sourcePriority = 2; // Designation Priority
+            allCandidateShifts.set(s._id.toString(), s);
+          });
+        }
       }
     }
 
-    // 4. Division Baseline Shifts (Tier 4)
-    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
-      const division = employee.division_id;
-      if (division.shifts && division.shifts.length > 0) {
-        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(division.shifts, employeeGender, employeeGroupId, groupingEnabled);
+    // 3. Department shifts (Tier 3 - Department Specific)
+    if (department_id) {
+      let dept = employee.department_id;
+      if (!dept || (typeof dept === 'object' && !dept.divisionDefaults && !dept.shifts)) {
+        dept = await Department.findById(department_id);
+      }
+
+      if (dept) {
+        let deptShiftIds = [];
+
+        // 3a. Division-specific department defaults
+        if (division_id && dept.divisionDefaults) {
+          const divDeptDefault = dept.divisionDefaults.find(
+            dd => dd.division?.toString() === division_id.toString()
+          );
+          if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
+            deptShiftIds = filterShiftsByEmployeeAttributes(divDeptDefault.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+          }
+        }
+
+        // 3b. Direct department shifts (fallback when division defaults not found or empty)
+        if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
+          deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+        }
+
+        if (deptShiftIds.length > 0) {
+          const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
+          departmentShifts.forEach(s => {
+            if (!allCandidateShifts.has(s._id.toString())) {
+              s.sourcePriority = 3; // Department Priority
+              allCandidateShifts.set(s._id.toString(), s);
+            }
+          });
+        }
+      }
+    }
+
+    // 4. Division Baseline Shifts (Tier 4 - Division Specific, ONLY if no Designation/Department shifts)
+    if (allCandidateShifts.size === 0 && division_id) {
+      let division = employee.division_id;
+      if (!division || (typeof division === 'object' && !division.shifts)) {
+        division = await Division.findById(division_id);
+      }
+
+      if (division && division.shifts && division.shifts.length > 0) {
+        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(division.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
         const divisionShifts = await Shift.find({ _id: { $in: filteredDivisionShifts }, isActive: true });
         divisionShifts.forEach(s => {
           s.sourcePriority = 4; // Division Priority
@@ -346,7 +410,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       }
     }
 
-    // 5. Global Fallback (Tier 5)
+    // 5. Global Fallback (Tier 5 - ONLY if no Designation, Department, or Division shifts)
     if (allCandidateShifts.size === 0) {
       const generalShifts = await Shift.find({ isActive: true });
       generalShifts.forEach(s => {
@@ -355,9 +419,22 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       });
     }
 
+    let determinedSource = 'none';
+    if (rosteredShift) {
+      determinedSource = 'pre_scheduled';
+    } else if (allCandidateShifts.size > 0) {
+      const priorities = Array.from(allCandidateShifts.values()).map(s => s.sourcePriority);
+      if (priorities.includes(2)) determinedSource = 'designation';
+      else if (priorities.includes(3)) determinedSource = 'department';
+      else if (priorities.includes(4)) determinedSource = 'division';
+      else if (priorities.includes(5)) determinedSource = 'global';
+      else determinedSource = 'organizational';
+    }
+
     return {
       shifts: Array.from(allCandidateShifts.values()),
       source: rosteredShift ? 'pre_scheduled' : 'organizational',
+      tier: determinedSource,
       rosteredShiftId: rosteredShift?._id || null,
       rosterRecordId: rosterRecordId,
     };
@@ -443,7 +520,7 @@ const getOrganizationalShiftsForContext = async ({
         }
       }
 
-      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
+      if (shiftIds.length === 0 && desig.shifts?.length > 0) {
         shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, groupId, groupingEnabled);
       }
 
@@ -474,7 +551,7 @@ const getOrganizationalShiftsForContext = async ({
         }
       }
 
-      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
+      if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
         deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, groupId, groupingEnabled);
       }
 
@@ -489,7 +566,7 @@ const getOrganizationalShiftsForContext = async ({
       }
     }
 
-    if (division_id && employee.division_id) {
+    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
       const div = employee.division_id;
       if (div.shifts && div.shifts.length > 0) {
         const filteredDivisionShifts = filterShiftsByEmployeeAttributes(

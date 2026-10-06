@@ -204,7 +204,7 @@ exports.getAvailableShifts = async (req, res) => {
     const { employeeNumber, date } = req.params;
 
     const { getShiftsForEmployee } = require('../../shifts/services/shiftDetectionService');
-    const { shifts, source } = await getShiftsForEmployee(employeeNumber, date);
+    const { shifts, source } = await getShiftsForEmployee(employeeNumber, date, { forManualAssignment: true });
 
     res.status(200).json({
       success: true,
