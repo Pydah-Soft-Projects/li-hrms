@@ -9,12 +9,12 @@ const BORDER_ALL = { top: BORDER_THIN, bottom: BORDER_THIN, left: BORDER_THIN, r
 
 const STYLES = {
   companyTitle: {
-    font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '1E3A5F' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
   },
   salaryKind: {
-    font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: '312E81' } },
+    font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: '312E81' } },
     fill: { fgColor: { rgb: 'E0E7FF' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
   },
@@ -24,78 +24,78 @@ const STYLES = {
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
   },
   bankTitle: {
-    font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 15, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '0F766E' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
   },
   colHeader: {
-    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '4F46E5' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: BORDER_ALL,
   },
   colHeaderBank: {
-    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '0F766E' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: BORDER_ALL,
   },
   divBanner: {
-    font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '1E40AF' }, patternType: 'solid' },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
   },
   deptBanner: {
-    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '64748B' }, patternType: 'solid' },
     alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
   },
   data: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     alignment: { vertical: 'center', wrapText: false },
     border: BORDER_ALL,
   },
   dataAlt: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' },
     alignment: { vertical: 'center', wrapText: false },
     border: BORDER_ALL,
   },
   dataNumber: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: BORDER_ALL,
     numFmt: '#,##0.##',
   },
   dataNumberAlt: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: BORDER_ALL,
     numFmt: '#,##0.##',
   },
   dataText: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     alignment: { horizontal: 'left', vertical: 'center' },
     border: BORDER_ALL,
     numFmt: '@',
   },
   dataTextAlt: {
-    font: { name: 'Calibri', sz: 10, color: { rgb: '1E293B' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '1E293B' } },
     fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' },
     alignment: { horizontal: 'left', vertical: 'center' },
     border: BORDER_ALL,
     numFmt: '@',
   },
   aggregateTotalText: {
-    font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '78350F' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '78350F' } },
     fill: { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' },
     alignment: { horizontal: 'left', vertical: 'center' },
     border: BORDER_ALL,
     numFmt: '@',
   },
   aggregateTotalNumber: {
-    font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '78350F' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '78350F' } },
     fill: { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: BORDER_ALL,
@@ -134,6 +134,7 @@ const TEXT_COLUMN_HEADER_KEYS = new Set([
   'acno',
   'ifsc',
   'ifsccode',
+  'signature',
 ]);
 
 function isTextColumnHeader(header) {
@@ -285,31 +286,31 @@ function applyPaysheetWorksheetStyles(ws, opts) {
 
     if (r === 0) {
       applyRowStyle(ws, r, cEnd, opts.variant === 'bank' ? STYLES.bankTitle : STYLES.companyTitle);
-      rowHeights[r] = { hpt: 30 };
+      rowHeights[r] = { hpt: 34 };
       continue;
     }
 
     if (isSalaryKindRow(ws, r)) {
       applyRowStyle(ws, r, cEnd, STYLES.salaryKind);
-      rowHeights[r] = { hpt: 24 };
+      rowHeights[r] = { hpt: 26 };
       continue;
     }
 
     if (isMetaBannerRow(ws, r)) {
       applyRowStyle(ws, r, cEnd, STYLES.metaLine);
-      rowHeights[r] = { hpt: 20 };
+      rowHeights[r] = { hpt: 22 };
       continue;
     }
 
     if (isDivisionBannerRow(ws, r)) {
       applyRowStyle(ws, r, cEnd, STYLES.divBanner);
-      rowHeights[r] = { hpt: 24 };
+      rowHeights[r] = { hpt: 26 };
       continue;
     }
 
     if (isDepartmentBannerRow(ws, r)) {
       applyRowStyle(ws, r, cEnd, STYLES.deptBanner);
-      rowHeights[r] = { hpt: 22 };
+      rowHeights[r] = { hpt: 24 };
       continue;
     }
 
@@ -341,13 +342,13 @@ function applyPaysheetWorksheetStyles(ws, opts) {
           cell.s = { ...STYLES.aggregateTotalNumber };
         }
       }
-      rowHeights[r] = { hpt: 20 };
+      rowHeights[r] = { hpt: 22 };
       continue;
     }
 
     if (headerRowSet.has(r)) {
       applyRowStyle(ws, r, cEnd, colHeaderStyle);
-      rowHeights[r] = { hpt: 22 };
+      rowHeights[r] = { hpt: 26 };
       dataRowCounter = 0;
       continue;
     }
@@ -389,7 +390,7 @@ function applyPaysheetWorksheetStyles(ws, opts) {
         };
       }
     }
-    rowHeights[r] = { hpt: 18 };
+    rowHeights[r] = { hpt: 20 };
   }
 
   ws['!rows'] = rowHeights;
