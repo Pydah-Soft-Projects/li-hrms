@@ -154,9 +154,22 @@ function appendWorkingHoursLine(text, displayRecord) {
   return `${text}\n${hrs.toFixed(2)}h`;
 }
 
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+function formatGridPunchTime(value) {
+  if (!value) return '-';
+  const t = dayjs(value).tz('Asia/Kolkata');
+  if (!t.isValid()) return '-';
+  return t.format('HH:mm');
+}
+
 /**
  * @param {object} displayRecord - getMonthlyTableViewData dailyAttendance[date] object
- * @param {{ in: string, out: string }} io
+ * @param {{ in: string, out: string, shifts?: Array }} io
  * @returns {string} multi-line text for the PDF cell
  */
 function formatPdfDayCellText(displayRecord, io) {
@@ -164,6 +177,22 @@ function formatPdfDayCellText(displayRecord, io) {
   const st = String(displayRecord.status || '');
   if (st === '') return '';
   if (st === '-') return '-';
+
+  const shifts = (io && Array.isArray(io.shifts) && io.shifts.length > 0)
+    ? io.shifts
+    : (Array.isArray(displayRecord.shifts) && displayRecord.shifts.length > 0 ? displayRecord.shifts : []);
+  const isMulti = shifts.length > 1;
+
+  if (isMulti) {
+    const one = getBaseDisplayStatus(displayRecord);
+    const shiftLines = shifts.map((s, idx) => {
+      const num = s.shiftNumber || idx + 1;
+      const inTime = s.in || formatGridPunchTime(s.inTime);
+      const outTime = s.out || formatGridPunchTime(s.outTime);
+      return `S${num}:${inTime}\n   ${outTime}`;
+    }).join('\n');
+    return appendWorkingHoursLine(`${one}\nMulti\n${shiftLines}`, displayRecord);
+  }
 
   const split = buildSplitCellStatus(displayRecord);
   const inStr = (io && io.in) || '-';
@@ -177,6 +206,8 @@ function formatPdfDayCellText(displayRecord, io) {
 
 module.exports = {
   formatPdfDayCellText,
+  formatGridPunchTime,
   getBaseDisplayStatus,
   buildSplitCellStatus,
 };
+

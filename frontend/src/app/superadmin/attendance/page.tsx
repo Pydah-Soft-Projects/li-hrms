@@ -3271,9 +3271,11 @@ export default function AttendancePage() {
                         return Math.round((sum + contribution) * 100) / 100;
                       }, 0);
 
-                  const payableShifts = Number(
+                  const rawPayableShifts = Number(
                     item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
                   );
+                  const timingDeduction = Number(item.summary?.attendanceDeductionBreakdown?.lateEarlyDaysDeducted ?? 0);
+                  const payableShifts = Math.max(0, rawPayableShifts - timingDeduction);
                   const monthPresent = dailyValues.reduce((sum, r: any) => {
                     if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
                     if (r?.status === 'HALF_DAY') return sum + 0.5;
@@ -3305,6 +3307,7 @@ export default function AttendancePage() {
                         item.summary ??
                           ({
                             totalPresentDays: daysPresent,
+                            totalPayableShifts: rawPayableShifts,
                             totalWeeklyOffs: weekOffsCount,
                             totalHolidays: holidaysCount,
                             totalLeaves,

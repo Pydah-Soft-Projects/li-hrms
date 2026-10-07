@@ -4831,9 +4831,11 @@ export default function AttendancePage() {
                                   if (record.status === 'HALF_DAY') return sum + 0.5;
                                   return sum;
                                 }, 0);
-                            const payableShifts = Number(
+                            const rawPayableShifts = Number(
                               item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
                             );
+                            const timingDeduction = Number(item.summary?.attendanceDeductionBreakdown?.lateEarlyDaysDeducted ?? 0);
+                            const payableShifts = Math.max(0, rawPayableShifts - timingDeduction);
 
                             // Helper calculations for specific tables
                             const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
@@ -4872,6 +4874,7 @@ export default function AttendancePage() {
                                   item.summary ??
                                     ({
                                       totalPresentDays: daysPresent,
+                                      totalPayableShifts: rawPayableShifts,
                                       totalWeeklyOffs: weekOffsCount,
                                       totalHolidays: holidaysCount,
                                       totalLeaves,
@@ -4944,7 +4947,9 @@ export default function AttendancePage() {
                                 {daysArray.map((dateStr) => {
                                   const record = item.dailyAttendance[dateStr] || null;
                                   const shifts = (record as any)?.shifts || [];
-                                  const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+                                  const isMultiShift = shifts.length > 1;
+                                  let shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+                                  if (isMultiShift) shiftName = `Multi (${shifts.length})`;
 
                                   const displayStatus = getBaseDisplayStatus(record);
                                   const splitStatus = buildSplitCellStatus(record);
@@ -5038,11 +5043,11 @@ export default function AttendancePage() {
                                                     }
                                                   }}
                                                 >
-                                                  {shiftName !== '-' ? shiftName.substring(0, 3) : (record?.totalHours ? '' : 'Asgn')}
+                                                  {isMultiShift ? 'Multi' : (shiftName !== '-' ? shiftName.substring(0, 3) : (record?.totalHours ? '' : 'Asgn'))}
                                                 </div>
                                               ) : (
                                                 shiftName !== '-' && (
-                                                  <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
+                                                  <div className="text-[8px] opacity-75 truncate" title={shiftName}>{isMultiShift ? 'Multi' : shiftName.substring(0, 3)}</div>
                                                 )
                                               )}
                                               {shouldShowWorkedHoursInCompleteCell(record) && (

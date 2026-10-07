@@ -83,9 +83,14 @@ function payRegisterAllRowFromSummary(s, processingMode) {
     };
   }
   const useMerge = processingMode === 'single_shift';
-  const present = useMerge
+  const basePresent = useMerge
     ? mergeSingleShiftPresentForPayRegisterRow(s)
     : round2(s.totalPresentDays);
+  const rawPayableShifts = Number(s.totalPayableShifts);
+  const payableBase = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent
+    ? round2(rawPayableShifts)
+    : basePresent;
+  const present = basePresent;
   const weekOffs = round2(s.totalWeeklyOffs);
   const holidays = round2(s.totalHolidays);
   const paidLeaves = round2(s.totalPaidLeaves);
@@ -104,7 +109,7 @@ function payRegisterAllRowFromSummary(s, processingMode) {
   const attRaw = s.totalAttendanceDeductionDays ?? s.attendanceDeductionBreakdown?.daysDeducted;
   const attDed = Number.isFinite(Number(attRaw)) ? round2(Number(attRaw)) : 0;
   const totalDaysSummed = round2(present + weekOffs + holidays + totalLeaves + od + absent);
-  const paidDays = Math.max(0, round2(present + weekOffs + holidays + od + paidLeaves - attDed));
+  const paidDays = Math.max(0, round2(payableBase + weekOffs + holidays + od + paidLeaves - attDed));
   return {
     present,
     weekOffs,
