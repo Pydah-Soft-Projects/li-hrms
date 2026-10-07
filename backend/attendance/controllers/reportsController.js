@@ -2306,7 +2306,8 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         }
                     });
 
-                    const r = payRegisterAllRowFromSummary(summary || null, payRegisterPresentProcessingMode);
+                    const isSecurity = Boolean(/security/i.test(`${deptName || ''} ${divName || ''} ${emp.department || ''} ${emp.designation || ''}`));
+                    const r = payRegisterAllRowFromSummary(summary || null, { processingMode: payRegisterPresentProcessingMode, isSecurity });
                     const empWorkingHrs = empDaily.reduce((sum, rec) => sum + (Number(rec.totalWorkingHours) || 0), 0);
                     deptSumData.push([
                         String(pdfEmployeeSerial),

@@ -223,7 +223,7 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
       if (record.secondHalf && ['present', 'od'].includes(record.secondHalf.status)) p += per / 2;
       return Math.round(p * 100) / 100;
     })();
-    if (pay > 0) oncePerDate('payableShifts', date, Math.min(1, pay), 'Pay');
+    if (pay > 0) oncePerDate('payableShifts', date, pay, 'Pay');
 
     if (split && pay > 0 && pay < 1) {
       oncePerDate('partial', date, pay, `PT (${pay})`);

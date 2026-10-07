@@ -3313,7 +3313,22 @@ export default function AttendancePage() {
                             totalODs,
                             totalAbsentDays: monthAbsent,
                           } as any),
-                        { processingMode: 'single_shift' }
+                        {
+                          processingMode: 'single_shift',
+                          isSecurity: Boolean(
+                            /security/i.test(
+                              String(
+                                item.employee?.department?.name ||
+                                item.employee?.division?.name ||
+                                item.employee?.designation?.name ||
+                                item.employee?.department ||
+                                item.employee?.division ||
+                                item.employee?.designation ||
+                                ''
+                              )
+                            )
+                          ),
+                        }
                       )
                     : null;
 

@@ -1603,7 +1603,29 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
   const totalDays = Number(payRegister?.totalDaysInMonth) || 0;
   const absent = Number(totals.totalAbsentDays) || 0;
   const lopDeduction = Number(totals.totalLopDays) || leaveDays.lop;
-  const lateEarlyDeduction = Number(payRegister?.totalAttendanceDeductionDays) || 0;
+  const isSecurity = Boolean(
+    /security/i.test(
+      String(
+        employee.division_id?.name ||
+        employee.department_id?.name ||
+        employee.department ||
+        employee.division ||
+        employee.designation_id?.name ||
+        ''
+      )
+    )
+  );
+  const rawPayableShifts = Number(totals.totalPayableShifts);
+  const basePresent = Number(totals.totalPresentDays) || 0;
+  const usePayableShifts = isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
+  const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
+
+  const totalPaidDays = Math.max(
+    0,
+    usePayableShifts
+      ? payableBase + (Number(totals.totalODDays) || 0) + (Number(totals.totalWeeklyOffs) || 0) + (Number(totals.totalHolidays) || 0) + leaveDays.cl + leaveDays.ccl - lateEarlyDeduction
+      : totalDays - absent - lopDeduction - lateEarlyDeduction
+  );
 
   return {
     employeeCode: employee.emp_no || '',
@@ -1612,7 +1634,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
     division: employee.division_id?.name || '',
     department: employee.department_id?.name || '',
     group: employee.employee_group_id?.name || '',
-    presentDays: Number(totals.totalPresentDays) || 0,
+    presentDays: basePresent,
     absentDays: absent,
     paidCL: leaveDays.cl,
     paidCCL: leaveDays.ccl,
@@ -1623,7 +1645,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
     absentDeduction: absent,
     lopDeduction,
     lateEarlyDeduction,
-    totalPaidDays: Math.max(0, totalDays - absent - lopDeduction - lateEarlyDeduction),
+    totalPaidDays,
     primaryGross,
     secondaryGross,
     grossDifference: secondaryGross - primaryGross,
