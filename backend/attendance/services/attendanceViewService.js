@@ -107,8 +107,6 @@ function slimShiftForTable(shift) {
   return {
     _id: shift._id,
     shiftId: shiftMeta,
-    shiftNumber: shift.shiftNumber,
-    shiftName: shift.shiftName || (typeof sid === 'object' ? sid?.name : null) || '',
     inTime: shift.inTime,
     outTime: shift.outTime,
     status: shift.status,
@@ -357,7 +355,6 @@ function buildDailyCell(mode, ctx) {
     isLateIn: (record?.totalLateInMinutes || 0) > 0,
     isEarlyOut: (record?.totalEarlyOutMinutes || 0) > 0,
     shiftId: shifts[0]?.shiftId || null,
-    shiftName: shifts.length > 1 ? 'Multi' : (shifts[0]?.shiftName || (typeof record?.shiftId === 'object' ? record?.shiftId?.name : null) || null),
     shifts,
     expectedHours:
       record?.totalExpectedHours ||

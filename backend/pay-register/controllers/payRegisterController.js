@@ -1605,20 +1605,6 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
   const lopDeduction = Number(totals.totalLopDays) || leaveDays.lop;
   const lateEarlyDeduction = Number(payRegister?.totalAttendanceDeductionDays) || 0;
 
-  const rawPayableShifts = Number(totals.totalPayableShifts);
-  const basePresent = Number(totals.totalPresentDays) || 0;
-  const payableBase = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent
-    ? rawPayableShifts
-    : basePresent;
-  const presentDays = basePresent;
-
-  const totalPaidDays = Math.max(
-    0,
-    payableBase > basePresent
-      ? payableBase + (Number(totals.totalODDays) || 0) + (Number(totals.totalWeeklyOffs) || 0) + (Number(totals.totalHolidays) || 0) + leaveDays.cl + leaveDays.ccl - lateEarlyDeduction
-      : totalDays - absent - lopDeduction - lateEarlyDeduction
-  );
-
   return {
     employeeCode: employee.emp_no || '',
     employeeName: employee.employee_name || '',
@@ -1626,7 +1612,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
     division: employee.division_id?.name || '',
     department: employee.department_id?.name || '',
     group: employee.employee_group_id?.name || '',
-    presentDays,
+    presentDays: Number(totals.totalPresentDays) || 0,
     absentDays: absent,
     paidCL: leaveDays.cl,
     paidCCL: leaveDays.ccl,
@@ -1637,7 +1623,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
     absentDeduction: absent,
     lopDeduction,
     lateEarlyDeduction,
-    totalPaidDays,
+    totalPaidDays: Math.max(0, totalDays - absent - lopDeduction - lateEarlyDeduction),
     primaryGross,
     secondaryGross,
     grossDifference: secondaryGross - primaryGross,

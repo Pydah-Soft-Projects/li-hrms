@@ -1410,8 +1410,7 @@ export function PayRegisterContent({
   const getSummaryRows = () =>
     getFilteredPayRegisters().map((pr) => {
       const totals = pr.totals || {};
-      const basePresent = totals.totalPresentDays || 0;
-      const present = basePresent;
+      const present = totals.totalPresentDays || 0;
       const absent = totals.totalAbsentDays || 0;
       const leave = getLeaveTotal(totals);
       const od = totals.totalODDays || 0;
@@ -1487,42 +1486,6 @@ export function PayRegisterContent({
     if (!a && !b) return '';
     if (a && b) return `${a}/${b}`;
     return a || b;
-  };
-
-  const formatSingleShiftCode = (raw: string): string => {
-    const s = raw.trim();
-    if (!s) return '';
-    if (/^12\s*hrs?/i.test(s)) return '12H';
-    const match = s.match(/^([A-Za-z0-9]+)(?:-([A-Za-z0-9]+))?/);
-    if (match) {
-      const code1 = match[1];
-      const code2 = match[2] ? match[2].charAt(0).toUpperCase() : '';
-      if (code1.length === 1 && code2) {
-        return `${code1.toUpperCase()}-${code2}`;
-      }
-      if (code1.length <= 4) {
-        return code1.toUpperCase();
-      }
-      return code1.substring(0, 3).toUpperCase();
-    }
-    return s.substring(0, 3).toUpperCase();
-  };
-
-  const getShiftCodes = (shiftName: string | null | undefined): string[] => {
-    if (!shiftName) return [];
-    if (shiftName.includes('+')) {
-      return shiftName
-        .split('+')
-        .map((p) => formatSingleShiftCode(p))
-        .filter(Boolean);
-    }
-    const single = formatSingleShiftCode(shiftName);
-    return single ? [single] : [];
-  };
-
-  const formatShortShiftLabel = (shiftName: string | null | undefined): string => {
-    const codes = getShiftCodes(shiftName);
-    return codes.join('+');
   };
 
   /** Primary status for a daily record (full day or first half when split) for coloring in "All" view */
@@ -3868,22 +3831,6 @@ export function PayRegisterContent({
                                 ? highlightBadgeSubtitle(badgeCategory, highlightInfo.label)
                                 : null;
 
-                            const isMultiShift = Boolean(
-                              record && (
-                                Number(record.payableShifts) > 1 ||
-                                (Array.isArray(record.shiftSelections) && record.shiftSelections.length > 1) ||
-                                (Array.isArray(record.shiftIds) && record.shiftIds.length > 1) ||
-                                (typeof record.shiftName === 'string' && record.shiftName.includes('+'))
-                              )
-                            );
-                            const multiShiftCount = isMultiShift
-                              ? Number(record?.payableShifts) > 1
-                                ? Number(record?.payableShifts)
-                                : (record?.shiftSelections && record.shiftSelections.length > 1)
-                                  ? record.shiftSelections.length
-                                  : 2
-                              : 1;
-
                             return (
                               <td
                                 key={day}
@@ -3932,60 +3879,34 @@ export function PayRegisterContent({
                                 ${bgColor}
                                 ${isContribHighlighted && payRegisterContribAccentClasses ? payRegisterContribAccentClasses.cellHighlight : ''}`}
                               >
-                                {isContribHighlighted && highlightInfo && payRegisterContribAccentClasses && (() => {
-                                  const effectiveVal =
-                                    isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
-                                      ? Math.max(highlightInfo.value, multiShiftCount)
-                                      : highlightInfo.value;
-                                  const effectiveSub =
-                                    isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
-                                      ? `${multiShiftCount}S`
-                                      : highlightSub;
-                                  return (
-                                    <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
-                                      <div
-                                        className={`text-white px-1 py-0.5 rounded-md shadow-md flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[46px] ${payRegisterContribAccentClasses.badgeBg}`}
-                                      >
-                                        <span className="text-[9px] font-black tabular-nums tracking-tight">
-                                          {formatHighlightContribution(effectiveVal)}
+                                {isContribHighlighted && highlightInfo && payRegisterContribAccentClasses && (
+                                  <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
+                                    <div
+                                      className={`text-white px-1 py-0.5 rounded-md shadow-md flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[46px] ${payRegisterContribAccentClasses.badgeBg}`}
+                                    >
+                                      <span className="text-[9px] font-black tabular-nums tracking-tight">
+                                        {formatHighlightContribution(highlightInfo.value)}
+                                      </span>
+                                      {highlightSub ? (
+                                        <span
+                                          className={`text-[6px] opacity-95 truncate max-w-[44px] text-center leading-tight ${['leaves', 'paidLeaves', 'lopLeaves'].includes(badgeCategory) ? 'font-semibold normal-case' : 'font-bold uppercase'}`}
+                                          title={highlightSub}
+                                        >
+                                          {highlightSub}
                                         </span>
-                                        {effectiveSub ? (
-                                          <span
-                                            className={`text-[6px] opacity-95 truncate max-w-[44px] text-center leading-tight ${['leaves', 'paidLeaves', 'lopLeaves'].includes(badgeCategory) ? 'font-semibold normal-case' : 'font-bold uppercase'}`}
-                                            title={effectiveSub}
-                                          >
-                                            {effectiveSub}
-                                          </span>
-                                        ) : null}
-                                      </div>
+                                      ) : null}
                                     </div>
-                                  );
-                                })()}
+                                  </div>
+                                )}
                                 {shouldShow && record ? (
                                   <div className="space-y-0.5">
                                     {activeTable === 'shifts' ? (
                                       <>
-                                        {record.shiftName ? (() => {
-                                          const codes = getShiftCodes(record.shiftName);
-                                          return (
-                                            <div
-                                              className="font-semibold text-[9px] text-indigo-700 dark:text-indigo-300"
-                                              title={record.shiftName ? `${record.shiftName}${isMultiShift ? ` (${multiShiftCount} Shifts)` : ''}` : undefined}
-                                            >
-                                              {isMultiShift && codes.length > 1 ? (
-                                                <div className="flex flex-col items-center leading-tight">
-                                                  {codes.map((code, idx) => (
-                                                    <span key={idx} className="truncate max-w-full">
-                                                      {code}
-                                                    </span>
-                                                  ))}
-                                                </div>
-                                              ) : (
-                                                codes[0] || (record.shiftName.length > 8 ? record.shiftName.substring(0, 8) + '...' : record.shiftName)
-                                              )}
-                                            </div>
-                                          );
-                                        })() : (
+                                        {record.shiftName ? (
+                                          <div className="font-semibold text-[9px] text-indigo-700 dark:text-indigo-300" title={record.shiftName}>
+                                            {record.shiftName.length > 8 ? record.shiftName.substring(0, 8) + '...' : record.shiftName}
+                                          </div>
+                                        ) : (
                                           <div className="font-semibold text-[9px] text-slate-500">-</div>
                                         )}
                                         {record.isSplit && (
@@ -3998,9 +3919,7 @@ export function PayRegisterContent({
                                       </>
                                     ) : (
                                       <>
-                                        <div className="font-semibold text-[9px] text-center">
-                                          <span>{displayStatus}</span>
-                                        </div>
+                                        <div className="font-semibold text-[9px]">{displayStatus}</div>
                                         {record.isSplit && (
                                           <div className="text-[8px] opacity-75">
                                             {formatHalfSplitCell(record)}
@@ -4016,25 +3935,9 @@ export function PayRegisterContent({
                                         {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours' || activeTable === 'all') && (
                                           <div className="text-[8px] font-semibold text-blue-600 dark:text-blue-300">{record.otHours}h</div>
                                         )}
-                                        {record.shiftName && activeTable === 'all' && (() => {
-                                          const codes = getShiftCodes(record.shiftName);
-                                          return (
-                                            <div
-                                              className={`text-[8px] flex flex-col items-center leading-tight ${
-                                                isMultiShift
-                                                  ? 'font-medium text-indigo-700 dark:text-indigo-300'
-                                                  : 'opacity-75 text-slate-700 dark:text-slate-300'
-                                              }`}
-                                              title={record.shiftName ? `${record.shiftName}${isMultiShift ? ` (${multiShiftCount} Shifts)` : ''}` : undefined}
-                                            >
-                                              {codes.map((code, idx) => (
-                                                <span key={idx} className="truncate max-w-full">
-                                                  {code}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          );
-                                        })()}
+                                        {record.shiftName && activeTable === 'all' && (
+                                          <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
+                                        )}
                                       </>
                                     )}
                                     {record.isManuallyEdited && (
@@ -4049,11 +3952,7 @@ export function PayRegisterContent({
                           })}
                           {/* Dynamic columns based on active tab */}
                           {activeTable === 'all' && (() => {
-                            const rawPayableShifts = Number(pr.totals?.totalPayableShifts);
-                            const basePresent = pr.totals?.totalPresentDays ?? 0;
-                            const usePayableShifts = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
-                            const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
-                            const present = basePresent;
+                            const present = pr.totals?.totalPresentDays ?? 0;
                             const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;
                             const holidays = pr.totals?.totalHolidays ?? 0;
                             const totalLeaves = getLeaveTotal(pr.totals);
@@ -4063,14 +3962,13 @@ export function PayRegisterContent({
                             const lopDays = pr.totals?.totalLopDays ?? 0;
                             const attDed = getAttendanceDeductionDaysNumber(pr);
                             const totalDaysSummed = present + weekOffs + holidays + totalLeaves + od + absent;
-                            const paidDays = Math.max(0, payableBase + od + weekOffs + holidays + paidLeaves - attDed);
-                            const presentContribKeys: PayRegisterContribKey[] = ['present'];
+                            const paidDays = Math.max(0, present + od + weekOffs + holidays + paidLeaves - attDed);
                             return (
                               <>
                                 <td
-                                  className={`border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, presentContribKeys, 'Present days') ? payRegisterContribAccent(presentContribKeys).summaryRing : ''}`}
+                                  className={`border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
                                   title="Matches monthly summary present days. Click to highlight."
-                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, presentContribKeys, 'Present days')}
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['present'], 'Present days')}
                                 >
                                   {present.toFixed(1)}
                                 </td>
@@ -4196,44 +4094,29 @@ export function PayRegisterContent({
                                 >
                                   {formatAttDeductionDays(pr)}
                                 </td>
-                                {(() => {
-                                  const paidDaysContribKeys: PayRegisterContribKey[] = [
-                                    usePayableShifts ? 'payableShifts' : 'present',
-                                    'ods',
-                                    'weeklyOffs',
-                                    'holidays',
-                                    'paidLeaves',
-                                  ];
-                                  return (
-                                    <td
-                                      className={`border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
-                                        contribHighlight,
-                                        pr._id,
-                                        paidDaysContribKeys,
-                                        'Paid days components'
-                                      )
-                                        ? payRegisterContribAccent(paidDaysContribKeys).summaryRing
-                                        : ''}`}
-                                      title="Present + OD + week offs + holidays + paid leaves − attendance deduction — click to highlight contributing days"
-                                      onClick={() =>
-                                        !pr.isStub &&
-                                        togglePayRegisterContrib(pr, paidDaysContribKeys, 'Paid days components')
-                                      }
-                                    >
-                                      {paidDays.toFixed(1)}
-                                    </td>
-                                  );
-                                })()}
+                                <td
+                                  className={`border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
+                                    contribHighlight,
+                                    pr._id,
+                                    ['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves'],
+                                    'Paid days components'
+                                  )
+                                    ? payRegisterContribAccent(['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves']).summaryRing
+                                    : ''}`}
+                                  title="Present + OD + week offs + holidays + paid leaves − attendance deduction — click to highlight contributing days"
+                                  onClick={() =>
+                                    !pr.isStub &&
+                                    togglePayRegisterContrib(pr, ['present', 'ods', 'weeklyOffs', 'holidays', 'paidLeaves'], 'Paid days components')
+                                  }
+                                >
+                                  {paidDays.toFixed(1)}
+                                </td>
                               </>
                             );
                           })()}
                           {activeTable === 'present' && (
-                            <td
-                              className={`border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
-                              title="Click to highlight present days in the grid"
-                              onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['present'], 'Present days')}
-                            >
-                              {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
+                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              {pr.totals.totalPresentDays.toFixed(1)}
                             </td>
                           )}
                           {activeTable === 'absent' && (

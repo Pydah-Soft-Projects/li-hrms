@@ -10,7 +10,6 @@ type ContributingDateEntry = { date?: string; value?: number };
 
 export type MonthlySummaryLike = {
   totalPresentDays?: number;
-  totalPayableShifts?: number;
   totalPartialDays?: number;
   totalPartialPresentPayableOverlap?: number;
   contributingDates?: {
@@ -130,14 +129,9 @@ export function computePayRegisterAllRowFromMonthlySummary(
     };
   }
   const useMerge = options?.processingMode === 'single_shift';
-  const basePresent = useMerge
+  const present = useMerge
     ? mergeSingleShiftPresentForPayRegisterLikeRow(s)
     : round2(Number(s.totalPresentDays) || 0);
-  const rawPayableShifts = Number(s.totalPayableShifts);
-  const payableBase = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent
-    ? round2(rawPayableShifts)
-    : basePresent;
-  const present = basePresent;
   const weekOffs = round2(Number(s.totalWeeklyOffs) || 0);
   const holidays = round2(Number(s.totalHolidays) || 0);
   const paidLeaves = round2(Number(s.totalPaidLeaves) || 0);
@@ -156,7 +150,7 @@ export function computePayRegisterAllRowFromMonthlySummary(
   const attRaw = s.totalAttendanceDeductionDays ?? s.attendanceDeductionBreakdown?.daysDeducted ?? 0;
   const attDed = Number.isFinite(Number(attRaw)) ? round2(Number(attRaw)) : 0;
   const totalDaysSummed = round2(present + weekOffs + holidays + totalLeaves + od + absent);
-  const paidDays = Math.max(0, round2(payableBase + weekOffs + holidays + od + paidLeaves - attDed));
+  const paidDays = Math.max(0, round2(present + weekOffs + holidays + od + paidLeaves - attDed));
   return {
     present,
     weekOffs,

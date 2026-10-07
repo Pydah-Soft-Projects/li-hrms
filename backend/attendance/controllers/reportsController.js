@@ -1622,7 +1622,7 @@ function drawPayRegisterAllSummaryTablePdf(doc, dataRows, startX, startY, colWid
         const px = x0 + colWidths.slice(0, 16).reduce((a, b) => a + b, 0);
         doc.fillColor(headerFill).rect(px, y0, w(16), SUMMARY_HDR_H).fill();
         doc.fillColor('#ffffff').fontSize(6.5).font('Helvetica-Bold');
-        doc.text('PAYABLE', px + 2, hdrSingleY, { width: w(16) - 4, align: 'center' });
+        doc.text('PAID', px + 2, hdrSingleY, { width: w(16) - 4, align: 'center' });
         doc.lineWidth(0.5);
         doc.strokeColor('#e0e7ff');
         doc.rect(x0, y0, tableW, SUMMARY_HDR_H).stroke();
@@ -1907,12 +1907,6 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         }
                         if (s) {
                             const r = payRegisterAllRowFromSummary(s, payRegisterPresentProcessingMode);
-                            const timingDed = Number(s?.attendanceDeductionBreakdown?.lateEarlyDaysDeducted) || 0;
-                            const grossPayable = s.totalPayableShifts != null ? Number(s.totalPayableShifts) : r.paidDays;
-                            r.paidDays = Math.max(0, grossPayable - timingDed);
-                            if (s.totalAttendanceDeductionDays != null) {
-                                r.attDed = Number(s.totalAttendanceDeductionDays);
-                            }
                             for (const k of Object.keys(z)) {
                                 entityStats[k] = (Number(entityStats[k]) || 0) + (Number(r[k]) || 0);
                             }
@@ -2173,9 +2167,9 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         const calcSummaryMonth = year && month ? parseInt(String(month), 10) : pdfCycleM;
 
         const tableViewDataByEmpNo = {};
-        if (calcSummaryYear && calcSummaryMonth) {
+        if (pdfCycleY && pdfCycleM) {
             try {
-                const viewRows = await getMonthlyTableViewData(employees, calcSummaryYear, calcSummaryMonth, startDate, endDate, { mode: 'complete', includeContributingDates: true });
+                const viewRows = await getMonthlyTableViewData(employees, pdfCycleY, pdfCycleM, startDate, endDate);
                 for (const r of viewRows) {
                     const n = String(r.employee.emp_no).toUpperCase();
                     tableViewDataByEmpNo[n] = r.dailyAttendance || {};
@@ -2202,7 +2196,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         };
 
         const getInOutForRecord = (rec) => {
-            if (!rec) return { in: '-', out: '-', shifts: [] };
+            if (!rec) return { in: '-', out: '-' };
             if (Array.isArray(rec.shifts) && rec.shifts.length > 0) {
                 const sortedShifts = [...rec.shifts]
                     .filter(s => s)
@@ -2211,21 +2205,12 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 const lastOutShift = [...sortedShifts].reverse().find(s => s.outTime);
                 return {
                     in: formatGridPunchTime(firstInShift?.inTime),
-                    out: formatGridPunchTime(lastOutShift?.outTime),
-                    shifts: sortedShifts.map((s, idx) => ({
-                        shiftNumber: s.shiftNumber || idx + 1,
-                        shiftName: s.shiftName || (typeof s.shiftId === 'object' ? s.shiftId?.name : null) || '',
-                        status: s.status,
-                        in: formatGridPunchTime(s.inTime),
-                        out: formatGridPunchTime(s.outTime),
-                        workingHours: s.workingHours
-                    }))
+                    out: formatGridPunchTime(lastOutShift?.outTime)
                 };
             }
             return {
                 in: formatGridPunchTime(rec.inTime),
-                out: formatGridPunchTime(rec.outTime),
-                shifts: []
+                out: formatGridPunchTime(rec.outTime)
             };
         };
 
@@ -2285,20 +2270,13 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             ? displayRec
                             : rec) || displayRec;
 
-                        const hasWorkedPunches = punchRec && (
-                            (punchRec.shifts && punchRec.shifts.length > 0 && punchRec.shifts.some(s => s.inTime || s.outTime || s.workingHours > 0)) ||
-                            punchRec.inTime || punchRec.outTime ||
-                            (Number(punchRec.totalWorkingHours || punchRec.totalHours) > 0) ||
-                            punchRec.status === 'PRESENT' || punchRec.status === 'PARTIAL'
-                        );
-
                         if (isBeforeJoining || isAfterResignation) {
                             gridRow.push('');
                         } else if (isFutureDate) {
                             gridRow.push('-');
-                        } else if (isHOL && !hasWorkedPunches) {
+                        } else if (isHOL) {
                             gridRow.push('HOL\n-\n-');
-                        } else if (isWO && !hasWorkedPunches) {
+                        } else if (isWO) {
                             gridRow.push('WO\n-\n-');
                         } else if (
                             displayRec &&
@@ -2315,7 +2293,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             gridRow.push(appendPdfCellHours(`OD\nIN ${io.in}\nOUT ${io.out}`, punchRec || rec));
                         } else if (rec) {
                             const io = getInOutForRecord(rec);
-                            gridRow.push(formatPdfDayCellText(rec, io));
+                            let s = 'A';
+                            if (rec.status === 'PRESENT') s = 'P';
+                            else if (rec.status === 'PARTIAL') s = 'PT';
+                            else if (rec.status === 'HALF_DAY') s = 'HD';
+                            else if (rec.status === 'ABSENT') s = 'A';
+                            else if (rec.status === 'WEEK_OFF') s = 'WO';
+                            else if (rec.status === 'HOLIDAY') s = 'HOL';
+                            gridRow.push(appendPdfCellHours(`${s}\nIN ${io.in}\nOUT ${io.out}`, rec));
                         } else {
                             gridRow.push('A\n-\n-');
                         }
@@ -2323,15 +2308,6 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                     const r = payRegisterAllRowFromSummary(summary || null, payRegisterPresentProcessingMode);
                     const empWorkingHrs = empDaily.reduce((sum, rec) => sum + (Number(rec.totalWorkingHours) || 0), 0);
-                    const timingDed = Number(summary?.attendanceDeductionBreakdown?.lateEarlyDaysDeducted) || 0;
-                    const grossPayable = summary?.totalPayableShifts != null
-                        ? Number(summary.totalPayableShifts)
-                        : r.paidDays;
-                    const payableOrPaid = Math.max(0, grossPayable - timingDed);
-                    const attDedDays = summary?.totalAttendanceDeductionDays != null
-                        ? Number(summary.totalAttendanceDeductionDays)
-                        : (Number(r.attDed) || 0);
-
                     deptSumData.push([
                         String(pdfEmployeeSerial),
                         nameCell,
@@ -2347,9 +2323,9 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         String(r.lates),
                         r.dedAbsent.toFixed(1),
                         r.dedLop.toFixed(1),
-                        attDedDays.toFixed(1),
+                        r.attDed.toFixed(1),
                         empWorkingHrs.toFixed(2),
-                        payableOrPaid.toFixed(1)
+                        r.paidDays.toFixed(1)
                     ]);
                     deptGridData.push(gridRow);
                 }

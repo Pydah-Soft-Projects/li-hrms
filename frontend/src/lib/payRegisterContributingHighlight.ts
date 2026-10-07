@@ -245,10 +245,7 @@ export function rebuildContributingDatesFromDailyRecords(
       mergeBucket('lopLeaves', date, Math.min(1, lopLeaveVal), 'LOP');
     }
     if (odVal > 0) oncePerDate('ods', date, Math.min(1, odVal), 'OD');
-    if (presentVal > 0) {
-      const pVal = per > 1 ? per : Math.min(1, presentVal);
-      oncePerDate('present', date, pVal, per > 1 ? `P (${per})` : 'P');
-    }
+    if (presentVal > 0) oncePerDate('present', date, Math.min(1, presentVal), 'P');
 
     const pay = (() => {
       let p = 0;
@@ -256,7 +253,7 @@ export function rebuildContributingDatesFromDailyRecords(
       if (record.secondHalf && ['present', 'od'].includes(String(record.secondHalf.status))) p += per / 2;
       return Math.round(p * 100) / 100;
     })();
-    if (pay > 0) oncePerDate('payableShifts', date, pay, pay > 1 ? `Pay (${pay})` : 'Pay');
+    if (pay > 0) oncePerDate('payableShifts', date, Math.min(1, pay), 'Pay');
 
     if (split && pay > 0 && pay < 1) {
       oncePerDate('partial', date, pay, `PT (${pay})`);
@@ -332,28 +329,19 @@ export function resolvePayRegisterContribMap(
           Record<PayRegisterContribKey, Array<string | { date: string; value?: number; label?: string }>>
         >;
         dailyRecords?: PayRegisterContribDailyRecord[] | null;
-        totals?: { totalPayableShifts?: number; totalPresentDays?: number };
       }
     | null
     | undefined,
   keys: readonly PayRegisterContribKey[]
 ): { map: Map<string, { value: number; label: string }>; usedDailyGridFallback: boolean } {
-  const hasPayableShifts =
-    (Number(pr?.totals?.totalPayableShifts) > (Number(pr?.totals?.totalPresentDays) || 0)) ||
-    (pr?.dailyRecords ?? []).some((d) => Number(d.payableShifts) > 1);
-
-  const effectiveKeys = hasPayableShifts && keys.includes('present')
-    ? keys.map((k) => (k === 'present' ? 'payableShifts' : k))
-    : keys;
-
-  const fromApi = buildPayRegisterContribDateMap(pr?.contributingDates, effectiveKeys);
+  const fromApi = buildPayRegisterContribDateMap(pr?.contributingDates, keys);
   if (fromApi.size > 0) {
     return { map: fromApi, usedDailyGridFallback: false };
   }
   const daily = pr?.dailyRecords ?? [];
   const rebuilt = rebuildContributingDatesFromDailyRecords(daily);
   return {
-    map: buildPayRegisterContribDateMap(rebuilt, effectiveKeys),
+    map: buildPayRegisterContribDateMap(rebuilt, keys),
     usedDailyGridFallback: daily.length > 0,
   };
 }
