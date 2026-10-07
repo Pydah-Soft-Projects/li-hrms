@@ -63,8 +63,13 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
         const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
 
         resolved = {
+            evaluationMode: deptSettings?.attendance?.deductionRules?.evaluationMode ?? globalSettings?.deductionRules?.evaluationMode ?? 'combined',
             freeAllowedPerMonth: deptSettings?.attendance?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
             combinedCountThreshold: deptSettings?.attendance?.deductionRules?.combinedCountThreshold ?? globalSettings?.deductionRules?.combinedCountThreshold ?? null,
+            freeLateInsPerMonth: deptSettings?.attendance?.deductionRules?.freeLateInsPerMonth ?? globalSettings?.deductionRules?.freeLateInsPerMonth ?? null,
+            lateCountThreshold: deptSettings?.attendance?.deductionRules?.lateCountThreshold ?? globalSettings?.deductionRules?.lateCountThreshold ?? null,
+            freeEarlyOutsPerMonth: deptSettings?.attendance?.deductionRules?.freeEarlyOutsPerMonth ?? globalSettings?.deductionRules?.freeEarlyOutsPerMonth ?? null,
+            earlyCountThreshold: deptSettings?.attendance?.deductionRules?.earlyCountThreshold ?? globalSettings?.deductionRules?.earlyCountThreshold ?? null,
             deductionType: deptSettings?.attendance?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
             deductionDays: deptSettings?.attendance?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
             deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
@@ -77,8 +82,13 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
     } catch (error) {
         console.error('Error getting resolved attendance deduction rules for second salary:', error);
         return {
+            evaluationMode: 'combined',
             freeAllowedPerMonth: null,
             combinedCountThreshold: null,
+            freeLateInsPerMonth: null,
+            lateCountThreshold: null,
+            freeEarlyOutsPerMonth: null,
+            earlyCountThreshold: null,
             deductionType: null,
             deductionDays: null,
             deductionAmount: null,
@@ -289,14 +299,36 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         console.log(`[SecondSalaryDeduction] Employee ${employeeId} - Lates: ${lateInsCount}, Early: ${earlyOutsCount} (Source: ${source})`);
 
         const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
+        const evaluationMode = rules.evaluationMode === 'separate' ? 'separate' : 'combined';
 
-        if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
+        const hasValidRules =
+            evaluationMode === 'separate'
+                ? !!rules.deductionType &&
+                  !!rules.calculationMode &&
+                  (!!rules.lateCountThreshold || !!rules.earlyCountThreshold || !!rules.combinedCountThreshold)
+                : !!rules.combinedCountThreshold && !!rules.deductionType && !!rules.calculationMode;
+
+        const combinedCount = lateInsCount + earlyOutsCount;
+        const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
+        const freeLateIns = rules.freeLateInsPerMonth != null ? Number(rules.freeLateInsPerMonth) : 0;
+        const freeEarlyOuts = rules.freeEarlyOutsPerMonth != null ? Number(rules.freeEarlyOutsPerMonth) : 0;
+
+        if (!hasValidRules) {
             return {
                 attendanceDeduction: 0,
                 breakdown: {
+                    evaluationMode,
                     lateInsCount,
                     earlyOutsCount,
-                    combinedCount: lateInsCount + earlyOutsCount,
+                    combinedCount,
+                    freeAllowedPerMonth: freeAllowed,
+                    freeLateInsPerMonth: rules.freeLateInsPerMonth != null ? freeLateIns : null,
+                    freeEarlyOutsPerMonth: rules.freeEarlyOutsPerMonth != null ? freeEarlyOuts : null,
+                    effectiveCount: Math.max(0, combinedCount - freeAllowed),
+                    effectiveLateCount: Math.max(0, lateInsCount - freeLateIns),
+                    effectiveEarlyCount: Math.max(0, earlyOutsCount - freeEarlyOuts),
+                    lateDaysDeducted: 0,
+                    earlyDaysDeducted: 0,
                     daysDeducted: 0,
                     deductionType: null,
                     calculationMode: null,
@@ -304,25 +336,70 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
             };
         }
 
-        const combinedCount = lateInsCount + earlyOutsCount;
-        const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
-        const effectiveCount = Math.max(0, combinedCount - freeAllowed);
         let daysDeducted = 0;
+        let lateDaysDeducted = 0;
+        let earlyDaysDeducted = 0;
+        let effectiveLateCount = 0;
+        let effectiveEarlyCount = 0;
+        let effectiveCount = 0;
 
-        if (effectiveCount >= rules.combinedCountThreshold) {
-            const multiplier = Math.floor(effectiveCount / rules.combinedCountThreshold);
-            const remainder = effectiveCount % rules.combinedCountThreshold;
+        if (evaluationMode === 'separate') {
+            const lateThreshold = Number(rules.lateCountThreshold) || Number(rules.combinedCountThreshold) || 1;
+            const earlyThreshold = Number(rules.earlyCountThreshold) || Number(rules.combinedCountThreshold) || 1;
 
-            daysDeducted = calculateDaysToDeduct(
-                multiplier,
-                remainder,
-                rules.combinedCountThreshold,
-                rules.deductionType,
-                rules.deductionDays,
-                rules.deductionAmount,
-                perDayBasicPay,
-                rules.calculationMode
-            );
+            effectiveLateCount = Math.max(0, lateInsCount - freeLateIns);
+            effectiveEarlyCount = Math.max(0, earlyOutsCount - freeEarlyOuts);
+            effectiveCount = effectiveLateCount + effectiveEarlyCount;
+
+            if (effectiveLateCount >= lateThreshold) {
+                const multiplier = Math.floor(effectiveLateCount / lateThreshold);
+                const remainder = effectiveLateCount % lateThreshold;
+                lateDaysDeducted = calculateDaysToDeduct(
+                    multiplier,
+                    remainder,
+                    lateThreshold,
+                    rules.deductionType,
+                    rules.deductionDays,
+                    rules.deductionAmount,
+                    perDayBasicPay,
+                    rules.calculationMode
+                );
+            }
+
+            if (effectiveEarlyCount >= earlyThreshold) {
+                const multiplier = Math.floor(effectiveEarlyCount / earlyThreshold);
+                const remainder = effectiveEarlyCount % earlyThreshold;
+                earlyDaysDeducted = calculateDaysToDeduct(
+                    multiplier,
+                    remainder,
+                    earlyThreshold,
+                    rules.deductionType,
+                    rules.deductionDays,
+                    rules.deductionAmount,
+                    perDayBasicPay,
+                    rules.calculationMode
+                );
+            }
+
+            daysDeducted = Math.round((lateDaysDeducted + earlyDaysDeducted) * 100) / 100;
+        } else {
+            // Legacy Combined mode
+            effectiveCount = Math.max(0, combinedCount - freeAllowed);
+            if (effectiveCount >= rules.combinedCountThreshold) {
+                const multiplier = Math.floor(effectiveCount / rules.combinedCountThreshold);
+                const remainder = effectiveCount % rules.combinedCountThreshold;
+
+                daysDeducted = calculateDaysToDeduct(
+                    multiplier,
+                    remainder,
+                    rules.combinedCountThreshold,
+                    rules.deductionType,
+                    rules.deductionDays,
+                    rules.deductionAmount,
+                    perDayBasicPay,
+                    rules.calculationMode
+                );
+            }
         }
 
         const attendanceDeduction = daysDeducted * perDayBasicPay;
@@ -330,11 +407,18 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         return {
             attendanceDeduction: Math.round(attendanceDeduction * 100) / 100,
             breakdown: {
+                evaluationMode,
                 lateInsCount,
                 earlyOutsCount,
                 combinedCount,
                 freeAllowedPerMonth: freeAllowed,
+                freeLateInsPerMonth: rules.freeLateInsPerMonth != null ? freeLateIns : null,
+                freeEarlyOutsPerMonth: rules.freeEarlyOutsPerMonth != null ? freeEarlyOuts : null,
                 effectiveCount,
+                effectiveLateCount,
+                effectiveEarlyCount,
+                lateDaysDeducted,
+                earlyDaysDeducted,
                 daysDeducted,
                 deductionType: rules.deductionType,
                 calculationMode: rules.calculationMode,
@@ -345,9 +429,18 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         return {
             attendanceDeduction: 0,
             breakdown: {
+                evaluationMode: 'combined',
                 lateInsCount: 0,
                 earlyOutsCount: 0,
                 combinedCount: 0,
+                freeAllowedPerMonth: 0,
+                freeLateInsPerMonth: null,
+                freeEarlyOutsPerMonth: null,
+                effectiveCount: 0,
+                effectiveLateCount: 0,
+                effectiveEarlyCount: 0,
+                lateDaysDeducted: 0,
+                earlyDaysDeducted: 0,
                 daysDeducted: 0,
                 deductionType: null,
                 calculationMode: null,

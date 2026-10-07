@@ -468,9 +468,15 @@ const departmentSettingsSchema = new mongoose.Schema(
       },
     },
 
-    // Attendance Deduction Rules (Combined Late-in + Early-out)
+    // Attendance Deduction Rules (Combined or Separate Late-in + Early-out)
     attendance: {
       deductionRules: {
+        // Evaluation mode override: 'combined', 'separate', or null (inherit global)
+        evaluationMode: {
+          type: String,
+          enum: ['combined', 'separate', null],
+          default: null,
+        },
         // Free allowed late-ins + early-outs per month (first N not counted)
         freeAllowedPerMonth: {
           type: Number,
@@ -479,6 +485,30 @@ const departmentSettingsSchema = new mongoose.Schema(
         },
         // Combined count threshold (every N above free = 1 unit)
         combinedCountThreshold: {
+          type: Number,
+          default: null,
+          min: 1,
+        },
+        // Free allowed late-ins per month (separate mode)
+        freeLateInsPerMonth: {
+          type: Number,
+          default: null,
+          min: 0,
+        },
+        // Late count threshold (separate mode)
+        lateCountThreshold: {
+          type: Number,
+          default: null,
+          min: 1,
+        },
+        // Free allowed early-outs per month (separate mode)
+        freeEarlyOutsPerMonth: {
+          type: Number,
+          default: null,
+          min: 0,
+        },
+        // Early count threshold (separate mode)
+        earlyCountThreshold: {
           type: Number,
           default: null,
           min: 1,

@@ -20,11 +20,18 @@ const { resolveDayLateEarlyWaiver } = require('../../shared/utils/hoursOdOverlap
 
 function defaultAttendancePolicyDeductionBreakdown() {
   return {
+    evaluationMode: 'combined',
     lateInsCount: 0,
     earlyOutsCount: 0,
     combinedCount: 0,
     freeAllowedPerMonth: 0,
+    freeLateInsPerMonth: null,
+    freeEarlyOutsPerMonth: null,
     effectiveCount: 0,
+    effectiveLateCount: 0,
+    effectiveEarlyCount: 0,
+    lateDaysDeducted: 0,
+    earlyDaysDeducted: 0,
     daysDeducted: 0,
     lateEarlyDaysDeducted: 0,
     absentExtraDays: 0,
@@ -1658,11 +1665,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         policyDedDays = Number(b.daysDeducted) || 0;
         policyBreakdown = {
           ...defaultAttendancePolicyDeductionBreakdown(),
+          evaluationMode: b.evaluationMode != null ? String(b.evaluationMode) : 'combined',
           lateInsCount: Number(b.lateInsCount) || 0,
           earlyOutsCount: Number(b.earlyOutsCount) || 0,
           combinedCount: Number(b.combinedCount) || 0,
           freeAllowedPerMonth: Number(b.freeAllowedPerMonth) || 0,
+          freeLateInsPerMonth: b.freeLateInsPerMonth != null ? Number(b.freeLateInsPerMonth) : null,
+          freeEarlyOutsPerMonth: b.freeEarlyOutsPerMonth != null ? Number(b.freeEarlyOutsPerMonth) : null,
           effectiveCount: Number(b.effectiveCount) || 0,
+          effectiveLateCount: Number(b.effectiveLateCount) || 0,
+          effectiveEarlyCount: Number(b.effectiveEarlyCount) || 0,
+          lateDaysDeducted: Number(b.lateDaysDeducted) || 0,
+          earlyDaysDeducted: Number(b.earlyDaysDeducted) || 0,
           daysDeducted: Number(b.daysDeducted) || 0,
           lateEarlyDaysDeducted: Number(b.lateEarlyDaysDeducted) || 0,
           absentExtraDays: Number(b.absentExtraDays) || 0,

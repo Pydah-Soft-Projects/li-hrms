@@ -8,14 +8,44 @@ const AttendanceDeductionSettingsSchema = new mongoose.Schema(
   {
     // Deduction Rules
     deductionRules: {
-      // Free allowed late-ins + early-outs per month (first N are not counted for deduction)
+      // Evaluation mode: 'combined' (aggregate late+early) or 'separate' (independent late and early rules)
+      evaluationMode: {
+        type: String,
+        enum: ['combined', 'separate', null],
+        default: 'combined',
+      },
+      // Free allowed late-ins + early-outs per month (combined mode)
       freeAllowedPerMonth: {
         type: Number,
         default: null,
         min: 0,
       },
-      // Combined count threshold (every N late-ins + early-outs above free = 1 unit deduction)
+      // Combined count threshold (combined mode)
       combinedCountThreshold: {
+        type: Number,
+        default: null,
+        min: 1,
+      },
+      // Free allowed late-ins per month (separate mode)
+      freeLateInsPerMonth: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Late count threshold (separate mode, every N late-ins above free = 1 unit)
+      lateCountThreshold: {
+        type: Number,
+        default: null,
+        min: 1,
+      },
+      // Free allowed early-outs per month (separate mode)
+      freeEarlyOutsPerMonth: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Early count threshold (separate mode, every N early-outs above free = 1 unit)
+      earlyCountThreshold: {
         type: Number,
         default: null,
         min: 1,

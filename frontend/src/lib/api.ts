@@ -241,10 +241,23 @@ export interface PayrollBatch {
 
 /** Attendance deduction breakdown (late-in/early-out) */
 export interface AttendanceDeductionBreakdown {
+  evaluationMode?: string;
   lateInsCount?: number;
   earlyOutsCount?: number;
   combinedCount?: number;
+  freeAllowedPerMonth?: number;
+  freeLateInsPerMonth?: number | null;
+  freeEarlyOutsPerMonth?: number | null;
+  effectiveCount?: number;
+  effectiveLateCount?: number;
+  effectiveEarlyCount?: number;
+  lateDaysDeducted?: number;
+  earlyDaysDeducted?: number;
   daysDeducted?: number;
+  lateEarlyDaysDeducted?: number;
+  absentExtraDays?: number;
+  absentDays?: number;
+  lopDaysPerAbsent?: number | null;
   deductionType?: string | null;
   calculationMode?: string | null;
 }
