@@ -420,6 +420,19 @@ export default function AttendanceReportsTab() {
             const w = (typeof row.status === 'string' && (row.status.toUpperCase().includes('WEEK_OFF') || row.status.toUpperCase() === 'WO')) ? 1 : (row.wo || 0);
             return p + w;
         }},
+        { key: 'firstInTime', label: 'First Punch (In Time)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.firstInTime ? dayjs(row.firstInTime).format('hh:mm A') : (row.inTime ? dayjs(row.inTime).format('hh:mm A') : '—') },
+        { key: 'lastOutTime', label: 'Last Punch (Out Time)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lastOutTime ? dayjs(row.lastOutTime).format('hh:mm A') : (row.outTime ? dayjs(row.outTime).format('hh:mm A') : '—') },
+        { key: 'workingHours', label: 'Total Working Hours', defaultChecked: false, isNecessary: false, getValue: (row: any) => (typeof row.totalWorkingHours === 'number' ? row.totalWorkingHours.toFixed(2) : (typeof row.workingHours === 'number' ? row.workingHours.toFixed(2) : '—')) },
+    ], []);
+
+    const THUMB_COLUMNS: ColumnOption[] = useMemo(() => [
+        { key: 'timestamp', label: 'Timestamp', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.timestamp ? dayjs(row.timestamp).format('YYYY-MM-DD HH:mm:ss') : '—' },
+        { key: 'employeeId', label: 'Employee ID / Code', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.emp_no : null) || (typeof row.employeeId === 'string' && row.employeeId.length !== 24 ? row.employeeId : null) || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : null) || '—' },
+        { key: 'employeeName', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.employee_name : null) || row.employeeName || row.employee_name || '—' },
+        { key: 'logType', label: 'Log Type (IN/OUT)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.logType || '—' },
+        { key: 'attendanceStatus', label: 'Day Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.attendanceStatus || '—' },
+        { key: 'deviceName', label: 'Device Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.deviceName || '—' },
+        { key: 'receivedAt', label: 'Received At', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.receivedAt ? dayjs(row.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '—' },
     ], []);
 
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
@@ -513,7 +526,14 @@ export default function AttendanceReportsTab() {
         return Array.from(empMap.values());
     };
 
-    const handleConfirmColumnExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    const handleConfirmColumnExport = async (
+        selectedKeys: string[],
+        format: 'excel' | 'pdf',
+        extraOptions?: {
+            includeThumbLogs?: boolean;
+            selectedThumbKeys?: string[];
+        }
+    ) => {
         setIsExportLoading(true);
         try {
             let rawData: any[] = [];
@@ -551,7 +571,30 @@ export default function AttendanceReportsTab() {
             if (employeeIds.length > 0) params.employeeId = employeeIds.join(',');
             if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds.join(',');
 
-            const response = await api.getAttendanceReportSummary(params);
+            const shouldFetchThumbLogs = Boolean(
+                extraOptions?.includeThumbLogs &&
+                extraOptions.selectedThumbKeys &&
+                extraOptions.selectedThumbKeys.length > 0
+            );
+
+            const attendancePromise = api.getAttendanceReportSummary(params);
+            const thumbLogsPromise = shouldFetchThumbLogs
+                ? api.getThumbReports({
+                    startDate: dayjs(params.startDate || startDate).startOf('day').toISOString(),
+                    endDate: dayjs(params.endDate || endDate).endOf('day').toISOString(),
+                    employeeId: employeeIds.length > 0 ? employeeIds : undefined,
+                    employeeGroupId: employeeGroupIds.length > 0 ? employeeGroupIds : undefined,
+                    departmentId: departmentIds.length > 0 ? departmentIds : undefined,
+                    divisionId: divisionIds.length > 0 ? divisionIds : undefined,
+                    designationId: designationIds.length > 0 ? designationIds : undefined,
+                    search: searchQuery || undefined,
+                    page: 1,
+                    limit: 100000,
+                })
+                : Promise.resolve(null);
+
+            const [response, thumbRes] = await Promise.all([attendancePromise, thumbLogsPromise]);
+
             if (response.success && response.summaries && response.summaries.length > 0) {
                 rawData = response.summaries;
             } else if (response.success && response.data && response.data.length > 0) {
@@ -561,16 +604,40 @@ export default function AttendanceReportsTab() {
             }
 
             const dataToExport = aggregateRecordsByEmployee(rawData);
+
+            const additionalSheets: any[] = [];
+            if (shouldFetchThumbLogs && thumbRes?.data) {
+                const thumbData = Array.isArray(thumbRes.data) ? thumbRes.data : [];
+                additionalSheets.push({
+                    sheetName: 'Thumb Logs',
+                    title: 'BIOMETRIC THUMB LOGS REPORT',
+                    subtitle: `Period: ${params.startDate || startDate} to ${params.endDate || endDate}`,
+                    data: thumbData,
+                    columns: THUMB_COLUMNS,
+                    selectedKeys: extraOptions!.selectedThumbKeys!,
+                });
+            }
+
+            const effectiveStart = params.startDate || startDate;
+            const effectiveEnd = params.endDate || endDate;
+
             exportReportWithColumns({
                 title: 'REPORT ON ATTENDANCE',
                 subtitle: 'Parameters are as per Department, Division, Designation, Group, Date Range, etc',
+                sheetName: 'Attendance Summary',
                 data: dataToExport,
                 columns: ATTENDANCE_COLUMNS,
                 selectedKeys,
                 format,
-                fileName: `Attendance_Report_${startDate}_to_${endDate}`,
+                fileName: `Attendance_Report_${effectiveStart}_to_${effectiveEnd}`,
+                additionalSheets: additionalSheets.length > 0 ? additionalSheets : undefined,
             });
-            toast.success(`${format.toUpperCase()} attendance report downloaded successfully!`);
+
+            toast.success(
+                shouldFetchThumbLogs
+                    ? `${format.toUpperCase()} attendance report with thumb logs downloaded successfully!`
+                    : `${format.toUpperCase()} attendance report downloaded successfully!`
+            );
             setIsColumnModalOpen(false);
             setIsExportDialogOpen(false);
         } catch (error: any) {
@@ -1302,6 +1369,9 @@ export default function AttendanceReportsTab() {
                 reportName="Attendance Report"
                 exportFormat={exportFormat}
                 columns={ATTENDANCE_COLUMNS}
+                thumbLogColumns={THUMB_COLUMNS}
+                enableThumbLogsOption={true}
+                defaultIncludeThumbLogs={true}
                 onConfirmExport={handleConfirmColumnExport}
                 loading={isExportLoading}
             />

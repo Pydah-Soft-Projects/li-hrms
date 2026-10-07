@@ -6821,6 +6821,11 @@ export const api = {
     endDate?: string;
     employeeId?: string | string[];
     employeeGroupId?: string | string[];
+    departmentId?: string | string[];
+    divisionId?: string | string[];
+    designationId?: string | string[];
+    month?: string;
+    year?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -6830,6 +6835,11 @@ export const api = {
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
     if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
+    if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
+    if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);
+    if (params.designationId) query.append('designationId', Array.isArray(params.designationId) ? params.designationId.join(',') : params.designationId);
+    if (params.month) query.append('month', params.month);
+    if (params.year) query.append('year', params.year);
     if (params.search) query.append('search', params.search);
     if (params.page) query.append('page', params.page.toString());
     if (params.limit) query.append('limit', params.limit.toString());

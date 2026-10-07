@@ -659,7 +659,13 @@ exports.getAttendanceReport = async (req, res) => {
  */
 exports.getThumbReports = async (req, res) => {
     try {
-        const { startDate, endDate, employeeId, limit, page, search } = req.query;
+        let { startDate, endDate, employeeId, limit, page, search, departmentId, divisionId, designationId, employeeGroupId, month, year } = req.query;
+
+        if (month && year) {
+            const period = await dateCycleService.getPayrollCycleForMonth(parseInt(year), parseInt(month));
+            startDate = dayjs(period.startDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
+            endDate = dayjs(period.endDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
+        }
 
         const filters = {
             startDate,
@@ -683,19 +689,66 @@ exports.getThumbReports = async (req, res) => {
             if (p.status === 'HOL') nonWorkingMap[p.employeeNumber].hol++;
         });
 
+        const empFilter = { is_active: { $ne: false } };
+        let hasEmpFilter = false;
+
         if (employeeId && employeeId !== 'all') {
-            const employee = await Employee.findById(employeeId).select('emp_no');
-            if (employee) {
-                filters.employeeId = employee.emp_no;
+            const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+            if (empIds.length > 0) {
+                empFilter._id = empIds.length > 1 ? { $in: empIds } : empIds[0];
+                hasEmpFilter = true;
             }
-        } else if (search) {
-            const employees = await Employee.find({
-                $or: [
-                    { employee_name: { $regex: search, $options: 'i' } },
-                    { emp_no: { $regex: search, $options: 'i' } }
-                ]
-            }).select('emp_no').lean();
-            filters.employeeIds = employees.map(e => e.emp_no);
+        }
+        if (departmentId && departmentId !== 'all') {
+            const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+            if (deptIds.length > 0) {
+                empFilter.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
+                hasEmpFilter = true;
+            }
+        }
+        if (divisionId && divisionId !== 'all') {
+            const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+            if (divIds.length > 0) {
+                empFilter.division_id = divIds.length > 1 ? { $in: divIds } : divIds[0];
+                hasEmpFilter = true;
+            }
+        }
+        if (designationId && designationId !== 'all') {
+            const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
+            if (desigIds.length > 0) {
+                empFilter.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+                hasEmpFilter = true;
+            }
+        }
+        if (employeeGroupId && employeeGroupId !== 'all') {
+            const groupIds = String(employeeGroupId).split(',').filter(id => id && id !== 'all');
+            if (groupIds.length > 0) {
+                empFilter.employee_group_id = groupIds.length > 1 ? { $in: groupIds } : groupIds[0];
+                hasEmpFilter = true;
+            }
+        }
+        if (search) {
+            empFilter.$or = [
+                { employee_name: { $regex: search, $options: 'i' } },
+                { emp_no: { $regex: search, $options: 'i' } }
+            ];
+            hasEmpFilter = true;
+        }
+
+        if (hasEmpFilter) {
+            const matchedEmployees = await Employee.find(empFilter).select('emp_no').lean();
+            const matchedEmpNos = matchedEmployees.map(e => e.emp_no);
+            if (matchedEmpNos.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    count: 0,
+                    total: 0,
+                    page: parseInt(page) || 1,
+                    totalPages: 1,
+                    data: []
+                });
+            }
+            filters.employeeIds = matchedEmpNos;
         }
 
         const result = await biometricReportService.getThumbReports({
