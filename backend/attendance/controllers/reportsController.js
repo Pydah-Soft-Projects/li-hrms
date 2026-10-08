@@ -85,8 +85,8 @@ exports.getAttendanceReport = async (req, res) => {
     try {
         let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, groupBy, month, year } = req.query;
 
-        // --- NEW: Payroll Month Logic ---
-        if (month && year) {
+        // --- NEW: Payroll Month Logic (only when explicit dates are not supplied) ---
+        if (month && year && (!startDate || !endDate)) {
             const period = await dateCycleService.getPayrollCycleForMonth(parseInt(year), parseInt(month));
             startDate = dayjs(period.startDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
             endDate = dayjs(period.endDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
@@ -661,7 +661,7 @@ exports.getThumbReports = async (req, res) => {
     try {
         let { startDate, endDate, employeeId, limit, page, search, departmentId, divisionId, designationId, employeeGroupId, month, year } = req.query;
 
-        if (month && year) {
+        if (month && year && (!startDate || !endDate)) {
             const period = await dateCycleService.getPayrollCycleForMonth(parseInt(year), parseInt(month));
             startDate = dayjs(period.startDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
             endDate = dayjs(period.endDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
@@ -812,8 +812,8 @@ exports.exportAttendanceReport = async (req, res) => {
     try {
         let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, search, strict, groupBy, month, year } = req.query;
 
-        // --- NEW: Payroll Month Logic ---
-        if (month && year) {
+        // --- NEW: Payroll Month Logic (only when explicit dates are not supplied) ---
+        if (month && year && (!startDate || !endDate)) {
             const period = await dateCycleService.getPayrollCycleForMonth(parseInt(year), parseInt(month));
             startDate = dayjs(period.startDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
             endDate = dayjs(period.endDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
@@ -900,9 +900,8 @@ exports.exportAttendanceReport = async (req, res) => {
 
         // Extend the fetch window: start one day before so we don't miss late INs,
         // and end after the end date to capture cross-midnight OUTs.
-        const fetchStart = new Date(start); fetchStart.setHours(0, 0, 0, 0);
-        const fetchEnd = new Date(end); fetchEnd.setHours(23, 59, 59, 999);
-        fetchEnd.setTime(fetchEnd.getTime() + punchWindowMs);
+        const fetchStart = dayjs(startDate).tz('Asia/Kolkata').startOf('day').toDate();
+        const fetchEnd = dayjs(endDate).tz('Asia/Kolkata').endOf('day').add(punchWindowMs, 'ms').toDate();
 
         const thumbFilters = {
             startDate: fetchStart.toISOString(),
@@ -1005,8 +1004,7 @@ exports.exportAttendanceReport = async (req, res) => {
                 if (log.type === 'IN') {
                     // Only anchor new sessions on logs within the *requested* date range
                     const inDate = getDateKey(log.time);
-                    const inDay = new Date(inDate);
-                    if (inDay < new Date(startDate) || inDay > new Date(endDate)) {
+                    if (inDate < startDate || inDate > endDate) {
                         // It's a pre/post log — only relevant if it can close a pending IN
                         // (handled in state below — but we can't start new sessions outside range)
                         if (!pendingIn) continue;
@@ -1184,20 +1182,22 @@ exports.exportAttendanceReport = async (req, res) => {
             if (p.status === 'HOL') nonWorkingMap[p.employeeNumber].hol++;
         });
 
-        if (groupBy === 'division' || groupBy === 'department' || groupBy === 'employee') {
+        const effectiveGroupBy = (groupBy === 'department' || groupBy === 'employee') ? groupBy : 'division';
+
+        if (effectiveGroupBy === 'division' || effectiveGroupBy === 'department' || effectiveGroupBy === 'employee') {
             // Fetch similar summaries as in getAttendanceReport
             let children = [];
-            if (groupBy === 'division') {
+            if (effectiveGroupBy === 'division') {
                 const divIds = (divisionId && divisionId !== 'all') ? String(divisionId).split(',').filter(id => id && id !== 'all') : [];
                 const divQuery = { is_active: { $ne: false }, ...(req.scopeFilter || {}) };
                 if (divIds.length > 0) divQuery._id = { $in: divIds };
                 children = await Division.find(divQuery).select('name').lean();
-            } else if (groupBy === 'department') {
+            } else if (effectiveGroupBy === 'department') {
                 const divIds = (divisionId && divisionId !== 'all') ? String(divisionId).split(',').filter(id => id && id !== 'all') : [];
                 const deptQuery = { is_active: { $ne: false }, ...(req.scopeFilter || {}) };
                 if (divIds.length > 0) deptQuery.divisions = { $in: divIds };
                 children = await Department.find(deptQuery).select('name').lean();
-            } else if (groupBy === 'employee') {
+            } else if (effectiveGroupBy === 'employee') {
                 const empQuery = { is_active: { $ne: false }, ...(req.scopeFilter || {}) };
                 if (designationId && designationId !== 'all') {
                     const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
@@ -1229,7 +1229,7 @@ exports.exportAttendanceReport = async (req, res) => {
                 children = emps.map(e => ({ _id: e._id, ...e, name: e.employee_name }));
             }
 
-            const employeeSummaryMode = groupBy === 'employee';
+            const employeeSummaryMode = effectiveGroupBy === 'employee';
             const monthlyKey = month && year ? `${parseInt(String(year), 10)}-${String(parseInt(String(month), 10)).padStart(2, '0')}` : null;
             const exportAttendanceSettings = await AttendanceSettings.getSettings();
             const exportProcessingMode = AttendanceSettings.getProcessingMode(exportAttendanceSettings)?.mode || 'multi_shift';
@@ -1265,7 +1265,7 @@ exports.exportAttendanceReport = async (req, res) => {
             const abstractRows = [
                 ['ATTENDANCE SUMMARY REPORT'],
                 ['Period', `${startDate} to ${endDate}`],
-                ['Level', groupBy.toUpperCase()],
+                ['Level', effectiveGroupBy.toUpperCase()],
                 [''],
                 employeeSummaryMode
                     ? ['EC No.', 'Employee Name', 'Designation', 'Division', 'Department', 'Group', 'Present Days', 'Absent Days', 'Leave Days', '', '', 'Week Offs', 'Total Days', 'Lates/Early Out', 'Deduction Days', '', 'Total Paid Days']
@@ -1278,7 +1278,7 @@ exports.exportAttendanceReport = async (req, res) => {
             for (const child of children) {
                 const childEmpFilter = { is_active: { $ne: false } };
 
-                if (groupBy === 'division') {
+                if (effectiveGroupBy === 'division') {
                     const division = await Division.findById(child._id).select('departments').lean();
                     const divisionLinkedDeptIds = (division && division.departments) ? division.departments : [];
                     const depts = await Department.find({
@@ -1292,12 +1292,12 @@ exports.exportAttendanceReport = async (req, res) => {
                         { division_id: child._id },
                         { department_id: { $in: deptIds } }
                     ];
-                } else if (groupBy === 'department') {
+                } else if (effectiveGroupBy === 'department') {
                     childEmpFilter.department_id = child._id;
                     if (divisionId && divisionId !== 'all') {
                         childEmpFilter.division_id = divisionId;
                     }
-                } else if (groupBy === 'employee') {
+                } else if (effectiveGroupBy === 'employee') {
                     childEmpFilter.emp_no = child.emp_no;
                 }
 
@@ -1482,16 +1482,21 @@ exports.exportAttendanceReport = async (req, res) => {
             XLSX.utils.book_append_sheet(workbook, wsAbstract, 'Summary Abstract');
         }
 
-        if (detailRows.length > 0) {
-            const wsDetails = XLSX.utils.json_to_sheet(detailRows, { header: detailHeaders });
-            const detailCols = detailHeaders.map(() => ({ wch: 13 }));
-            detailCols[2] = { wch: 28 };
-            wsDetails['!cols'] = detailCols;
-            XLSX.utils.book_append_sheet(workbook, wsDetails, 'Attendance Details');
-        }
+        // Sheet 2: Attendance Details
+        const wsDetails = detailRows.length > 0
+            ? XLSX.utils.json_to_sheet(detailRows, { header: detailHeaders })
+            : XLSX.utils.aoa_to_sheet([detailHeaders]);
+        const detailCols = detailHeaders.map(() => ({ wch: 13 }));
+        detailCols[2] = { wch: 28 };
+        wsDetails['!cols'] = detailCols;
+        XLSX.utils.book_append_sheet(workbook, wsDetails, 'Attendance Details');
 
-        // Sheet 2: Biometric Primary Logs
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Biometric Logs');
+        // Sheet 3: Biometric Logs
+        const wsBiometric = rows.length > 0
+            ? worksheet
+            : XLSX.utils.aoa_to_sheet([finalHeaders]);
+        wsBiometric['!cols'] = wscols;
+        XLSX.utils.book_append_sheet(workbook, wsBiometric, 'Biometric Logs');
 
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
         const fname = `attendance_report_${startDate}_${endDate}.xlsx`;
@@ -1847,8 +1852,8 @@ exports.exportAttendanceReportPDF = async (req, res) => {
     try {
         let { startDate, endDate, departmentId, divisionId, employeeId, employeeGroupId, designationId, search, strict, groupBy, month, year } = req.query;
 
-        // Sync dates for payroll months
-        if (month && year) {
+        // Sync dates for payroll months (only when explicit dates are not supplied)
+        if (month && year && (!startDate || !endDate)) {
             const period = await dateCycleService.getPayrollCycleForMonth(parseInt(year), parseInt(month));
             startDate = dayjs(period.startDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
             endDate = dayjs(period.endDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
@@ -1887,7 +1892,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                 }
                 if (departmentId && departmentId !== 'all') {
                     const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
-                    empFilter.department_id = { $in: deptIds };
+                    empQuery.department_id = { $in: deptIds };
                 }
                 children = await Employee.find(empQuery).select('emp_no employee_name').lean();
             }

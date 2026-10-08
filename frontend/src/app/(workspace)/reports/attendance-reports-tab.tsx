@@ -130,6 +130,41 @@ export default function AttendanceReportsTab() {
         strict: false
     });
 
+    const getResolvedDateRange = useCallback(() => {
+        let s = startDate;
+        let e = endDate;
+        if (dateMode === 'monthly') {
+            const year = parseInt(selectedYear);
+            const month = parseInt(selectedMonth);
+            s = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
+            e = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
+        } else if (dateMode === 'pay_cycle') {
+            const startDay = payrollStartDay;
+            const year = parseInt(selectedYear);
+            const month = parseInt(selectedMonth);
+            if (startDay === 1) {
+                s = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
+                e = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
+            } else {
+                const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
+                const prevMonthStart = currentMonthStart.subtract(1, 'month');
+                s = prevMonthStart.format('YYYY-MM-DD');
+                e = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
+            }
+        }
+        return { startDate: s, endDate: e };
+    }, [dateMode, selectedYear, selectedMonth, payrollStartDay, startDate, endDate]);
+
+    const openAdvancedExportDialog = useCallback(() => {
+        const range = getResolvedDateRange();
+        setExportParams(prev => ({
+            ...prev,
+            startDate: range.startDate || prev.startDate,
+            endDate: range.endDate || prev.endDate,
+        }));
+        setIsExportDialogOpen(true);
+    }, [getResolvedDateRange]);
+
     const loadReport = useCallback(async (pageToLoad: number = page) => {
         setLoading(true);
         try {
@@ -536,35 +571,85 @@ export default function AttendanceReportsTab() {
     ) => {
         setIsExportLoading(true);
         try {
+            let effectiveGroupBy = 'division';
+            if (drilldownLevel === 'division') {
+                effectiveGroupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                effectiveGroupBy = 'employee';
+            }
+
+
+            const range = getResolvedDateRange();
+            const effectiveStart = exportParams.startDate || range.startDate;
+            const effectiveEnd = exportParams.endDate || range.endDate;
+
+            const exportApiParams: any = {
+                startDate: effectiveStart,
+                endDate: effectiveEnd,
+                groupBy: effectiveGroupBy,
+                search: searchQuery || undefined,
+            };
+
+            if (departmentIds.length > 0) exportApiParams.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) exportApiParams.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) exportApiParams.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) exportApiParams.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) exportApiParams.employeeGroupId = employeeGroupIds.join(',');
+            if (exportParams.strict) exportApiParams.strict = true;
+
+            if (format === 'excel') {
+                const blob = await api.exportAttendanceReport(exportApiParams);
+                const fileName = `attendance_report_${effectiveStart}_to_${effectiveEnd}.xlsx`;
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+
+                toast.success('Excel attendance report with Summary, Details & Biometric Logs downloaded successfully!');
+                setIsColumnModalOpen(false);
+                setIsExportDialogOpen(false);
+                return;
+            }
+
+            if (format === 'pdf') {
+                try {
+                    const blob = await api.exportAttendanceReportPDF(exportApiParams);
+                    const fileName = `attendance_report_${effectiveStart}_to_${effectiveEnd}.pdf`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    }, 100);
+                    toast.success('PDF attendance report downloaded successfully!');
+                    setIsColumnModalOpen(false);
+                    setIsExportDialogOpen(false);
+                    return;
+                } catch (pdfErr) {
+                    console.warn('Backend PDF export failed, falling back to client exporter:', pdfErr);
+                }
+            }
+
+            // Fallback for PDF or legacy exporter
             let rawData: any[] = [];
             const params: any = {
                 page: 1,
                 limit: 100000,
                 search: searchQuery,
-                groupBy: 'employee'
+                groupBy: effectiveGroupBy
             };
-
-            if (dateMode === 'monthly') {
-                params.month = selectedMonth;
-                params.year = selectedYear;
-            } else if (dateMode === 'pay_cycle') {
-                const startDay = payrollStartDay;
-                const year = parseInt(selectedYear);
-                const month = parseInt(selectedMonth);
-                if (startDay === 1) {
-                    params.startDate = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
-                    params.endDate = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
-                } else {
-                    const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
-                    const prevMonthStart = currentMonthStart.subtract(1, 'month');
-                    params.startDate = prevMonthStart.format('YYYY-MM-DD');
-                    params.endDate = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
-                }
-            } else {
-                params.startDate = startDate;
-                params.endDate = endDate;
-            }
-
+            params.startDate = effectiveStart;
+            params.endDate = effectiveEnd;
             if (departmentIds.length > 0) params.departmentId = departmentIds.join(',');
             if (divisionIds.length > 0) params.divisionId = divisionIds.join(',');
             if (designationIds.length > 0) params.designationId = designationIds.join(',');
@@ -580,8 +665,8 @@ export default function AttendanceReportsTab() {
             const attendancePromise = api.getAttendanceReportSummary(params);
             const thumbLogsPromise = shouldFetchThumbLogs
                 ? api.getThumbReports({
-                    startDate: dayjs(params.startDate || startDate).startOf('day').toISOString(),
-                    endDate: dayjs(params.endDate || endDate).endOf('day').toISOString(),
+                    startDate: dayjs(effectiveStart).startOf('day').toISOString(),
+                    endDate: dayjs(effectiveEnd).endOf('day').toISOString(),
                     employeeId: employeeIds.length > 0 ? employeeIds : undefined,
                     employeeGroupId: employeeGroupIds.length > 0 ? employeeGroupIds : undefined,
                     departmentId: departmentIds.length > 0 ? departmentIds : undefined,
@@ -609,17 +694,14 @@ export default function AttendanceReportsTab() {
             if (shouldFetchThumbLogs && thumbRes?.data) {
                 const thumbData = Array.isArray(thumbRes.data) ? thumbRes.data : [];
                 additionalSheets.push({
-                    sheetName: 'Thumb Logs',
+                    sheetName: 'Biometric Logs',
                     title: 'BIOMETRIC THUMB LOGS REPORT',
-                    subtitle: `Period: ${params.startDate || startDate} to ${params.endDate || endDate}`,
+                    subtitle: `Period: ${effectiveStart} to ${effectiveEnd}`,
                     data: thumbData,
                     columns: THUMB_COLUMNS,
                     selectedKeys: extraOptions!.selectedThumbKeys!,
                 });
             }
-
-            const effectiveStart = params.startDate || startDate;
-            const effectiveEnd = params.endDate || endDate;
 
             exportReportWithColumns({
                 title: 'REPORT ON ATTENDANCE',
@@ -635,7 +717,7 @@ export default function AttendanceReportsTab() {
 
             toast.success(
                 shouldFetchThumbLogs
-                    ? `${format.toUpperCase()} attendance report with thumb logs downloaded successfully!`
+                    ? `${format.toUpperCase()} attendance report with biometric logs downloaded successfully!`
                     : `${format.toUpperCase()} attendance report downloaded successfully!`
             );
             setIsColumnModalOpen(false);
@@ -649,7 +731,102 @@ export default function AttendanceReportsTab() {
     };
 
     const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', usePageFilters: boolean = false) => {
-        openColumnExportModal(format === 'xlsx' ? 'excel' : 'pdf');
+        setIsExportLoading(true);
+        const toastId = toast.loading(`Preparing ${format === 'xlsx' ? 'Excel' : 'PDF'} report...`);
+        try {
+            let effectiveGroupBy = 'division';
+            if (drilldownLevel === 'division') {
+                effectiveGroupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                effectiveGroupBy = 'employee';
+            }
+
+            let start: string;
+            let end: string;
+
+            if (!usePageFilters) {
+                // Strictly use dates selected in Advanced Export Dialog
+                start = exportParams.startDate;
+                end = exportParams.endDate;
+            } else {
+                // Use active page filters
+                const range = getResolvedDateRange();
+                start = range.startDate;
+                end = range.endDate;
+            }
+
+            if (!start || !end) {
+                toast.error('Start date and End date are required', { id: toastId });
+                return;
+            }
+
+            const exportApiParams: any = {
+                startDate: start,
+                endDate: end,
+                groupBy: effectiveGroupBy,
+                search: searchQuery || undefined,
+            };
+
+            if (departmentIds.length > 0) exportApiParams.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) exportApiParams.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) exportApiParams.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) exportApiParams.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) exportApiParams.employeeGroupId = employeeGroupIds.join(',');
+
+            if (!usePageFilters && exportParams.strict) {
+                exportApiParams.strict = true;
+            }
+
+            if (format === 'xlsx') {
+                const blob = await api.exportAttendanceReport(exportApiParams);
+                const fileName = `attendance_report_${start}_to_${end}.xlsx`;
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+
+                toast.success('Excel attendance report with Summary, Details & Biometric Logs downloaded successfully!', { id: toastId });
+                setIsExportDialogOpen(false);
+                return;
+            }
+
+            if (format === 'pdf') {
+                try {
+                    const blob = await api.exportAttendanceReportPDF(exportApiParams);
+                    const fileName = `attendance_report_${start}_to_${end}.pdf`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    }, 100);
+
+                    toast.success('PDF attendance report downloaded successfully!', { id: toastId });
+                    setIsExportDialogOpen(false);
+                    return;
+                } catch (pdfErr) {
+                    console.warn('Backend PDF export failed, falling back to client exporter:', pdfErr);
+                    setIsExportDialogOpen(false);
+                    setExportFormat('pdf');
+                    setIsColumnModalOpen(true);
+                }
+            }
+        } catch (error: any) {
+            console.error('Export error:', error);
+            toast.error(error.message || 'Export failed', { id: toastId });
+        } finally {
+            setIsExportLoading(false);
+        }
     };
 
     const navigateTo = (level: 'all' | 'division' | 'department' | 'employee', id?: string) => {
@@ -1039,7 +1216,7 @@ export default function AttendanceReportsTab() {
                         Apply
                     </button>
                     <button
-                        onClick={() => setIsExportDialogOpen(true)}
+                        onClick={openAdvancedExportDialog}
                         className="h-10 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 flex items-center gap-2"
                         title="Advanced Export (Filters & Custom Range)"
                     >
@@ -1048,10 +1225,11 @@ export default function AttendanceReportsTab() {
                     </button>
                     <button
                         onClick={() => handleExport('pdf', true)}
-                        className="h-10 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2"
+                        disabled={isExportLoading}
+                        className="h-10 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2 disabled:opacity-50"
                         title="Quick Download PDF (Current Filters)"
                     >
-                        <Download className="h-4 w-4" />
+                        {isExportLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                         Download PDF
                     </button>
                 </div>
@@ -1355,9 +1533,29 @@ export default function AttendanceReportsTab() {
                             </div>
                         </div>
                         <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap gap-3">
-                            <button onClick={() => setIsExportDialogOpen(false)} className="flex-1 h-10 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={() => handleExport('xlsx')} className="flex-[2] min-w-[120px] h-10 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-colors shadow-sm">Export XLSX</button>
-                            <button onClick={() => handleExport('pdf')} className="flex-[2] min-w-[120px] h-10 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-rose-700 transition-colors shadow-sm">Export PDF</button>
+                            <button
+                                onClick={() => setIsExportDialogOpen(false)}
+                                disabled={isExportLoading}
+                                className="flex-1 h-10 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleExport('xlsx', false)}
+                                disabled={isExportLoading}
+                                className="flex-[2] min-w-[120px] h-10 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {isExportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                Export XLSX
+                            </button>
+                            <button
+                                onClick={() => handleExport('pdf', false)}
+                                disabled={isExportLoading}
+                                className="flex-[2] min-w-[120px] h-10 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-rose-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {isExportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                Export PDF
+                            </button>
                         </div>
                     </div>
                 </div>
