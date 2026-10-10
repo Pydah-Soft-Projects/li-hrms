@@ -5840,7 +5840,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register summary');
+      let errorMsg = text || 'Failed to export pay register summary';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     const blob = await response.blob();
@@ -5872,7 +5877,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register summary PDF');
+      let errorMsg = text || 'Failed to export pay register summary PDF';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();
@@ -5901,7 +5911,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register modifications');
+      let errorMsg = text || 'Failed to export pay register modifications';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();
@@ -5930,7 +5945,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register modifications PDF');
+      let errorMsg = text || 'Failed to export pay register modifications PDF';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();

@@ -1603,6 +1603,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
   const totalDays = Number(payRegister?.totalDaysInMonth) || 0;
   const absent = Number(totals.totalAbsentDays) || 0;
   const lopDeduction = Number(totals.totalLopDays) || leaveDays.lop;
+  const lateEarlyDeduction = Number(payRegister?.totalAttendanceDeductionDays ?? payRegister?.attendanceDeductionBreakdown?.daysDeducted) || 0;
   const isSecurity = Boolean(
     /security/i.test(
       String(
@@ -1824,7 +1825,7 @@ exports.exportSummaryPDF = async (req, res) => {
     const employeeIds = employees.map((emp) => emp._id);
     const [payRegisters, primaryRecords, secondaryRecords] = await Promise.all([
       PayRegisterSummary.find({ employeeId: { $in: employeeIds }, month })
-        .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
+        .select('employeeId emp_no month totals dailyRecords startDate endDate totalDaysInMonth totalAttendanceDeductionDays attendanceDeductionBreakdown totalPermissionHours totalPermissionCount totalPermissionDeductionDays totalPermissionDeductionAmount permissionDeductionBreakdown')
         .lean(),
       PayrollRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
       SecondSalaryRecord.find({ employeeId: { $in: employeeIds }, month }).lean(),
