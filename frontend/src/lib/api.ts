@@ -4709,10 +4709,10 @@ export const api = {
   },
 
   // Shift Sync
-  syncShifts: async (startDate?: string, endDate?: string) => {
+  syncShifts: async (startDate?: string, endDate?: string, employeeNumber?: string) => {
     return apiRequest<any>('/shifts/sync', {
       method: 'POST',
-      body: JSON.stringify({ startDate, endDate }),
+      body: JSON.stringify({ startDate, endDate, employeeNumber }),
     });
   },
 

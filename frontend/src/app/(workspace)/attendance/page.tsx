@@ -3038,7 +3038,8 @@ export default function AttendancePage() {
 
       setSuccess('');
 
-      const response = await api.syncShifts();
+      const targetEmp = selectedEmployee?.emp_no || (debouncedSearch && /^\d+$/.test(debouncedSearch.trim()) ? debouncedSearch.trim() : undefined);
+      const response = await api.syncShifts(cycleDates.startDate || undefined, cycleDates.endDate || undefined, targetEmp);
 
       if (response.success) {
 

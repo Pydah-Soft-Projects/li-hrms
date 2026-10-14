@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+const AttendanceRawLog = require('../model/AttendanceRawLog');
 
-// Cache the Atlas connection
+// Cache the Atlas connection (if external DB is explicitly configured)
 let atlasConn = null;
 
 const resolveBiometricMongoUri = () =>
@@ -65,22 +66,70 @@ const getAtlasLogModel = async () => {
 };
 
 /**
- * Fetch biometric logs from Atlas
+ * Fetch biometric logs - uses client database AttendanceRawLog by default
  */
 const getThumbReports = async (filters = {}) => {
     try {
-        const Model = await getAtlasLogModel();
+        const uri = resolveBiometricMongoUri();
+        const useExternal = Boolean(uri && process.env.USE_EXTERNAL_BIOMETRIC_DB === 'true');
+
+        if (useExternal) {
+            try {
+                const Model = await getAtlasLogModel();
+                const query = {};
+
+                if (filters.employeeId) {
+                    const vars = employeeIdQueryVariants(filters.employeeId);
+                    if (vars.length) {
+                        query.employeeId = vars.length === 1 ? vars[0] : { $in: vars };
+                    } else {
+                        query.employeeId = filters.employeeId;
+                    }
+                } else if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
+                    query.employeeId = { $in: filters.employeeIds };
+                }
+
+                if (filters.startDate || filters.endDate) {
+                    query.timestamp = {};
+                    if (filters.startDate) query.timestamp.$gte = new Date(filters.startDate);
+                    if (filters.endDate) query.timestamp.$lte = new Date(filters.endDate);
+                }
+
+                const limit = filters.limit == null ? 50 : parseInt(filters.limit, 10);
+                const page = parseInt(filters.page, 10) || 1;
+                const isPaging = Number.isFinite(limit) && limit > 0;
+                const skip = isPaging ? (page - 1) * limit : 0;
+
+                const queryBuilder = Model.find(query).sort({ timestamp: -1 });
+                if (isPaging) {
+                    queryBuilder.skip(skip).limit(limit);
+                }
+
+                const [logs, total] = await Promise.all([
+                    queryBuilder.lean(),
+                    Model.countDocuments(query)
+                ]);
+
+                return {
+                    logs,
+                    total,
+                    page: isPaging ? page : 1,
+                    limit: isPaging ? limit : 0,
+                    totalPages: isPaging ? Math.ceil(total / limit) : 1
+                };
+            } catch (atlasErr) {
+                console.warn('External biometric DB connection failed, falling back to client DB AttendanceRawLog:', atlasErr.message);
+            }
+        }
+
+        // Primary: Query from client's database AttendanceRawLog
         const query = {};
 
         if (filters.employeeId) {
             const vars = employeeIdQueryVariants(filters.employeeId);
-            if (vars.length) {
-                query.employeeId = vars.length === 1 ? vars[0] : { $in: vars };
-            } else {
-                query.employeeId = filters.employeeId;
-            }
+            query.employeeNumber = vars.length === 1 ? vars[0] : { $in: vars };
         } else if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
-            query.employeeId = { $in: filters.employeeIds };
+            query.employeeNumber = { $in: filters.employeeIds };
         }
 
         if (filters.startDate || filters.endDate) {
@@ -94,15 +143,29 @@ const getThumbReports = async (filters = {}) => {
         const isPaging = Number.isFinite(limit) && limit > 0;
         const skip = isPaging ? (page - 1) * limit : 0;
 
-        const queryBuilder = Model.find(query).sort({ timestamp: -1 });
+        const queryBuilder = AttendanceRawLog.find(query).sort({ timestamp: -1 });
         if (isPaging) {
             queryBuilder.skip(skip).limit(limit);
         }
 
-        const [logs, total] = await Promise.all([
+        const [rawDocs, total] = await Promise.all([
             queryBuilder.lean(),
-            Model.countDocuments(query)
+            AttendanceRawLog.countDocuments(query)
         ]);
+
+        const logs = rawDocs.map(r => ({
+            _id: r._id,
+            employeeId: r.employeeNumber,
+            timestamp: r.timestamp,
+            logType: r.subType || (r.type === 'OUT' ? 'CHECK-OUT' : r.type === 'IN' ? 'CHECK-IN' : null),
+            type: r.type,
+            subType: r.subType,
+            rawType: r.rawData?.rawType ?? (r.type === 'OUT' ? 1 : 0),
+            deviceId: r.deviceId,
+            deviceName: r.deviceName,
+            source: r.source,
+            rawData: r.rawData
+        }));
 
         return {
             logs,

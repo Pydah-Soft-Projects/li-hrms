@@ -1607,88 +1607,49 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
  * @param {String} endDate - End date (optional)
  * @returns {Object} - Sync statistics
  */
-const syncShiftsForExistingRecords = async (startDate = null, endDate = null) => {
+const syncShiftsForExistingRecords = async (startDate = null, endDate = null, employeeNumber = null) => {
   const stats = {
     success: false,
     processed: 0,
     assigned: 0,
     confused: 0,
+    reprocessed: 0,
     errors: [],
     message: '',
   };
 
   try {
-    // Build query for records without shiftId
-    const query = { shiftId: { $exists: false } };
+    const query = {};
 
     if (startDate && endDate) {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    // Get all attendance records without shifts
-    const records = await AttendanceDaily.find(query).sort({ date: -1 });
+    if (employeeNumber) {
+      query.employeeNumber = String(employeeNumber).trim().toUpperCase();
+    } else {
+      query.$or = [
+        { shiftId: { $exists: false }, inTime: { $ne: null } },
+        { status: 'PRESENT', totalWorkingHours: { $gt: 0, $lt: 6 } },
+        { 'shifts.status': 'complete' }
+      ];
+    }
 
-    // Fetch global general settings
-    const generalConfig = await Settings.getSettingsByCategory('general');
+    // Get attendance records to sync
+    const records = await AttendanceDaily.find(query).sort({ date: -1 });
+    const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
 
     stats.processed = records.length;
 
     for (const record of records) {
       try {
-        if (!record.inTime) {
-          // No in-time, skip
-          continue;
-        }
-
-        // Detect and assign shift
-        const result = await detectAndAssignShift(
-          record.employeeNumber,
-          record.date,
-          record.inTime,
-          record.outTime || null,
-          generalConfig
-        );
-
-        if (result.success && result.assignedShift) {
-          // Update record with shift assignment
-          // Update record with shift assignment - USE SHIFTS ARRAY
-          if (!record.shifts) record.shifts = [];
-
-          let targetShift;
-          if (record.shifts.length > 0) {
-            targetShift = record.shifts[0];
-          } else {
-            targetShift = {
-              shiftNumber: 1,
-              inTime: record.inTime, // Legacy root inTime
-              outTime: record.outTime, // Legacy root outTime
-              // We should ideally ensure inTime/outTime are set on shift
-            };
-            record.shifts.push(targetShift);
+        const result = await reprocessAttendanceForEmployeeDate(record.employeeNumber, record.date);
+        if (result && result.success) {
+          stats.reprocessed++;
+          if (result.dailyRecord?.shifts?.some(s => s.shiftId)) {
+            stats.assigned++;
           }
-
-          targetShift.shiftId = result.assignedShift;
-          targetShift.shiftName = result.shiftName;
-          targetShift.shiftStartTime = result.shiftStartTime;
-          targetShift.shiftEndTime = result.shiftEndTime;
-          targetShift.lateInMinutes = result.lateInMinutes || 0;
-          targetShift.earlyOutMinutes = result.earlyOutMinutes || 0;
-          targetShift.isLateIn = result.isLateIn || false;
-          targetShift.isEarlyOut = result.isEarlyOut || false;
-          targetShift.expectedHours = result.expectedHours;
-          targetShift.status = record.outTime ? 'complete' : 'incomplete';
-
-          // Clean up root fields if migration didn't catch them?
-          // Maybe unsafe to unset here without explicit migration logic, but we are "syncing shifts".
-          // Let's just save.
-
-          await record.save();
-          stats.assigned++;
-        } else if (result.confused) {
-          // Confused shift record already created by detectAndAssignShift
-          stats.confused++;
         }
-
       } catch (error) {
         stats.errors.push(`Error processing ${record.employeeNumber} on ${record.date}: ${error.message}`);
         console.error(`Error processing record ${record._id}:`, error);
@@ -1696,7 +1657,7 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null) =>
     }
 
     stats.success = true;
-    stats.message = `Processed ${stats.processed} records: ${stats.assigned} assigned, ${stats.confused} flagged for review`;
+    stats.message = `Processed ${stats.processed} record(s): ${stats.reprocessed} recalculated, ${stats.assigned} shift(s) confirmed`;
 
   } catch (error) {
     console.error('Error in syncShiftsForExistingRecords:', error);

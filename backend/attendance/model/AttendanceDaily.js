@@ -657,7 +657,7 @@ attendanceDailySchema.pre('save', async function () {
     // 2. Status Determination (includes OD contribution: cumulative punch + OD)
     // Half-day OD: if day already had HALF_DAY from punches (0.5), adding half-day OD (0.5) -> total 1.0 -> PRESENT.
     // If day had no half-day from punches, half-day OD alone -> 0.5 payable -> HALF_DAY. Monthly summary is updated in post-save.
-    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT');
+    const hasPresentShift = this.shifts.some(s => s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 0.95));
     const hasHalfDayShift = this.shifts.some(s => s.status === 'HALF_DAY');
     const totalPayableFromShifts = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
     // When OD was applied at shift level, hour-based payable is already in shift.payableShift; add only half/full-day OD

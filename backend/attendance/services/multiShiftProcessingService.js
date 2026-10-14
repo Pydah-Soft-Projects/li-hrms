@@ -1044,6 +1044,26 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 });
 
                 console.log(`[MultiShift] Shift ${shiftCounter} presence path=${pShift.presenceResolutionPath}, status=${pShift.status}, payable=${pShift.payableShift}`);
+            } else {
+                // When shiftAssignment is not present or unsuccessful (e.g. Sunday / Week Off / unscheduled punches)
+                const expectedDuration = 8;
+                pShift.expectedHours = expectedDuration;
+                pShift.basePayable = 1;
+                if (nextOut) {
+                    if (pShift.workingHours >= expectedDuration * 0.75) {
+                        pShift.status = 'PRESENT';
+                        pShift.payableShift = 1;
+                    } else if (pShift.workingHours >= expectedDuration * 0.4) {
+                        pShift.status = 'HALF_DAY';
+                        pShift.payableShift = 0.5;
+                    } else {
+                        pShift.status = 'ABSENT';
+                        pShift.payableShift = 0;
+                    }
+                } else {
+                    pShift.status = 'incomplete';
+                    pShift.payableShift = 0;
+                }
             }
 
             processedShifts.push(pShift);
@@ -1130,8 +1150,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 6: Determine overall status
         const totalPayableShifts = processedShifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
 
-        // Check for any Present shift
-        const hasPresentShift = processedShifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
+        // Check for any Present shift (s.status === 'complete' is an incomplete state, not a guarantee of full presence)
+        const hasPresentShift = processedShifts.some(s => s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 0.95));
 
         let status = 'ABSENT';
 
@@ -1141,7 +1161,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             } else if (totalPayableShifts >= 0.45 || processedShifts.some(s => s.status === 'HALF_DAY')) {
                 status = 'HALF_DAY';
             } else {
-                const hasIncomplete = processedShifts.some(s => !s.outTime);
+                const hasIncomplete = processedShifts.some(s => s.status === 'incomplete' || !s.outTime);
                 status = hasIncomplete ? 'PARTIAL' : 'ABSENT';
             }
         }

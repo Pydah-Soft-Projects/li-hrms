@@ -48,15 +48,18 @@ function formatWorkingHours(hours) {
 
 function buildWorkingHoursMaps(dailyRecords) {
     const dailyByEmpDate = {};
+    const dailyRecordByEmpDate = {};
     const totalByEmp = {};
     for (const r of dailyRecords || []) {
         const eid = String(r.employeeNumber).toUpperCase();
         if (!dailyByEmpDate[eid]) dailyByEmpDate[eid] = {};
+        if (!dailyRecordByEmpDate[eid]) dailyRecordByEmpDate[eid] = {};
         const hrs = Number(r.totalWorkingHours) || 0;
         dailyByEmpDate[eid][r.date] = hrs;
+        dailyRecordByEmpDate[eid][r.date] = r;
         totalByEmp[eid] = (totalByEmp[eid] || 0) + hrs;
     }
-    return { dailyByEmpDate, totalByEmp };
+    return { dailyByEmpDate, dailyRecordByEmpDate, totalByEmp };
 }
 
 function formatRecordInOutTime(rec) {
@@ -937,7 +940,7 @@ exports.exportAttendanceReport = async (req, res) => {
         const dailyRecords = await AttendanceDaily.find(query)
             .select('employeeNumber date status totalWorkingHours totalLateInMinutes inTime outTime shifts')
             .lean();
-        const { dailyByEmpDate } = buildWorkingHoursMaps(dailyRecords);
+        const { dailyByEmpDate, dailyRecordByEmpDate } = buildWorkingHoursMaps(dailyRecords);
 
         // ── 3. Group raw logs by empId → dateKey (use timestamp's local date) ───
         const rawLogsByEmpDate = {}; // empId → dateKey → [{ time, type }]
@@ -960,8 +963,9 @@ exports.exportAttendanceReport = async (req, res) => {
             if (!rawLogsByEmpDate[empId][logDateKey]) rawLogsByEmpDate[empId][logDateKey] = [];
 
             let type = 'IN';
-            const lt = (log.logType || '').toUpperCase();
-            if (lt.includes('OUT')) type = 'OUT';
+            const lt = (log.logType || log.subType || '').toUpperCase();
+            if (lt.includes('OUT') || log.type === 'OUT') type = 'OUT';
+            else if (log.type === 'IN') type = 'IN';
 
             rawLogsByEmpDate[empId][logDateKey].push({ time: logTime, type });
         });
@@ -992,7 +996,7 @@ exports.exportAttendanceReport = async (req, res) => {
                 }
             }
 
-            // State-machine pairing (strict shift, 36-hour OUT window)
+            // State-machine pairing (strict shift, 36-hour OUT window supporting 24h continuous duty & double shifts)
             // Group results per the IN's date
             const pairsByDate = {}; // dateKey → { pairs: [], totalHours }
 
@@ -1024,7 +1028,7 @@ exports.exportAttendanceReport = async (req, res) => {
                 } else { // OUT
                     if (pendingIn) {
                         const gap = log.time - pendingIn.time;
-                        // 36-hour window: accept OUT only if within 36h of the IN
+                        // 36-hour window: accept OUT only if within 36h of the IN (covers 24h continuous duty and double shifts)
                         if (gap <= 36 * 3600000 && gap > 0) {
                             const hrs = gap / (1000 * 60 * 60);
                             if (!pairsByDate[pendingIn.dateKey]) pairsByDate[pendingIn.dateKey] = { pairs: [], totalHours: 0 };
@@ -1053,9 +1057,12 @@ exports.exportAttendanceReport = async (req, res) => {
                 const dkDay = new Date(dk);
                 if (dkDay < new Date(startDate) || dkDay > new Date(endDate)) continue;
                 const d = pairsByDate[dk];
+                const dailyRec = dailyRecordByEmpDate[empId]?.[dk];
+                const isAbsentInEngine = dailyRec && dailyRec.status === 'ABSENT' && (!dailyRec.totalWorkingHours || dailyRec.totalWorkingHours === 0);
+
                 byEmpDate[empId][dk] = {
                     pairs: d.pairs,
-                    totHrsStr: d.totalHours > 0 ? d.totalHours.toFixed(2) : ''
+                    totHrsStr: isAbsentInEngine ? '' : (d.totalHours > 0 ? d.totalHours.toFixed(2) : '')
                 };
                 if (d.pairs.length > maxPairs) maxPairs = d.pairs.length;
             }
