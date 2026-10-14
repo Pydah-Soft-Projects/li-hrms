@@ -1333,6 +1333,76 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             }
           }
 
+          let fallbackShift = null;
+          let fallbackMatchMethod = 'outtime_disambiguated';
+
+          if (outTime && candidateShifts.length > 0) {
+            try {
+              const candidateShiftIds = candidateShifts.map(c => c.shiftId.toString());
+              const recentDaily = await AttendanceDaily.find({
+                employeeNumber: employeeNumber.toUpperCase(),
+                'shifts.shiftId': { $in: candidateShiftIds }
+              })
+                .sort({ date: -1 })
+                .limit(15)
+                .select('shifts.shiftId')
+                .lean();
+
+              if (recentDaily && recentDaily.length > 0) {
+                const shiftCounts = {};
+                for (const rd of recentDaily) {
+                  for (const s of rd.shifts || []) {
+                    const sid = s.shiftId ? s.shiftId.toString() : null;
+                    if (sid && candidateShiftIds.includes(sid)) {
+                      shiftCounts[sid] = (shiftCounts[sid] || 0) + 1;
+                    }
+                  }
+                }
+                const sortedByFreq = Object.keys(shiftCounts).sort((a, b) => shiftCounts[b] - shiftCounts[a]);
+                if (sortedByFreq.length > 0) {
+                  fallbackShift = shifts.find(s => s._id.toString() === sortedByFreq[0]);
+                  if (fallbackShift) fallbackMatchMethod = 'historical_regular_shift';
+                }
+              }
+
+              if (!fallbackShift) {
+                const defaultCandidate = candidateShifts.find(c => {
+                  const s = shifts.find(sh => sh._id.toString() === c.shiftId.toString());
+                  return s && s.isDefault;
+                });
+                const chosenCandidate = defaultCandidate || candidateShifts[0];
+                fallbackShift = shifts.find(s => s._id.toString() === chosenCandidate.shiftId.toString());
+                if (fallbackShift) fallbackMatchMethod = 'same_start_time_default_priority';
+              }
+            } catch (err) {
+              console.warn('[ShiftDetection] Historical shift resolution error:', err.message);
+            }
+          }
+
+          if (fallbackShift) {
+            const shift = fallbackShift;
+            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+            const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
+
+            await updateRosterTracking(shift._id);
+
+            return await enrichResultWithSegmentData({
+              success: true,
+              assignedShift: shift._id,
+              shiftName: shift.name,
+              shiftStartTime: shift.startTime,
+              shiftEndTime: shift.endTime,
+              source: `${source}_${fallbackMatchMethod}`,
+              lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+              earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+              isLateIn: lateInMinutes > 0,
+              isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+              expectedHours: shift.duration,
+              matchMethod: fallbackMatchMethod,
+              rosterRecordId: rosterRecordId,
+            }, shift, employeeCtx);
+          }
+
           // Still ambiguous even with out-time - create ConfusedShift
           const confusedShiftData = {
             employeeNumber: employeeNumber.toUpperCase(),

@@ -890,6 +890,24 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     }
                 }
 
+                // Fallback: If shift detection is still unsuccessful, attempt autoAssignNearestShift
+                if ((!shiftAssignment || !shiftAssignment.success) && currentIn) {
+                    try {
+                        const { autoAssignNearestShift } = require('../../shifts/services/shiftDetectionService');
+                        const autoResult = await autoAssignNearestShift(
+                            employeeNumber,
+                            date,
+                            currentIn.timestamp,
+                            nextOut ? nextOut.timestamp : null
+                        );
+                        if (autoResult && autoResult.success) {
+                            shiftAssignment = autoResult;
+                        }
+                    } catch (autoErr) {
+                        console.warn('[MultiShift] autoAssignNearestShift error:', autoErr.message);
+                    }
+                }
+
                 // Fetch Shift Def for Payable Value
                 if (shiftAssignment && shiftAssignment.assignedShift) {
                     const Shift = require('../../shifts/model/Shift');
