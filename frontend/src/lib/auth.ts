@@ -191,14 +191,32 @@ export const auth = {
   },
 
   confirmLogout: async (
-    message = 'Are you sure you want to logout?',
+    message?: string,
     title = 'Confirm Logout'
   ): Promise<boolean> => {
     if (typeof window === 'undefined') return false;
+    const isSSO = auth.isSSO();
+
+    let htmlContent: string;
+    if (message) {
+      htmlContent = `<div class="text-center"><p class="text-sm text-slate-700 dark:text-slate-200">${message}</p></div>`;
+    } else if (isSSO) {
+      htmlContent = `
+        <div class="text-center">
+          <p class="text-sm text-slate-700 dark:text-slate-200 mb-2.5">Are you sure you want to logout?</p>
+          <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 font-medium">
+            <span>Note: You will be redirected to the CRM portal.</span>
+          </div>
+        </div>
+      `;
+    } else {
+      htmlContent = `<div class="text-center"><p class="text-sm text-slate-700 dark:text-slate-200">Are you sure you want to logout?</p></div>`;
+    }
+
     const result = await ledgerSwalFire({
       icon: 'question',
       title,
-      text: message,
+      html: htmlContent,
       showCancelButton: true,
       confirmButtonText: 'Logout',
       cancelButtonText: 'Cancel',
@@ -208,7 +226,7 @@ export const auth = {
     return result.isConfirmed;
   },
 
-  logoutWithConfirmation: async (message = 'Are you sure you want to logout?'): Promise<boolean> => {
+  logoutWithConfirmation: async (message?: string): Promise<boolean> => {
     const isSSO = auth.isSSO();
     const confirmed = await auth.confirmLogout(message);
     if (!confirmed) return false;
