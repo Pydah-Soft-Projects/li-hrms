@@ -14,10 +14,7 @@ export default function TopHeader({ showLogout = true }: TopHeaderProps) {
     const router = useRouter();
 
     const handleLogout = async () => {
-        const confirmed = await auth.confirmLogout();
-        if (!confirmed) return;
-        logout();
-        router.push('/login');
+        await auth.logoutWithConfirmation();
     };
 
     return (

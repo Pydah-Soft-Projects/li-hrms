@@ -69,8 +69,7 @@ export default function Sidebar() {
   if (!mounted) return null;
 
   const handleLogout = async () => {
-    if (!(await auth.logoutWithConfirmation())) return;
-    router.push('/login');
+    await auth.logoutWithConfirmation();
   };
 
   const getRoleLabel = (role: string) => {

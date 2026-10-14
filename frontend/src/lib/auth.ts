@@ -1,5 +1,5 @@
 import { clearWorkspaceData } from '@/contexts/WorkspaceContext';
-import { alertConfirm } from '@/lib/customSwal';
+import { alertConfirm, ledgerSwalFire } from '@/lib/customSwal';
 
 export interface User {
   id: string;
@@ -123,20 +123,54 @@ export const auth = {
     return null;
   },
 
-  clearLocalSession: (reason?: string) => {
+  setLoginMethod: (method: 'sso' | 'credentials') => {
     if (typeof window !== 'undefined') {
+      localStorage.setItem('loginMethod', method);
+    }
+  },
+
+  getLoginMethod: (): string | null => {
+    if (typeof window !== 'undefined') {
+      const explicit = localStorage.getItem('loginMethod');
+      if (explicit) return explicit;
+      const user = auth.getUser();
+      return user?.loginMethod || null;
+    }
+    return null;
+  },
+
+  isSSO: (): boolean => {
+    return auth.getLoginMethod() === 'sso';
+  },
+
+  redirectAfterLogout: (isSSO?: boolean) => {
+    if (typeof window === 'undefined') return;
+    const shouldRedirectToCrm = isSSO !== undefined ? isSSO : auth.isSSO();
+    const crmUrl = process.env.NEXT_PUBLIC_CRM_URL || 'https://crm.pydah.edu.in';
+    if (shouldRedirectToCrm && crmUrl) {
+      window.location.href = crmUrl;
+    } else if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  },
+
+  clearLocalSession: (reason?: string, isSSOOverride?: boolean) => {
+    if (typeof window !== 'undefined') {
+      const isSSO = isSSOOverride !== undefined ? isSSOOverride : auth.isSSO();
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('loginMethod');
       clearWorkspaceData();
-      window.dispatchEvent(new CustomEvent('auth-logout', { detail: { reason } }));
+      window.dispatchEvent(new CustomEvent('auth-logout', { detail: { reason, isSSO } }));
     }
   },
 
   logout: async () => {
     if (typeof window === 'undefined') return;
 
+    const isSSO = auth.isSSO();
     const refreshToken = auth.getRefreshToken();
     const accessToken = auth.getToken();
 
@@ -153,7 +187,7 @@ export const auth = {
       // Best-effort server logout; always clear local session
     }
 
-    auth.clearLocalSession();
+    auth.clearLocalSession(undefined, isSSO);
   },
 
   confirmLogout: async (
@@ -161,14 +195,25 @@ export const auth = {
     title = 'Confirm Logout'
   ): Promise<boolean> => {
     if (typeof window === 'undefined') return false;
-    const result = await alertConfirm(title, message, 'Logout');
+    const result = await ledgerSwalFire({
+      icon: 'question',
+      title,
+      text: message,
+      showCancelButton: true,
+      confirmButtonText: 'Logout',
+      cancelButtonText: 'Cancel',
+      confirmVariant: 'danger',
+      size: 'sm',
+    });
     return result.isConfirmed;
   },
 
   logoutWithConfirmation: async (message = 'Are you sure you want to logout?'): Promise<boolean> => {
+    const isSSO = auth.isSSO();
     const confirmed = await auth.confirmLogout(message);
     if (!confirmed) return false;
     await auth.logout();
+    auth.redirectAfterLogout(isSSO);
     return true;
   },
 

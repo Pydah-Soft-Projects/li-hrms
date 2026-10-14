@@ -89,8 +89,7 @@ export default function WorkspaceSidebar() {
   }, [featureControl]);
 
   const handleLogout = async () => {
-    if (!(await auth.logoutWithConfirmation())) return;
-    router.push('/login');
+    await auth.logoutWithConfirmation();
   };
 
   if (!mounted) return null;
