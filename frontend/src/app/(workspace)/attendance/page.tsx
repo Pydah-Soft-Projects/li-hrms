@@ -3021,36 +3021,47 @@ export default function AttendancePage() {
 
 
   const handleSyncShifts = async () => {
+    const hasFilters = Boolean(
+      (debouncedSearch && debouncedSearch.trim()) ||
+      (selectedDivision && selectedDivision !== 'all') ||
+      (selectedDepartment && selectedDepartment !== 'all') ||
+      (selectedDesignation && selectedDesignation !== 'all') ||
+      selectedEmployee
+    );
 
-    if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
+    const targetDesc = selectedEmployee
+      ? `employee ${selectedEmployee.employee_name || selectedEmployee.emp_no}`
+      : (debouncedSearch && debouncedSearch.trim())
+      ? `search "${debouncedSearch.trim()}"`
+      : hasFilters
+      ? 'the selected filters'
+      : 'all records in the current period';
 
+    if (!confirm(`This will sync attendance and shifts for ${targetDesc}${cycleDates.startDate && cycleDates.endDate ? ` (${cycleDates.startDate} to ${cycleDates.endDate})` : ''}. Continue?`)) {
       return;
-
     }
 
-
-
     try {
-
       setSyncingShifts(true);
-
       setError('');
-
       setSuccess('');
 
       const targetEmp = selectedEmployee?.emp_no || (debouncedSearch && /^\d+$/.test(debouncedSearch.trim()) ? debouncedSearch.trim() : undefined);
-      const response = await api.syncShifts(cycleDates.startDate || undefined, cycleDates.endDate || undefined, targetEmp);
+      const response = await api.syncShifts({
+        startDate: cycleDates.startDate || undefined,
+        endDate: cycleDates.endDate || undefined,
+        employeeNumber: targetEmp,
+        search: debouncedSearch && debouncedSearch.trim() ? debouncedSearch.trim() : undefined,
+        divisionId: selectedDivision && selectedDivision !== 'all' ? selectedDivision : undefined,
+        departmentId: selectedDepartment && selectedDepartment !== 'all' ? selectedDepartment : undefined,
+        designationId: selectedDesignation && selectedDesignation !== 'all' ? selectedDesignation : undefined,
+      });
 
       if (response.success) {
-
-        setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
-
-        loadMonthlyAttendance();
-
+        setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned`);
+        loadMonthlyAttendance(true);
       } else {
-
         setError(response.message || 'Failed to sync shifts');
-
       }
 
     } catch (err: any) {

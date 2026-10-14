@@ -4709,10 +4709,28 @@ export const api = {
   },
 
   // Shift Sync
-  syncShifts: async (startDate?: string, endDate?: string, employeeNumber?: string) => {
+  syncShifts: async (
+    optionsOrStartDate?: {
+      startDate?: string;
+      endDate?: string;
+      employeeNumber?: string;
+      search?: string;
+      divisionId?: string;
+      departmentId?: string;
+      designationId?: string;
+    } | string,
+    endDate?: string,
+    employeeNumber?: string
+  ) => {
+    let bodyData: any = {};
+    if (typeof optionsOrStartDate === 'object' && optionsOrStartDate !== null) {
+      bodyData = optionsOrStartDate;
+    } else {
+      bodyData = { startDate: optionsOrStartDate, endDate, employeeNumber };
+    }
     return apiRequest<any>('/shifts/sync', {
       method: 'POST',
-      body: JSON.stringify({ startDate, endDate, employeeNumber }),
+      body: JSON.stringify(bodyData),
     });
   },
 

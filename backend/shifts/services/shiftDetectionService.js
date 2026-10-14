@@ -1607,7 +1607,24 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
  * @param {String} endDate - End date (optional)
  * @returns {Object} - Sync statistics
  */
-const syncShiftsForExistingRecords = async (startDate = null, endDate = null, employeeNumber = null) => {
+const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate = null, employeeNumber = null) => {
+  let opts = {};
+  if (typeof startDateOrOptions === 'object' && startDateOrOptions !== null) {
+    opts = startDateOrOptions;
+  } else {
+    opts = { startDate: startDateOrOptions, endDate, employeeNumber };
+  }
+
+  const {
+    startDate,
+    endDate: endD,
+    employeeNumber: empNo,
+    search,
+    divisionId,
+    departmentId,
+    designationId
+  } = opts;
+
   const stats = {
     success: false,
     processed: 0,
@@ -1621,12 +1638,59 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null, em
   try {
     const query = {};
 
-    if (startDate && endDate) {
-      query.date = { $gte: startDate, $lte: endDate };
+    if (startDate && endD) {
+      query.date = { $gte: startDate, $lte: endD };
+    } else if (startDate) {
+      query.date = { $gte: startDate };
+    } else if (endD) {
+      query.date = { $lte: endD };
     }
 
-    if (employeeNumber) {
-      query.employeeNumber = String(employeeNumber).trim().toUpperCase();
+    // Determine target employees based on employeeNumber, search, division, department, designation
+    let targetEmployeeNumbers = null;
+
+    if (empNo) {
+      targetEmployeeNumbers = [String(empNo).trim().toUpperCase()];
+    } else if (search || divisionId || departmentId || designationId) {
+      const empQuery = {};
+
+      if (divisionId && divisionId !== 'all') {
+        const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+        empQuery.division_id = divIds.length > 1 ? { $in: divIds } : divIds[0];
+      }
+
+      if (departmentId && departmentId !== 'all') {
+        const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+        empQuery.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
+      }
+
+      if (designationId && designationId !== 'all') {
+        const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
+        empQuery.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+      }
+
+      if (search && String(search).trim()) {
+        const s = String(search).trim();
+        empQuery.$or = [
+          { employee_name: { $regex: s, $options: 'i' } },
+          { emp_no: { $regex: s, $options: 'i' } }
+        ];
+      }
+
+      const matchingEmployees = await Employee.find(empQuery).select('emp_no').lean();
+      targetEmployeeNumbers = matchingEmployees.map(e => String(e.emp_no).toUpperCase());
+    }
+
+    if (targetEmployeeNumbers !== null) {
+      if (targetEmployeeNumbers.length === 0) {
+        stats.success = true;
+        stats.message = 'No matching employees found for the selected search/filters.';
+        return stats;
+      } else if (targetEmployeeNumbers.length === 1) {
+        query.employeeNumber = targetEmployeeNumbers[0];
+      } else {
+        query.employeeNumber = { $in: targetEmployeeNumbers };
+      }
     } else {
       query.$or = [
         { shiftId: { $exists: false }, inTime: { $ne: null } },
@@ -1636,9 +1700,29 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null, em
     }
 
     // Get attendance records to sync
-    const records = await AttendanceDaily.find(query).sort({ date: -1 });
+    let records = await AttendanceDaily.find(query).select('employeeNumber date').lean();
+
+    // If specific employee(s) are targeted, also ensure all dates that have raw logs exist in records
+    if (targetEmployeeNumbers !== null && targetEmployeeNumbers.length <= 100 && startDate && endD) {
+      const AttendanceRawLog = require('../../attendance/model/AttendanceRawLog');
+      const existingKeys = new Set(records.map(r => `${r.employeeNumber}::${r.date}`));
+      const rawLogs = await AttendanceRawLog.find({
+        employeeNumber: targetEmployeeNumbers.length === 1 ? targetEmployeeNumbers[0] : { $in: targetEmployeeNumbers },
+        date: { $gte: startDate, $lte: endD }
+      }).select('employeeNumber date').lean();
+
+      for (const log of rawLogs) {
+        const key = `${log.employeeNumber}::${log.date}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          records.push({ employeeNumber: log.employeeNumber, date: log.date });
+        }
+      }
+    }
+
     const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
 
+    records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     stats.processed = records.length;
 
     for (const record of records) {
@@ -1652,7 +1736,7 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null, em
         }
       } catch (error) {
         stats.errors.push(`Error processing ${record.employeeNumber} on ${record.date}: ${error.message}`);
-        console.error(`Error processing record ${record._id}:`, error);
+        console.error(`Error processing record ${record._id || record.employeeNumber}:`, error);
       }
     }
 
