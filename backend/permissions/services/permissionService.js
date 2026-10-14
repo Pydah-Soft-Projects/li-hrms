@@ -103,8 +103,14 @@ const createPermissionRequest = async (data, userId) => {
         }
       }
 
-      // Check monthly limit (if set, 0 = unlimited)
-      if (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0) {
+      // Check monthly limit (if set, 0 = unlimited, fallback to freeAllowedPerMonth)
+      const effectiveMonthlyCap = (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0)
+        ? resolvedPermissionSettings.monthlyLimit
+        : (resolvedPermissionSettings.deductionRules?.freeAllowedPerMonth != null && resolvedPermissionSettings.deductionRules.freeAllowedPerMonth > 0)
+          ? resolvedPermissionSettings.deductionRules.freeAllowedPerMonth
+          : null;
+
+      if (effectiveMonthlyCap !== null && effectiveMonthlyCap > 0) {
         const [year, month] = date.split('-').map(Number);
 
         // Use IST boundaries (+05:30)
@@ -116,12 +122,12 @@ const createPermissionRequest = async (data, userId) => {
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: employeeId,
           date: { $gte: `${year}-${String(month).padStart(2, '0')}-01`, $lte: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` },
-          status: { $in: ['pending', 'approved'] },
+          status: { $in: ['pending', 'approved', 'checked_in', 'checked_out'] },
           isActive: true,
         });
 
-        if (existingPermissionsThisMonth >= resolvedPermissionSettings.monthlyLimit) {
-          limitWarnings.push(`⚠️ Monthly permission limit (${resolvedPermissionSettings.monthlyLimit}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} permission this month.`);
+        if (existingPermissionsThisMonth >= effectiveMonthlyCap) {
+          limitWarnings.push(`⚠️ Monthly permission limit (${effectiveMonthlyCap}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} permission this month.`);
         }
       }
     }
@@ -495,8 +501,14 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
         }
       }
 
-      // Check monthly limit (if set, 0 = unlimited)
-      if (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0) {
+      // Check monthly limit (if set, 0 = unlimited, fallback to freeAllowedPerMonth)
+      const effectiveMonthlyCap = (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0)
+        ? resolvedPermissionSettings.monthlyLimit
+        : (resolvedPermissionSettings.deductionRules?.freeAllowedPerMonth != null && resolvedPermissionSettings.deductionRules.freeAllowedPerMonth > 0)
+          ? resolvedPermissionSettings.deductionRules.freeAllowedPerMonth
+          : null;
+
+      if (effectiveMonthlyCap !== null && effectiveMonthlyCap > 0) {
         const [year, month] = String(permissionRequest.date).split('-').map(Number);
         const lastDay = new Date(year, month, 0).getDate();
         const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -505,13 +517,13 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: permissionRequest.employeeId,
           date: { $gte: monthStartStr, $lte: monthEndStr },
-          status: 'approved',
+          status: { $in: ['approved', 'checked_in', 'checked_out'] },
           isActive: true,
           _id: { $ne: permissionRequest._id }, // Exclude current permission
         });
 
-        if (existingPermissionsThisMonth >= resolvedPermissionSettings.monthlyLimit) {
-          approvalWarnings.push(`⚠️ Monthly permission limit (${resolvedPermissionSettings.monthlyLimit}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} approved permission this month.`);
+        if (existingPermissionsThisMonth >= effectiveMonthlyCap) {
+          approvalWarnings.push(`⚠️ Monthly permission limit (${effectiveMonthlyCap}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} approved permission this month.`);
         }
       }
     }

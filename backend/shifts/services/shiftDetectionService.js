@@ -1810,6 +1810,27 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
       }
     }
 
+    // Recalculate monthly summary for affected employees and months so grid and summaries stay 100% in sync
+    const affectedEmpMonths = new Set();
+    for (const record of records) {
+      if (record.employeeNumber && record.date) {
+        const yyyyMm = String(record.date).slice(0, 7);
+        affectedEmpMonths.add(`${record.employeeNumber}::${yyyyMm}`);
+      }
+    }
+
+    if (affectedEmpMonths.size > 0) {
+      const { calculateMonthlySummaryByEmpNo } = require('../../attendance/services/summaryCalculationService');
+      for (const pair of affectedEmpMonths) {
+        const [empNumber, yyyyMm] = pair.split('::');
+        try {
+          await calculateMonthlySummaryByEmpNo(empNumber, yyyyMm);
+        } catch (sumErr) {
+          console.error(`[ShiftSync] Error updating monthly summary for ${empNumber} on ${yyyyMm}:`, sumErr.message);
+        }
+      }
+    }
+
     stats.success = true;
     stats.message = `Processed ${stats.processed} record(s): ${stats.reprocessed} recalculated, ${stats.assigned} shift(s) confirmed`;
 

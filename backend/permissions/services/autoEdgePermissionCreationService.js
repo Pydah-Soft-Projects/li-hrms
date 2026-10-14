@@ -467,6 +467,22 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       return { success: true, created: 0, skippedReason: 'Auto edge permission settings disabled' };
     }
 
+    // Resolve department/global permission limits (cap)
+    const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
+    const resolvedPermSettings = await getResolvedPermissionSettings(deptId, divId);
+
+    let monthlyCap = null;
+    if (resolvedPermSettings?.monthlyLimit != null && Number(resolvedPermSettings.monthlyLimit) > 0) {
+      monthlyCap = Number(resolvedPermSettings.monthlyLimit);
+    } else if (resolvedPermSettings?.deductionRules?.freeAllowedPerMonth != null && Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth) > 0) {
+      monthlyCap = Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth);
+    }
+
+    let perDayCap = null;
+    if (resolvedPermSettings?.perDayLimit != null && Number(resolvedPermSettings.perDayLimit) > 0) {
+      perDayCap = Number(resolvedPermSettings.perDayLimit);
+    }
+
     const eligibleEdges = buildEligibleEdges(attendanceDaily, settings, employee.gender || null);
     if (!eligibleEdges.length) {
       return { success: true, created: 0, skippedReason: 'No eligible late-in / early-out edges' };
@@ -476,6 +492,22 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
     if (!requestedBy) {
       return { success: false, created: 0, skippedReason: 'No active user found for auto-created permission ownership' };
     }
+
+    // Month boundary for tracking existing permissions count
+    const [year, month] = String(attendanceDaily.date).split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const monthEndStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const existingMonthlyPerms = await Permission.find({
+      employeeId: employee._id,
+      date: { $gte: monthStartStr, $lte: monthEndStr },
+      isActive: true,
+      status: { $nin: REJECTED_STATUSES },
+    }).sort({ date: 1, createdAt: 1 });
+
+    let priorMonthlyCount = existingMonthlyPerms.filter((p) => p.date < attendanceDaily.date).length;
+    let todayCount = existingMonthlyPerms.filter((p) => p.date === attendanceDaily.date && p.creationSource !== AUTO_SOURCE).length;
 
     const created = [];
     const finalized = [];
@@ -496,6 +528,34 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         shiftNumber,
       });
 
+      const currentTotalMonthly = priorMonthlyCount + todayCount;
+
+      // Check daily limit
+      if (perDayCap != null && todayCount >= perDayCap) {
+        if (permission) {
+          permission.isActive = false;
+          permission.status = 'rejected';
+          permission.comments = (permission.comments || '') + ` [Deactivated: Exceeds daily permission limit of ${perDayCap}]`;
+          await permission.save();
+          shouldRefreshAttendance = true;
+        }
+        console.log(`[AutoEdgePermissionCreation] Employee ${employeeNumber} reached daily limit (${todayCount}/${perDayCap}) on ${attendanceDaily.date}. Skipping ${edge.permissionType}.`);
+        continue;
+      }
+
+      // Check monthly cap
+      if (monthlyCap != null && currentTotalMonthly >= monthlyCap) {
+        if (permission) {
+          permission.isActive = false;
+          permission.status = 'rejected';
+          permission.comments = (permission.comments || '') + ` [Deactivated: Exceeds monthly permission cap of ${monthlyCap}]`;
+          await permission.save();
+          shouldRefreshAttendance = true;
+        }
+        console.log(`[AutoEdgePermissionCreation] Employee ${employeeNumber} reached monthly cap (${currentTotalMonthly}/${monthlyCap}) for ${attendanceDaily.date}. Skipping ${edge.permissionType}.`);
+        continue;
+      }
+
       if (!permission) {
         permission = await createAutoPermissionForEdge({
           attendanceDaily,
@@ -504,10 +564,12 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
           edge,
         });
         created.push(permission);
+        todayCount++;
         shouldRefreshAttendance = true;
       } else {
         applyAutoPermissionEdgeFields(permission, attendanceDaily, edge);
         await permission.save();
+        todayCount++;
         shouldRefreshAttendance = true;
       }
 

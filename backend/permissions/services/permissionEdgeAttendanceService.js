@@ -93,6 +93,43 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
     status: { $in: ['checked_out', 'checked_in'] },
   }).lean();
 
+  let activePerms = perms;
+  if (perms && perms.length > 0) {
+    try {
+      const Employee = require('../../employees/model/Employee');
+      const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
+      const empDoc = await Employee.findOne({ emp_no: empUpper }).select('department_id division_id').lean();
+      if (empDoc) {
+        const resolved = await getResolvedPermissionSettings(empDoc.department_id, empDoc.division_id);
+        const monthlyCap = (resolved?.monthlyLimit != null && Number(resolved.monthlyLimit) > 0)
+          ? Number(resolved.monthlyLimit)
+          : (resolved?.deductionRules?.freeAllowedPerMonth != null && Number(resolved.deductionRules.freeAllowedPerMonth) > 0)
+            ? Number(resolved.deductionRules.freeAllowedPerMonth)
+            : null;
+
+        if (monthlyCap !== null && monthlyCap > 0) {
+          const [year, month] = date.split('-').map(Number);
+          const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+          const priorCount = await Permission.countDocuments({
+            employeeNumber: empUpper,
+            date: { $gte: monthStartStr, $lt: date },
+            isActive: true,
+            status: { $nin: ['rejected', 'manager_rejected'] },
+          });
+
+          const remainingSlots = Math.max(0, monthlyCap - priorCount);
+          if (remainingSlots <= 0) {
+            activePerms = [];
+          } else if (activePerms.length > remainingSlots) {
+            activePerms = activePerms.slice(0, remainingSlots);
+          }
+        }
+      }
+    } catch (capErr) {
+      console.warn('[PermissionEdgeAttendance] Cap filter error:', capErr.message);
+    }
+  }
+
   const punchIn = pShift.inTime instanceof Date ? pShift.inTime : new Date(pShift.inTime);
   const punchOut = pShift.outTime ? (pShift.outTime instanceof Date ? pShift.outTime : new Date(pShift.outTime)) : null;
   const shiftStart = pShift.shiftStartTime;
@@ -124,7 +161,7 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
   }
   const shiftEndGraceDate = new Date(shiftEndDate.getTime());
 
-  for (const perm of perms) {
+  for (const perm of activePerms) {
     if (!perm.permittedEdgeTime || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(perm.permittedEdgeTime)) continue;
     const permissionShiftNumber = Number(perm.autoCreationMeta?.shiftNumber) || null;
     const currentShiftNumber = Number(pShift.shiftNumber) || null;
