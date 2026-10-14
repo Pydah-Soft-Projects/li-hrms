@@ -33,12 +33,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const login = (token: string, userData: User, refreshToken?: string) => {
         auth.setAuthSession(token, refreshToken);
         auth.setUser(userData);
+        if (userData?.loginMethod === 'sso') {
+            auth.setLoginMethod('sso');
+        } else {
+            auth.setLoginMethod('credentials');
+        }
         setUser(userData);
     };
 
     const logout = async () => {
+        const isSSO = auth.isSSO();
         await auth.logout();
         setUser(null);
+        auth.redirectAfterLogout(isSSO);
     };
 
     useEffect(() => {
@@ -48,7 +55,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.log('[AuthContext] Global logout event received');
             setUser(null);
 
-            const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason;
+            const detail = (event as CustomEvent<{ reason?: string; isSSO?: boolean }>).detail;
+            const reason = detail?.reason;
             if (reason === 'SESSION_REPLACED') {
                 toast.error('You were logged out because your account signed in on another device.');
             } else if (reason === 'TOKEN_VERSION_MISMATCH') {
@@ -56,16 +64,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
 
             if (typeof window !== 'undefined') {
-                const storedUser = localStorage.getItem('user');
-                const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-                const isSSO = parsedUser?.loginMethod === 'sso';
-                const crmUrl = process.env.NEXT_PUBLIC_CRM_URL || 'https://crm.pydah.edu.in';
-
-                if (isSSO && crmUrl) {
-                    window.location.href = crmUrl;
-                } else if (window.location.pathname !== '/login') {
-                    window.location.href = '/login';
+                if (window.location.pathname === '/login') {
+                    return;
                 }
+                const isSSO = detail?.isSSO ?? false;
+                auth.redirectAfterLogout(isSSO);
             }
         };
 

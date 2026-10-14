@@ -85,6 +85,7 @@ function LoginContent() {
             response.data.refreshToken
           );
           auth.setUser(response.data.user);
+          auth.setLoginMethod('sso');
           if (response.data.user.role !== "super_admin") {
             setWorkspaceDataFromLogin({
               workspaces: response.data.workspaces || [],
@@ -120,6 +121,7 @@ function LoginContent() {
           response.data.refreshToken
         );
         auth.setUser(response.data.user);
+        auth.setLoginMethod('credentials');
 
         const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
         router.push(dashboardPath);
