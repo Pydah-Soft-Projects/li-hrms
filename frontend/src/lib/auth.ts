@@ -126,6 +126,12 @@ export const auth = {
   setLoginMethod: (method: 'sso' | 'credentials') => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('loginMethod', method);
+      if (method === 'sso') {
+        localStorage.setItem('isSSO', 'true');
+      } else {
+        localStorage.removeItem('isSSO');
+      }
+      window.dispatchEvent(new Event('auth-change'));
     }
   },
 
@@ -133,14 +139,30 @@ export const auth = {
     if (typeof window !== 'undefined') {
       const explicit = localStorage.getItem('loginMethod');
       if (explicit) return explicit;
+      const isSSOFlag = localStorage.getItem('isSSO');
+      if (isSSOFlag === 'true') return 'sso';
       const user = auth.getUser();
       return user?.loginMethod || null;
     }
     return null;
   },
 
+  isAuthenticated: (): boolean => {
+    return Boolean(auth.getToken() && auth.getUser());
+  },
+
   isSSO: (): boolean => {
-    return auth.getLoginMethod() === 'sso';
+    if (typeof window === 'undefined') return false;
+    return (
+      localStorage.getItem('isSSO') === 'true' ||
+      auth.getLoginMethod() === 'sso' ||
+      (auth.getUser() as unknown as Record<string, unknown>)?.loginMethod === 'sso' ||
+      (auth.getUser() as unknown as Record<string, unknown>)?.isSSO === true
+    );
+  },
+
+  isSSOUser: (): boolean => {
+    return auth.isAuthenticated() && auth.isSSO();
   },
 
   redirectAfterLogout: (isSSO?: boolean) => {
@@ -162,8 +184,10 @@ export const auth = {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('loginMethod');
+      localStorage.removeItem('isSSO');
       clearWorkspaceData();
       window.dispatchEvent(new CustomEvent('auth-logout', { detail: { reason, isSSO } }));
+      window.dispatchEvent(new Event('auth-change'));
     }
   },
 

@@ -48,9 +48,9 @@ function LoginContent() {
     const ssoToken = searchParams.get("token");
 
     if (ssoToken && !ssoAttempted.current) {
-      const currentToken = auth.getToken();
-      if (currentToken) {
-        void auth.logout();
+      auth.clearLocalSession();
+      if (typeof window !== "undefined") {
+        sessionStorage.clear();
       }
       setChecking(false);
       return;
