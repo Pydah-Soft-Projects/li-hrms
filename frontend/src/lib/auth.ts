@@ -147,10 +147,6 @@ export const auth = {
     return null;
   },
 
-  isAuthenticated: (): boolean => {
-    return Boolean(auth.getToken() && auth.getUser());
-  },
-
   isSSO: (): boolean => {
     if (typeof window === 'undefined') return false;
     return (
@@ -290,7 +286,7 @@ export const auth = {
   },
 
   isAuthenticated: (): boolean => {
-    return auth.getToken() !== null;
+    return Boolean(auth.getToken() && auth.getUser());
   },
 
   getRoleBasedPath: (role: string): string => {
