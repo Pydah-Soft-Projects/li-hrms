@@ -1140,9 +1140,37 @@ export interface UserHistoryRow {
   performedBy?: string | User | null;
   performedByName?: string | null;
   performedByRole?: string | null;
+  targetUserName?: string | null;
+  targetUserEmail?: string | null;
+  targetUserRole?: string | null;
+  targetEmployeeId?: string | null;
+  targetAccessProfile?: {
+    dataScope: string;
+    divisionMapping: { divisionName: string; departments: string[] }[];
+    featureControl: string[];
+    role?: string;
+    isActive?: boolean;
+  } | null;
   details?: any;
   comments?: string | null;
   timestamp: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UserAuditsResponse {
+  data: UserHistoryRow[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats?: {
+    totalAudits: number;
+    totalAccessChanges: number;
+    eventsToday: number;
+  };
 }
 export interface Role {
   _id: string;
@@ -1948,6 +1976,29 @@ export const api = {
     const q = new URLSearchParams();
     if (limit) q.append('limit', String(limit));
     return apiRequest<UserHistoryRow[]>(`/users/${id}/activity?${q.toString()}`, { method: 'GET' });
+  },
+
+  getUserAudits: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    event?: string;
+    userId?: string;
+    performedBy?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.search) q.append('search', params.search);
+    if (params?.event) q.append('event', params.event);
+    if (params?.userId) q.append('userId', params.userId);
+    if (params?.performedBy) q.append('performedBy', params.performedBy);
+    if (params?.startDate) q.append('startDate', params.startDate);
+    if (params?.endDate) q.append('endDate', params.endDate);
+    const queryStr = q.toString() ? `?${q.toString()}` : '';
+    return apiRequest<UserHistoryRow[]>(`/users/audits${queryStr}`, { method: 'GET' });
   },
 
   resetUserPassword: async (id: string, data: { newPassword?: string; autoGenerate?: boolean }) => {
