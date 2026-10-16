@@ -30,6 +30,26 @@ const userHistorySchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    targetUserName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    targetUserEmail: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    targetUserRole: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    targetEmployeeId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     details: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -54,6 +74,10 @@ const userHistorySchema = new mongoose.Schema(
 );
 
 userHistorySchema.index({ userId: 1, timestamp: -1 });
+userHistorySchema.index({ timestamp: -1 });
+userHistorySchema.index({ performedBy: 1, timestamp: -1 });
+userHistorySchema.index({ event: 1, timestamp: -1 });
 
 module.exports = mongoose.models.UserHistory || mongoose.model('UserHistory', userHistorySchema);
+
 
