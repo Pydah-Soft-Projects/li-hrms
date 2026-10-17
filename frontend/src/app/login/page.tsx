@@ -41,8 +41,22 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [ssoVerifying, setSsoVerifying] = useState(false);
+  const [ssoVerifying, setSsoVerifying] = useState(() => Boolean(searchParams.get("token")));
   const ssoAttempted = useRef(false);
+
+  useEffect(() => {
+    const ssoToken = searchParams.get("token");
+    if (!ssoToken) return;
+
+    const SCRIPT_ID = "pydah-portal-switcher-cdn";
+    if (!document.getElementById(SCRIPT_ID)) {
+      const script = document.createElement("script");
+      script.id = SCRIPT_ID;
+      script.src = process.env.NEXT_PUBLIC_PORTAL_SWITCHER_URL || "https://crm.pydah.edu.in/portal-switcher.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const ssoToken = searchParams.get("token");
@@ -136,12 +150,12 @@ function LoginContent() {
     }
   };
 
-  if (checking) {
-    return <LoginLoading message="Authenticating..." />;
+  if (ssoVerifying) {
+    return <pydah-sso-loader />;
   }
 
-  if (ssoVerifying) {
-    return <LoginLoading message="Verifying SSO token..." />;
+  if (checking) {
+    return <LoginLoading message="Authenticating..." />;
   }
 
   return (
