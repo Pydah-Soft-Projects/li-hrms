@@ -22,7 +22,7 @@ declare global {
 const SCRIPT_ID = 'pydah-portal-switcher-cdn';
 const PORTAL_ID = 'hrms';
 const CDN_URL = process.env.NEXT_PUBLIC_PORTAL_SWITCHER_URL || 'https://crm.pydah.edu.in/portal-switcher.js';
-const API_BASE_URL = process.env.NEXT_PUBLIC_CRM_BACKEND_URL || 'https://pydah-crm-backend.pydah.edu.in';
+const API_BASE_URL = process.env.NEXT_PUBLIC_CRM_BACKEND_URL || 'https://crm.pydah.edu.in';
 const LANDING_URL = process.env.NEXT_PUBLIC_CRM_URL || 'https://crm.pydah.edu.in';
 
 export default function PortalSwitcher() {
