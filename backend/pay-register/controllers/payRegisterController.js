@@ -1618,7 +1618,7 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
   );
   const rawPayableShifts = Number(totals.totalPayableShifts);
   const basePresent = Number(totals.totalPresentDays) || 0;
-  const usePayableShifts = isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
+  const usePayableShifts = (isSecurity || rawPayableShifts > basePresent) && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
   const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
 
   const totalPaidDays = Math.max(

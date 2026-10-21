@@ -3874,7 +3874,6 @@ export function PayRegisterContent({
 
                             const isSecurity = isSecurityEmployee(pr);
                             const isMultiShift = Boolean(
-                              isSecurity &&
                               record && (
                                 Number(record.payableShifts) > 1 ||
                                 (Array.isArray(record.shiftSelections) && record.shiftSelections.length > 1) ||
@@ -3940,11 +3939,11 @@ export function PayRegisterContent({
                               >
                                 {isContribHighlighted && highlightInfo && payRegisterContribAccentClasses && (() => {
                                   const effectiveVal =
-                                    isSecurity && isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
+                                    isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
                                       ? Math.max(highlightInfo.value, multiShiftCount)
                                       : highlightInfo.value;
                                   const effectiveSub =
-                                    isSecurity && isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
+                                    isMultiShift && ['present', 'payableShifts'].includes(badgeCategory)
                                       ? `${multiShiftCount}S`
                                       : highlightSub;
                                   return (
@@ -3972,13 +3971,13 @@ export function PayRegisterContent({
                                     {activeTable === 'shifts' ? (
                                       <>
                                         {record.shiftName ? (() => {
-                                          const codes = isSecurity ? getShiftCodes(record.shiftName) : [];
+                                          const codes = getShiftCodes(record.shiftName);
                                           return (
                                             <div
                                               className="font-semibold text-[9px] text-indigo-700 dark:text-indigo-300"
                                               title={record.shiftName ? `${record.shiftName}${isMultiShift ? ` (${multiShiftCount} Shifts)` : ''}` : undefined}
                                             >
-                                              {isSecurity && isMultiShift && codes.length > 1 ? (
+                                              {isMultiShift && codes.length > 1 ? (
                                                 <div className="flex flex-col items-center leading-tight">
                                                   {codes.map((code, idx) => (
                                                     <span key={idx} className="truncate max-w-full">
@@ -3987,7 +3986,7 @@ export function PayRegisterContent({
                                                   ))}
                                                 </div>
                                               ) : (
-                                                isSecurity && codes[0] ? codes[0] : (record.shiftName.length > 8 ? record.shiftName.substring(0, 8) + '...' : record.shiftName)
+                                                codes[0] ? codes[0] : (record.shiftName.length > 8 ? record.shiftName.substring(0, 8) + '...' : record.shiftName)
                                               )}
                                             </div>
                                           );
@@ -4020,29 +4019,29 @@ export function PayRegisterContent({
                                         {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours' || activeTable === 'all') && (
                                           <div className="text-[8px] font-semibold text-blue-600 dark:text-blue-300">{record.otHours}h</div>
                                         )}
-                                        {record.shiftName && activeTable === 'all' && (
-                                          isSecurity ? (() => {
-                                            const codes = getShiftCodes(record.shiftName);
-                                            return (
-                                              <div
-                                                className={`text-[8px] flex flex-col items-center leading-tight ${
-                                                  isMultiShift
-                                                    ? 'font-medium text-indigo-700 dark:text-indigo-300'
-                                                    : 'opacity-75 text-slate-700 dark:text-slate-300'
-                                                }`}
-                                                title={record.shiftName ? `${record.shiftName}${isMultiShift ? ` (${multiShiftCount} Shifts)` : ''}` : undefined}
-                                              >
-                                                {codes.map((code, idx) => (
+                                        {record.shiftName && activeTable === 'all' && (() => {
+                                          const codes = getShiftCodes(record.shiftName);
+                                          return (
+                                            <div
+                                              className={`text-[8px] flex flex-col items-center leading-tight ${
+                                                isMultiShift
+                                                  ? 'font-medium text-indigo-700 dark:text-indigo-300'
+                                                  : 'opacity-75 text-slate-700 dark:text-slate-300'
+                                              }`}
+                                              title={record.shiftName ? `${record.shiftName}${isMultiShift ? ` (${multiShiftCount} Shifts)` : ''}` : undefined}
+                                            >
+                                              {codes.length > 0 ? (
+                                                codes.map((code, idx) => (
                                                   <span key={idx} className="truncate max-w-full">
                                                     {code}
                                                   </span>
-                                                ))}
-                                              </div>
-                                            );
-                                          })() : (
-                                            <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
-                                          )
-                                        )}
+                                                ))
+                                              ) : (
+                                                <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
                                       </>
                                     )}
                                     {record.isManuallyEdited && (
@@ -4060,7 +4059,7 @@ export function PayRegisterContent({
                             const isSecurity = isSecurityEmployee(pr);
                             const rawPayableShifts = Number(pr.totals?.totalPayableShifts);
                             const basePresent = pr.totals?.totalPresentDays ?? 0;
-                            const usePayableShifts = isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
+                            const usePayableShifts = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
                             const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
                             const present = basePresent;
                             const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;

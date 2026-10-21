@@ -4835,7 +4835,8 @@ export default function AttendancePage() {
                           filteredMonthlyData.map((item, rowIdx) => {
                             const presentFromSummary = getMergedPresentDaysForSummary(
                               item.summary,
-                              attendanceProcessingMode
+                              attendanceProcessingMode,
+                              item.dailyAttendance
                             );
                             const daysPresent = presentFromSummary != null
                               ? presentFromSummary
@@ -4843,16 +4844,36 @@ export default function AttendancePage() {
                                 ? item.presentDays
                                 : Object.values(item.dailyAttendance).reduce((sum, record: any) => {
                                   if (!record) return sum;
-                                  if (record.status === 'PRESENT') return sum + 1;
-                                  if (record.status === 'HALF_DAY') return sum + 0.5;
-                                  return sum;
+                                  let contribution = 0;
+                                  if (record.status === 'PRESENT' || record.status === 'PARTIAL') contribution = 1;
+                                  else if (record.status === 'HALF_DAY') contribution = 0.5;
+                                  return Math.round((sum + contribution) * 100) / 100;
                                 }, 0);
                             const payableShifts = Number(
-                              item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
+                              item.summary?.totalPayableShifts ??
+                              item.payableShifts ??
+                              Object.values(item.dailyAttendance).reduce((sum, r: any) => {
+                                if (!r) return sum;
+                                const shifts = Array.isArray(r.shifts) ? r.shifts : [];
+                                if (attendanceProcessingMode === 'multi_shift' && shifts.length > 0) {
+                                  return sum + shifts.reduce((sSum: number, s: any) => sSum + (Number(s?.payableShift) || 0), 0);
+                                }
+                                if (attendanceProcessingMode === 'multi_shift' && Number(r.payableShifts) > 0) {
+                                  return sum + Number(r.payableShifts);
+                                }
+                                if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+                                if (r?.status === 'HALF_DAY') return sum + 0.5;
+                                return sum;
+                              }, 0)
                             );
 
                             // Helper calculations for specific tables
-                            const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
+                            const monthPresent = Object.values(item.dailyAttendance).reduce((sum, r: any) => {
+                              if (!r) return sum;
+                              if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+                              if (r?.status === 'HALF_DAY') return sum + 0.5;
+                              return sum;
+                            }, 0);
                             const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
                             const daysAbsent = periodDays - daysPresent;
                             const leaveRecords = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave);

@@ -18,6 +18,8 @@ type AttendanceDailyLike = {
     partialDayRule?: { lopPortion?: number } | null;
     sandwichRule?: { applied?: boolean; effect?: string | null } | null;
   } | null;
+  shifts?: any[];
+  payableShifts?: number;
 };
 
 export function normalizeContributingDateKey(date: unknown): string {
@@ -181,7 +183,51 @@ export function resolveAttendanceHighlightDateMap(
   if (fromSummary.size > 0) return fromSummary;
 
   const map = new Map<string, AttendanceHighlightDateEntry>();
-  if (category === 'absent') {
+  if (category === 'present' && dailyAttendance) {
+    for (const [dateStr, record] of Object.entries(dailyAttendance)) {
+      if (!record) continue;
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      if (shifts.length > 0) {
+        const presentShifts = shifts.filter((s: any) => {
+          const st = String(s?.status || '').toUpperCase();
+          return st === 'PRESENT' || (Number(s?.payableShift) || 0) > 0;
+        });
+        const shiftCount = presentShifts.reduce((sum: number, s: any) => sum + (Number(s?.payableShift) || 1), 0);
+        if (shiftCount > 0) {
+          map.set(dateStr, { value: Math.round(shiftCount * 100) / 100, label: 'P' });
+          continue;
+        }
+      }
+      if (record.payableShifts != null && Number(record.payableShifts) > 0 && record.status === 'PRESENT') {
+        map.set(dateStr, { value: Number(record.payableShifts), label: 'P' });
+        continue;
+      }
+      if (record.status === 'PRESENT' || record.status === 'PARTIAL') {
+        map.set(dateStr, { value: 1, label: 'P' });
+      } else if (record.status === 'HALF_DAY') {
+        map.set(dateStr, { value: 0.5, label: 'P' });
+      }
+    }
+  } else if (category === 'payableShifts' && dailyAttendance) {
+    for (const [dateStr, record] of Object.entries(dailyAttendance)) {
+      if (!record) continue;
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      if (shifts.length > 0) {
+        const shiftPay = shifts.reduce((sum: number, s: any) => {
+          return sum + (Number(s?.payableShift) || 0);
+        }, 0);
+        if (shiftPay > 0) {
+          map.set(dateStr, { value: Math.round(shiftPay * 100) / 100, label: 'Pay' });
+        }
+      } else if (record.payableShifts != null && Number(record.payableShifts) > 0) {
+        map.set(dateStr, { value: Number(record.payableShifts), label: 'Pay' });
+      } else if (record.status === 'PRESENT') {
+        map.set(dateStr, { value: 1, label: 'Pay' });
+      } else if (record.status === 'HALF_DAY') {
+        map.set(dateStr, { value: 0.5, label: 'Pay' });
+      }
+    }
+  } else if (category === 'absent') {
     appendAbsentFallbackFromDaily(map, dailyAttendance);
   } else if (category === 'lopLeaves') {
     appendLopLeavesFallbackFromDaily(map, dailyAttendance);

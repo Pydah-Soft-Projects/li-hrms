@@ -136,7 +136,11 @@ export function computePayRegisterAllRowFromMonthlySummary(
     ? mergeSingleShiftPresentForPayRegisterLikeRow(s)
     : round2(Number(s.totalPresentDays) || 0);
   const rawPayableShifts = Number(s.totalPayableShifts);
-  const usePayableShifts = Boolean(options?.isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > present);
+  const usePayableShifts = Boolean(
+    (options?.isSecurity || rawPayableShifts > present) &&
+    Number.isFinite(rawPayableShifts) &&
+    rawPayableShifts > present
+  );
   const payableBase = usePayableShifts ? round2(rawPayableShifts) : present;
   const weekOffs = round2(Number(s.totalWeeklyOffs) || 0);
   const holidays = round2(Number(s.totalHolidays) || 0);

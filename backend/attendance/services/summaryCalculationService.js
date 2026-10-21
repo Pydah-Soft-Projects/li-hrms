@@ -1118,14 +1118,32 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (approvedLeaveCovFirst > 0) attFirst = Math.max(0, attFirst - approvedLeaveCovFirst);
       if (approvedLeaveCovSecond > 0) attSecond = Math.max(0, attSecond - approvedLeaveCovSecond);
 
-      // dayPresent: punch half-credits minus OD; PARTIAL caps at 0.5 (never both halves from confused IN+OUT)
-      let dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
+      // dayPresent: punch half-credits minus OD; supports multi-shift doubles when in multi_shift mode
+      let dayPresent = Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond);
+      if (!processingModeIsMultiShift) {
+        dayPresent = Math.min(dayPresent, 1.0);
+      } else if (day.attendance && !day.isWO && !day.isHOL) {
+        const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
+        const presentShifts = shifts.filter((s) => {
+          const st = String(s?.status || '').toUpperCase();
+          return st === 'PRESENT' || (Number(s?.payableShift) || 0) > 0;
+        });
+        const shiftPresentCount = presentShifts.reduce((sum, s) => sum + (Number(s?.payableShift) || 1), 0);
+        if (shiftPresentCount > 0) {
+          dayPresent = Math.max(dayPresent, shiftPresentCount);
+        } else if (Number(day.attendance.payableShifts) > 0) {
+          dayPresent = Math.max(dayPresent, Number(day.attendance.payableShifts));
+        }
+      }
       if (
         processingModeIsSingleShift &&
         day.attendance &&
         String(day.attendance.status || '').toUpperCase() === 'PARTIAL'
       ) {
         dayPresent = Math.min(dayPresent, 0.5);
+      }
+      if (hasFullDayEsiLeave) {
+        dayPresent = 0;
       }
 
       const dayFirst = Math.max(attFirst, odFirst);
@@ -1264,8 +1282,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
 
       // 1. Handle Present Counts (Physical presence NOT on-duty)
+      // totalPresentDays is date-wise physical days (26), while contributingDates.present keeps multi-shift values (e.g. 2) for click highlights
       if (dayPresent > 0) {
-        totalPresentDays += dayPresent;
+        totalPresentDays += Math.min(dayPresent, 1.0);
         if (!contributingDates.present.some(cd => cd.date === dStr)) {
           contributingDates.present.push({ date: dStr, value: dayPresent, label: 'P' });
         }

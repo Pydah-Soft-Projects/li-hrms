@@ -89,7 +89,7 @@ function payRegisterAllRowFromSummary(s, options) {
     ? mergeSingleShiftPresentForPayRegisterRow(s)
     : round2(s.totalPresentDays);
   const rawPayableShifts = Number(s.totalPayableShifts);
-  const usePayableShifts = isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > present;
+  const usePayableShifts = (isSecurity || rawPayableShifts > present) && Number.isFinite(rawPayableShifts) && rawPayableShifts > present;
   const payableBase = usePayableShifts ? round2(rawPayableShifts) : present;
   const weekOffs = round2(s.totalWeeklyOffs);
   const holidays = round2(s.totalHolidays);

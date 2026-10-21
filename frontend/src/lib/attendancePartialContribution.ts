@@ -13,10 +13,13 @@ export type PartialContributionDailyRecord = {
 export type PartialContributingSummary = {
   totalPresentDays?: number | null;
   totalPartialDays?: number | null;
+  totalPayableShifts?: number | null;
   /** PARTIAL days: sum(min(dayPresent, dayPayable)) from monthly summary calc (pay register overlap guard). */
   totalPartialPresentPayableOverlap?: number | null;
   contributingDates?: {
     partial?: Array<string | { date?: string; value?: number; label?: string }> | null;
+    present?: Array<string | { date?: string; value?: number; label?: string }> | null;
+    payableShifts?: Array<string | { date?: string; value?: number; label?: string }> | null;
   } | null;
 };
 
@@ -65,7 +68,8 @@ export function sumPartialContributionsFromDaily(
  */
 export function getMergedPresentDaysForSummary(
   summary: PartialContributingSummary | null | undefined,
-  processingMode?: 'single_shift' | 'multi_shift' | null
+  processingMode?: 'single_shift' | 'multi_shift' | null,
+  dailyAttendance?: Record<string, any> | null
 ): number | null {
   if (!summary) return null;
   if (processingMode === 'single_shift') {

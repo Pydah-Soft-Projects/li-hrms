@@ -172,7 +172,7 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
         if (isLopNature(n, lt)) lopLeaveVal = 1;
         else paidLeaveVal = 1;
       } else if (s === 'od') odVal = 1;
-      else if (s === 'present') presentVal = 1;
+      else if (s === 'present') presentVal = per;
       else if (s === 'partial') {
         presentVal = 0.5;
         leaveVal = 0.5;
@@ -215,7 +215,7 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
       mergeBucket('lopLeaves', date, Math.min(1, lopLeaveVal), 'LOP');
     }
     if (odVal > 0) oncePerDate('ods', date, Math.min(1, odVal), 'OD');
-    if (presentVal > 0) oncePerDate('present', date, Math.min(1, presentVal), 'P');
+    if (presentVal > 0) oncePerDate('present', date, presentVal, 'P');
 
     const pay = (() => {
       let p = 0;
