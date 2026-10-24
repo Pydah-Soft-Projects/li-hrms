@@ -3637,6 +3637,18 @@ export const api = {
       body: JSON.stringify(params || {}),
     }),
 
+  syncRosterToAttendance: (data?: {
+    month?: string;
+    date?: string;
+    startDate?: string;
+    endDate?: string;
+    employeeNumbers?: string[];
+  }) =>
+    apiRequest<{ synced: number; reprocessed: number; skipped: number; totalEntries: number }>('/shifts/roster/sync-attendance', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    }),
+
   // ==========================================
   // LEAVE SPLIT APIs
   // ==========================================

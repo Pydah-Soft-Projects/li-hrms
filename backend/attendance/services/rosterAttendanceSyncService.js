@@ -64,6 +64,23 @@ async function syncOneRosterEntryToAttendance(entry) {
       return 'reprocessed';
     }
 
+    if (dailyRecord && dailyRecord.status === 'LEAVE') {
+      try {
+        const Leave = require('../../leaves/model/Leave');
+        const approvedLeave = await Leave.findOne({
+          employeeNumber: empNo,
+          fromDate: { $lte: entry.date },
+          toDate: { $gte: entry.date },
+          status: 'approved',
+        }).lean();
+        if (approvedLeave) {
+          return 'skipped';
+        }
+      } catch (leaveErr) {
+        // fallback
+      }
+    }
+
     const updateFields = {
       status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
       shifts: [],
@@ -84,6 +101,12 @@ async function syncOneRosterEntryToAttendance(entry) {
       });
     } else {
       Object.assign(dailyRecord, updateFields);
+      if (dailyRecord.policyMeta?.sandwichRule) {
+        dailyRecord.policyMeta.sandwichRule.applied = false;
+        dailyRecord.policyMeta.sandwichRule.ruleCode = null;
+        dailyRecord.policyMeta.sandwichRule.effect = null;
+        dailyRecord.policyMeta.sandwichRule.note = null;
+      }
       appendSource(dailyRecord);
     }
 
@@ -159,6 +182,12 @@ async function syncOneRosterEntryToAttendance(entry) {
           source: ['roster-sync'],
         });
         Object.assign(dailyRecord, updateFields);
+        if (dailyRecord.policyMeta?.sandwichRule) {
+          dailyRecord.policyMeta.sandwichRule.applied = false;
+          dailyRecord.policyMeta.sandwichRule.ruleCode = null;
+          dailyRecord.policyMeta.sandwichRule.effect = null;
+          dailyRecord.policyMeta.sandwichRule.note = null;
+        }
         appendSource(dailyRecord);
         await dailyRecord.save();
         return 'synced';

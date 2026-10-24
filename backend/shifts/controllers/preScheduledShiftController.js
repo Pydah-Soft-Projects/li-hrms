@@ -769,3 +769,75 @@ exports.deletePreScheduledShift = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Sync Shift Roster to Attendance Daily for a specific date, month, or range
+ * @route   POST /api/shifts/roster/sync-attendance
+ * @access  Private (Super Admin, Sub Admin, HR, HOD)
+ */
+exports.syncRosterToAttendance = async (req, res) => {
+  try {
+    const { date, month, startDate: reqStartDate, endDate: reqEndDate, employeeNumbers } = req.body || {};
+    let startDate, endDate;
+
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) {
+      startDate = String(date).trim();
+      endDate = String(date).trim();
+    } else if (reqStartDate && reqEndDate) {
+      startDate = String(reqStartDate).trim();
+      endDate = String(reqEndDate).trim();
+    } else {
+      let monthStr = month;
+      if (!monthStr || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
+        const { getTodayISTDateString } = require('../../shared/utils/dateUtils');
+        monthStr = getTodayISTDateString().slice(0, 7);
+      }
+      const [year, monthNum] = monthStr.split('-').map(Number);
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const range = await getPayrollDateRange(year, monthNum);
+      startDate = range.startDate;
+      endDate = range.endDate;
+    }
+
+    const query = {
+      date: { $gte: startDate, $lte: endDate },
+    };
+
+    if (Array.isArray(employeeNumbers) && employeeNumbers.length > 0) {
+      query.employeeNumber = {
+        $in: employeeNumbers.map((e) => String(e || '').toUpperCase().trim()).filter(Boolean),
+      };
+    }
+
+    const rosterEntries = await PreScheduledShift.find(query).lean();
+
+    if (!rosterEntries.length) {
+      return res.status(200).json({
+        success: true,
+        message: `No roster entries found between ${startDate} and ${endDate}`,
+        data: { synced: 0, reprocessed: 0, skipped: 0, total: 0 },
+      });
+    }
+
+    const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+    const stats = await syncRosterEntriesToAttendance(rosterEntries);
+
+    res.status(200).json({
+      success: true,
+      message: `Shift roster sync complete for ${startDate} to ${endDate}: ${stats.synced || 0} synced, ${stats.reprocessed || 0} reprocessed, ${stats.skipped || 0} skipped`,
+      data: {
+        ...stats,
+        totalEntries: rosterEntries.length,
+        startDate,
+        endDate,
+      },
+    });
+  } catch (error) {
+    console.error('Error syncing roster to attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync roster to attendance',
+    });
+  }
+};
+
+

@@ -48,6 +48,7 @@ router.delete('/pre-schedule/:id', authorize('manager', 'super_admin', 'sub_admi
 router.get('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.getRoster);
 router.post('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.saveRoster);
 router.post('/roster/auto-fill-next-cycle', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.autoFillNextCycle);
+router.post('/roster/sync-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.syncRosterToAttendance);
 
 // Manual trigger for weekday roster accrual (super_admin only – mirrors the nightly cron for testing)
 router.post('/roster/trigger-weekday-accrual', authorize('super_admin'), async (req, res) => {

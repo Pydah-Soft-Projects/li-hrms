@@ -82,6 +82,7 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
   const [autoFillLoading, setAutoFillLoading] = useState(false);
+  const [syncingAttendance, setSyncingAttendance] = useState(false);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>(initialUrl.tab || 'roster');
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
@@ -1030,6 +1031,28 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     }
   }, [month, selectedDept, selectedDivision]);
 
+  const handleSyncAttendance = useCallback(async () => {
+    setSyncingAttendance(true);
+    const syncToast = toast.loading('Syncing shift roster to attendance sheet...');
+    try {
+      const res = await api.syncRosterToAttendance({
+        month,
+        startDate: cycleDates?.startDate,
+        endDate: cycleDates?.endDate,
+      });
+      if (res?.success) {
+        toast.success(res.message || 'Shift roster synced to attendance successfully');
+      } else {
+        toast.error((res as { message?: string })?.message || 'Failed to sync roster to attendance');
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to sync roster to attendance');
+    } finally {
+      toast.dismiss(syncToast);
+      setSyncingAttendance(false);
+    }
+  }, [month, cycleDates]);
+
   return {
     month,
     setMonth,
@@ -1053,6 +1076,8 @@ export function useShiftRosterPage(options: UseShiftRosterPageOptions = {}) {
     saving,
     savingProgress,
     autoFillLoading,
+    syncingAttendance,
+    handleSyncAttendance,
     activeTab,
     setActiveTab,
     searchTerm,
