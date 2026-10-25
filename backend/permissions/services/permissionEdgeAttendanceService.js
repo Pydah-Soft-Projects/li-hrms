@@ -79,8 +79,12 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
   globalGrace = DEFAULT_GRACE,
 }) {
   if (!pShift || !employeeNumber || !date) return pShift;
-  if (!pShift.shiftStartTime || !pShift.shiftEndTime || !pShift.inTime) {
+  // Permissions are only applied when BOTH check-in and check-out are present
+  if (!pShift.shiftStartTime || !pShift.shiftEndTime || !pShift.inTime || !pShift.outTime) {
     pShift.edgePermissionHours = 0;
+    const punchH = Number(pShift.punchHours) || 0;
+    const odH = Number(pShift.odHours) || 0;
+    pShift.workingHours = Math.round((punchH + odH) * 100) / 100;
     return pShift;
   }
 

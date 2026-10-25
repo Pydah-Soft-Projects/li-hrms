@@ -223,6 +223,33 @@ function getVerifiedStatus(permissionType) {
   return permissionType === 'late_in' ? 'checked_in' : 'checked_out';
 }
 
+function getShiftPunchHours(shift) {
+  if (Number(shift?.punchHours) > 0) return Number(shift.punchHours);
+  if (shift?.inTime && shift?.outTime) {
+    const inDate = shift.inTime instanceof Date ? shift.inTime : new Date(shift.inTime);
+    const outDate = shift.outTime instanceof Date ? shift.outTime : new Date(shift.outTime);
+    const diffMs = outDate.getTime() - inDate.getTime();
+    if (diffMs > 0) {
+      return Math.round((diffMs / 3600000) * 100) / 100;
+    }
+  }
+  return 0;
+}
+
+function isShiftAlreadyPresentWithoutPermission(shift) {
+  // A shift is already full PRESENT from punch hours alone when punchHours + odHours
+  // meets or exceeds the shift-level present threshold (75% of expected hours).
+  // We do NOT check shift.status === 'PRESENT' here because half-segment break logic
+  // or default status can set PRESENT even when actual worked duration is under 75%.
+  const punchH = getShiftPunchHours(shift);
+  const odH = Number(shift?.odHours) || 0;
+  const expectedH = Number(shift?.expectedHours) || deriveShiftDurationHours(shift) || 8;
+  if (expectedH > 0 && (punchH + odH) >= expectedH * 0.75) {
+    return true;
+  }
+  return false;
+}
+
 function buildEligibleEdges(attendanceDaily, settings, employeeGender = null) {
   const shifts = Array.isArray(attendanceDaily?.shifts) ? attendanceDaily.shifts : [];
   const edges = [];
@@ -234,6 +261,9 @@ function buildEligibleEdges(attendanceDaily, settings, employeeGender = null) {
     const ranges = ruleSet?.shiftDurationRanges || [];
 
     for (const shift of shifts) {
+      // Both IN and OUT punches must be present to evaluate and apply edge permissions
+      if (!shift?.inTime || !shift?.outTime) continue;
+
       const detectedMinutes = getDetectedMinutes(shift, permissionType, attendanceDaily?.date);
       if (detectedMinutes <= 0) continue;
       if (permissionType === 'late_in' && !shift?.inTime) continue;
@@ -483,8 +513,50 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       perDayCap = Number(resolvedPermSettings.perDayLimit);
     }
 
+    // Check for shifts that lack both inTime and outTime OR are already full PRESENT from punch hours
+    // Client requirement: permissions only apply where both IN and OUT are present,
+    // and should not be wasted on shifts that are already full PRESENT.
+    const incompleteShiftNumbers = (attendanceDaily.shifts || [])
+      .filter((s) => !s.inTime || !s.outTime)
+      .map((s) => Number(s.shiftNumber) || 1);
+
+    const alreadyPresentShiftNumbers = (attendanceDaily.shifts || [])
+      .filter((s) => isShiftAlreadyPresentWithoutPermission(s))
+      .map((s) => Number(s.shiftNumber) || 1);
+
+    const shiftsToDeactivate = [...new Set([...incompleteShiftNumbers, ...alreadyPresentShiftNumbers])];
+
+    let deactivatedStale = false;
+    if (shiftsToDeactivate.length > 0) {
+      const staleAutoPerms = await Permission.find({
+        employeeId: employee._id,
+        date: attendanceDaily.date,
+        creationSource: AUTO_SOURCE,
+        isActive: true,
+        'autoCreationMeta.shiftNumber': { $in: shiftsToDeactivate },
+      });
+      for (const p of staleAutoPerms) {
+        const isAlreadyPresent = alreadyPresentShiftNumbers.includes(Number(p.autoCreationMeta?.shiftNumber) || 1);
+        p.isActive = false;
+        p.status = 'rejected';
+        p.comments = (p.comments || '') + (isAlreadyPresent
+          ? ' [Deactivated: Shift is already full PRESENT from punch hours; auto permission not needed]'
+          : ' [Deactivated: Both check-in and check-out punches are required]');
+        await p.save();
+        deactivatedStale = true;
+      }
+    }
+
     const eligibleEdges = buildEligibleEdges(attendanceDaily, settings, employee.gender || null);
     if (!eligibleEdges.length) {
+      if (deactivatedStale) {
+        try {
+          const { refreshAttendanceEdgePermissions } = require('./permissionEdgeAttendanceService');
+          await refreshAttendanceEdgePermissions(employeeNumber, attendanceDaily.date);
+        } catch (refreshErr) {
+          console.error('[AutoEdgePermissionCreation] Attendance refresh after deactivating stale permissions failed:', refreshErr.message);
+        }
+      }
       return { success: true, created: 0, skippedReason: 'No eligible late-in / early-out edges' };
     }
 
@@ -511,9 +583,11 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
 
     const created = [];
     const finalized = [];
-    let shouldRefreshAttendance = false;
+    let shouldRefreshAttendance = deactivatedStale;
+    const grantedEdgeHoursByShift = {};
+
     for (const edge of eligibleEdges) {
-      const shiftNumber = Number(edge.shift?.shiftNumber) || null;
+      const shiftNumber = Number(edge.shift?.shiftNumber) || 1;
       const manualPermission = await findExistingPermission({
         employeeId: employee._id,
         date: attendanceDaily.date,
@@ -527,6 +601,37 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         permissionType: edge.permissionType,
         shiftNumber,
       });
+
+      // Check if this shift is already full PRESENT from punch hours alone
+      if (isShiftAlreadyPresentWithoutPermission(edge.shift)) {
+        if (permission && permission.isActive) {
+          permission.isActive = false;
+          permission.status = 'rejected';
+          permission.comments = (permission.comments || '') + ' [Deactivated: Shift is already full PRESENT from punch hours; auto permission not needed]';
+          await permission.save();
+          shouldRefreshAttendance = true;
+        }
+        console.log(`[AutoEdgePermissionCreation] Shift ${shiftNumber} on ${attendanceDaily.date} is already full PRESENT from punches alone (${getShiftPunchHours(edge.shift)}h). Skipping ${edge.permissionType} to preserve monthly quota.`);
+        continue;
+      }
+
+      // Check if this shift has ALREADY reached PRESENT (75% threshold) from punches + OD + previously granted edge hours on this date
+      const punchH = getShiftPunchHours(edge.shift);
+      const odH = Number(edge.shift?.odHours) || 0;
+      const expectedH = Number(edge.shift?.expectedHours) || deriveShiftDurationHours(edge.shift) || 8;
+      const alreadyGrantedHours = grantedEdgeHoursByShift[shiftNumber] || 0;
+
+      if (expectedH > 0 && alreadyGrantedHours > 0 && (punchH + odH + alreadyGrantedHours) >= expectedH * 0.75) {
+        if (permission && permission.isActive) {
+          permission.isActive = false;
+          permission.status = 'rejected';
+          permission.comments = (permission.comments || '') + ' [Deactivated: Shift already reached full PRESENT with prior edge permission; quota preserved]';
+          await permission.save();
+          shouldRefreshAttendance = true;
+        }
+        console.log(`[AutoEdgePermissionCreation] Shift ${shiftNumber} on ${attendanceDaily.date} already reached PRESENT with prior edge permission (${alreadyGrantedHours}h). Skipping ${edge.permissionType} to preserve monthly quota.`);
+        continue;
+      }
 
       const currentTotalMonthly = priorMonthlyCount + todayCount;
 
@@ -582,6 +687,9 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         finalized.push(permission);
         shouldRefreshAttendance = true;
       }
+
+      const grantedHoursForEdge = Number(permission.permissionHours) || 0;
+      grantedEdgeHoursByShift[shiftNumber] = (grantedEdgeHoursByShift[shiftNumber] || 0) + grantedHoursForEdge;
     }
 
     if (shouldRefreshAttendance) {
@@ -629,4 +737,6 @@ module.exports = {
   applyAutoPermissionEdgeFields,
   toMinutes,
   toTimeString,
+  isShiftAlreadyPresentWithoutPermission,
+  getShiftPunchHours,
 };
