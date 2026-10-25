@@ -46,6 +46,11 @@ const STATIC_HEADER_TO_FIELD = {
     [normalizeHeader('employee_group_id')]: 'employee_group_id',
     [normalizeHeader('Employee Group')]: 'employee_group_id',
     [normalizeHeader('employee_group')]: 'employee_group_id',
+    [normalizeHeader('paid_leaves')]: 'paidLeaves',
+    [normalizeHeader('paid_leave')]: 'paidLeaves',
+    [normalizeHeader('Paid Leaves')]: 'paidLeaves',
+    [normalizeHeader('Paid Leave')]: 'paidLeaves',
+    [normalizeHeader('paidLeaves')]: 'paidLeaves',
 };
 
 const normalizeSelectionList = (input) => {
@@ -439,7 +444,13 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds, selectedComp
         const headers = ['Employee ID'];
         ids.forEach(id => {
             // proposedSalary is shown and stored as Gross Salary
-            headers.push(id === 'proposedSalary' ? 'Gross Salary' : (fieldMap[id] || id));
+            headers.push(
+                id === 'proposedSalary'
+                    ? 'Gross Salary'
+                    : id === 'paidLeaves' || id === 'paid_leaves'
+                    ? 'Paid Leaves'
+                    : (fieldMap[id] || id)
+            );
         });
         selectedMasters.forEach(master => {
             headers.push(`${master.name} (${master.category})`);
@@ -451,12 +462,19 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds, selectedComp
             const dynamic = base.dynamicFields || {};
 
             ids.forEach(id => {
-                const label = id === 'proposedSalary' ? 'Gross Salary' : (fieldMap[id] || id);
+                const label =
+                    id === 'proposedSalary'
+                        ? 'Gross Salary'
+                        : id === 'paidLeaves' || id === 'paid_leaves'
+                        ? 'Paid Leaves'
+                        : (fieldMap[id] || id);
                 const groupId = fieldIdToGroupId[id];
                 
                 let val;
                 if (id === 'proposedSalary') {
                     val = base.gross_salary;
+                } else if (id === 'paidLeaves' || id === 'paid_leaves') {
+                    val = base.paidLeaves !== undefined && base.paidLeaves !== null ? base.paidLeaves : 0;
                 } else if (groupId === 'salaries') {
                     val = base.salaries && typeof base.salaries === 'object' ? base.salaries[id] : undefined;
                 } else if (groupId && dynamic[groupId] && dynamic[groupId][id] !== undefined) {

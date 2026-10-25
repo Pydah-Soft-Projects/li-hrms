@@ -240,6 +240,7 @@ export default function EmployeeUpdateModal({ onClose, onSuccess, filters }: Emp
                                             <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">System</h4>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <button
+                                                    type="button"
                                                     onClick={() => toggleField('employee_group_id')}
                                                     className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${selectedFields.includes('employee_group_id')
                                                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30'
@@ -255,6 +256,25 @@ export default function EmployeeUpdateModal({ onClose, onSuccess, filters }: Emp
                                             </div>
                                         </div>
                                     )}
+                                    <div className="space-y-2">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Leaves</h4>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleField('paidLeaves')}
+                                                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${selectedFields.includes('paidLeaves')
+                                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30'
+                                                    : 'border-slate-200 hover:border-indigo-300 dark:border-slate-700 dark:hover:border-indigo-500/50'
+                                                    }`}
+                                            >
+                                                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all ${selectedFields.includes('paidLeaves') ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600'
+                                                    }`}>
+                                                    {selectedFields.includes('paidLeaves') && <Check className="h-3 w-3" />}
+                                                </div>
+                                                <span className="text-xs font-semibold">Paid Leaves</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div className="space-y-4">
                                         <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Allowances & Deductions</h4>
                                         <p className="text-xs text-slate-500 dark:text-slate-400">
