@@ -244,12 +244,24 @@ async function getSecurityDivisionEmployees(customEmpNos = null) {
   if (securityDept?._id) queryOr.push({ department_id: securityDept._id });
   queryOr.push({ department: /SECURITY/i });
 
+  let filter = { $or: queryOr };
   if (Array.isArray(customEmpNos) && customEmpNos.length > 0) {
-    queryOr.push({ emp_no: { $in: customEmpNos } });
-    queryOr.push({ employeeNumber: { $in: customEmpNos } });
+    const cleanNos = customEmpNos.map(n => String(n).trim().toUpperCase());
+    filter = {
+      $and: [
+        { $or: queryOr },
+        {
+          $or: [
+            { emp_no: { $in: cleanNos } },
+            { employeeNumber: { $in: cleanNos } },
+            { customId: { $in: cleanNos } },
+          ],
+        },
+      ],
+    };
   }
 
-  const employees = await Employee.find({ $or: queryOr })
+  const employees = await Employee.find(filter)
     .populate('division_id department_id designation_id')
     .lean();
 
@@ -872,9 +884,46 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
   return results;
 }
 
+function isSecurityDivisionEmployee(employee) {
+  if (!employee) return false;
+  return Boolean(
+    /security/i.test(
+      String(
+        employee.division_id?.name ||
+        employee.division_id ||
+        employee.department_id?.name ||
+        employee.department_id ||
+        employee.department ||
+        employee.division ||
+        employee.designation_id?.name ||
+        employee.designation ||
+        ''
+      )
+    )
+  );
+}
+
+async function isSecurityEmployeeNumber(employeeNumber) {
+  if (!employeeNumber) return false;
+  const Employee = require('../../employees/model/Employee');
+  const emp = await Employee.findOne({
+    $or: [
+      { emp_no: String(employeeNumber).trim().toUpperCase() },
+      { employeeNumber: String(employeeNumber).trim().toUpperCase() },
+      { customId: String(employeeNumber).trim().toUpperCase() },
+    ],
+  })
+    .select('emp_no employeeNumber division_id department_id designation_id department division')
+    .populate('division_id department_id designation_id')
+    .lean();
+  return isSecurityDivisionEmployee(emp);
+}
+
 module.exports = {
   getPayrollCycleRange,
   getSecurityDivisionEmployees,
   getSecurityDivisionShifts,
   runSecurityDivisionAttendanceEngine,
+  isSecurityDivisionEmployee,
+  isSecurityEmployeeNumber,
 };

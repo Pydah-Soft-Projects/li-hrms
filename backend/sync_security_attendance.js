@@ -45,18 +45,7 @@ async function main() {
       console.log(`Emp ${s.empNo} (${s.empName}): Days=${s.totalDays}, ThumbPresent=${s.thumbPresentDays}, Leave=${s.leaveDays}, Absent=${s.absentDays}, Hours=${s.totalWorkingHours}, Shifts=${s.totalPayableShifts}, LateIns=${s.lateInsCount || 0} (${s.totalLateInMinutes || 0}m), EarlyOuts=${s.earlyOutsCount || 0} (${s.totalEarlyOutMinutes || 0}m)`);
     });
 
-    // Recalculate Monthly Summaries in database
-    const { calculateMonthlySummaryByEmpNo } = require('./attendance/services/summaryCalculationService');
-    const yyyyMm = endDate.slice(0, 7);
-    console.log(`\n--- Recalculating Monthly Summaries for ${yyyyMm} across Security Division ---`);
-    for (const s of result.employeeSummaries) {
-      try {
-        await calculateMonthlySummaryByEmpNo(s.empNo, yyyyMm);
-        console.log(`Updated Monthly Summary for Emp ${s.empNo} (${yyyyMm})`);
-      } catch (sumErr) {
-        console.warn(`Could not update monthly summary for Emp ${s.empNo}:`, sumErr.message);
-      }
-    }
+    console.log('\nMonthly summaries recalculation completed within engine.');
 
     // Allow async post-save hooks to settle cleanly
     await new Promise(r => setTimeout(r, 4000));

@@ -396,6 +396,31 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
     const manualOpts = normalizeManualOverrides(options.manualOverrides);
 
     try {
+        // Security Division & Department delegation: Route Security employees to dedicated Security Attendance Engine
+        if (!options.isFromSecurityEngine) {
+            const { isSecurityEmployeeNumber, runSecurityDivisionAttendanceEngine } = require('./securityDivisionAttendanceService');
+            const isSec = await isSecurityEmployeeNumber(employeeNumber);
+            if (isSec) {
+                await runSecurityDivisionAttendanceEngine({
+                    startDate: date,
+                    endDate: date,
+                    empNos: [employeeNumber],
+                    overrideWithThumbs: true,
+                    recalculateMonthlySummary: false,
+                });
+                const secDaily = await AttendanceDaily.findOne({
+                    employeeNumber: String(employeeNumber).toUpperCase(),
+                    date,
+                }).lean();
+                return {
+                    success: true,
+                    isNew: false,
+                    shiftsProcessed: secDaily?.shifts?.length || 0,
+                    attendance: secDaily,
+                };
+            }
+        }
+
         // Resolve processing mode (division override → org default) and apply punch filtering
         const { getAttendanceContextForEmployee } = require('./processingModeResolutionService');
         const { settings: attendanceSettings, processingMode } = await getAttendanceContextForEmployee(employeeNumber);
