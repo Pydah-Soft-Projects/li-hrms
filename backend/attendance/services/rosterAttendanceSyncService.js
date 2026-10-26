@@ -67,11 +67,15 @@ async function syncOneRosterEntryToAttendance(entry) {
     if (dailyRecord && dailyRecord.status === 'LEAVE') {
       try {
         const Leave = require('../../leaves/model/Leave');
+        const { createISTDate } = require('../../shared/utils/dateUtils');
+        const dayStart = createISTDate(entry.date, '00:00');
+        const dayEnd = createISTDate(entry.date, '23:59');
         const approvedLeave = await Leave.findOne({
-          employeeNumber: empNo,
-          fromDate: { $lte: entry.date },
-          toDate: { $gte: entry.date },
+          $or: [{ emp_no: empNo }, { employeeNumber: empNo }],
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
           status: 'approved',
+          isActive: { $ne: false },
         }).lean();
         if (approvedLeave) {
           return 'skipped';

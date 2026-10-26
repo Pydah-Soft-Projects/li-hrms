@@ -600,9 +600,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       const day = dailyStatsMap.get(dStr);
       if (!day) continue;
       day.leaves.push({
-        // Keep the minimal shape used below (isHalfDay + leaveType).
-        isHalfDay: split.isHalfDay,
-        numberOfDays: split.numberOfDays,
+        leaveId: split.leaveId || split._id,
+        isHalfDay: Boolean(split.isHalfDay),
+        halfDayType: split.halfDayType || null,
+        fromIsHalfDay: Boolean(split.isHalfDay),
+        fromHalfDayType: split.halfDayType || null,
+        toIsHalfDay: Boolean(split.isHalfDay),
+        toHalfDayType: split.halfDayType || null,
+        numberOfDays: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+        segmentDaysOnDate: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
         leaveType: split.leaveType,
         leaveNature: split.leaveNature,
       });

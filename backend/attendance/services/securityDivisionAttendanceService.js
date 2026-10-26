@@ -70,17 +70,34 @@ function isPunchOut(p) {
  *  - Duplicate exit pulse grouping to avoid reuse.
  */
 /**
- * Deduplicate raw punches: collapse rapid duplicate pulses within threshold minutes.
+ * Deduplicate raw punches: collapse rapid duplicate pulses within threshold seconds.
+ * Preserves back-to-back shift changeover punches (e.g. OUT at 13:10 followed by IN at 13:11).
  */
-function deduplicatePunches(punches, thresholdMinutes = 15) {
+function deduplicatePunches(punches, thresholdSeconds = 30) {
   if (!punches || punches.length === 0) return [];
   const sorted = [...punches].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const result = [sorted[0]];
   for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i];
     const prev = result[result.length - 1];
-    const diff = (new Date(sorted[i].timestamp) - new Date(prev.timestamp)) / 60000;
-    if (diff >= thresholdMinutes) {
-      result.push(sorted[i]);
+    const diffSec = (new Date(cur.timestamp) - new Date(prev.timestamp)) / 1000;
+
+    const prevIn = isPunchIn(prev);
+    const prevOut = isPunchOut(prev);
+    const curIn = isPunchIn(cur);
+    const curOut = isPunchOut(cur);
+
+    // If one is OUT and the next is IN (or vice versa), they represent distinct operational events
+    const isDirectionChange = (prevOut && curIn) || (prevIn && curOut);
+
+    if (isDirectionChange) {
+      result.push(cur);
+      continue;
+    }
+
+    // Same direction or directionless: only collapse rapid double-taps within thresholdSeconds
+    if (diffSec >= thresholdSeconds) {
+      result.push(cur);
     }
   }
   return result;
@@ -92,6 +109,7 @@ function deduplicatePunches(punches, thresholdMinutes = 15) {
  * - Maximum single shift duration is 15 hours (longest shift is 12h + 3h OT). Never spans 24h.
  * - Same-day punches with a gap >= 3.5h form complete daytime shifts (e.g. 05:45 - 13:01 -> A-SECURITY).
  * - Evening punches without a same-day exit (e.g. >= 16:00 IST) look ahead to the next morning (4h to 15h) for overnight shifts.
+ * - Supports multi-shift days (e.g. Shift 1 morning + Shift 2 afternoon/night) and shared boundary punches.
  */
 function detectAndPairSecurityShifts(rawLogs, date, maxShifts = 3) {
   if (!rawLogs || rawLogs.length === 0) return [];
@@ -99,7 +117,7 @@ function detectAndPairSecurityShifts(rawLogs, date, maxShifts = 3) {
   const MAX_SHIFT_WINDOW_MS = 15 * 60 * 60 * 1000; // 15 hours maximum
   const MIN_SHIFT_GAP_MS = 3.5 * 60 * 60 * 1000;    // 3.5 hours minimum gap for a distinct exit
 
-  const cleanLogs = deduplicatePunches(rawLogs, 15);
+  const cleanLogs = deduplicatePunches(rawLogs, 30);
   const dayPunches = cleanLogs.filter(p => toISTDateStr(p.timestamp) === date);
   if (dayPunches.length === 0) return [];
 
@@ -133,6 +151,20 @@ function detectAndPairSecurityShifts(rawLogs, date, maxShifts = 3) {
         });
         usedPunchIds.add(curPunch._id?.toString() || curPunch.id);
         usedPunchIds.add(nextSameDayPunch._id?.toString() || nextSameDayPunch.id);
+
+        // Check if nextSameDayPunch is followed by a punch that starts another shift
+        const subsequentPunch = dayPunches[pIdx + 2];
+        if (subsequentPunch) {
+          const subMs = new Date(subsequentPunch.timestamp).getTime();
+          const gapFromNext = subMs - nextMs;
+          // If subsequent punch is >= 3.5 hours after nextSameDayPunch,
+          // nextSameDayPunch acts as a boundary punch for the next shift (e.g. 05:45 -> 13:05 -> 21:05)
+          if (gapFromNext >= MIN_SHIFT_GAP_MS) {
+            pIdx += 1; // Start next shift from nextSameDayPunch
+            continue;
+          }
+        }
+
         pIdx += 2; // Advance past both IN and OUT
         continue;
       }
@@ -140,11 +172,22 @@ function detectAndPairSecurityShifts(rawLogs, date, maxShifts = 3) {
 
     // 2. Overnight shift: if evening punch (>= 16:00 IST) with NO same-day exit, look into next morning (4h to 15h)
     if (curISTHour >= 16) {
-      const nextDayOut = cleanLogs.find(p => {
+      // First prefer an explicit OUT punch in the morning
+      let nextDayOut = cleanLogs.find(p => {
+        if (!isPunchOut(p)) return false;
         const pMs = new Date(p.timestamp).getTime();
         const diffMs = pMs - curMs;
         return diffMs >= MIN_SHIFT_GAP_MS && diffMs <= MAX_SHIFT_WINDOW_MS && !usedPunchIds.has(p._id?.toString() || p.id);
       });
+
+      // If no explicit OUT punch, fall back to any directionless or morning punch
+      if (!nextDayOut) {
+        nextDayOut = cleanLogs.find(p => {
+          const pMs = new Date(p.timestamp).getTime();
+          const diffMs = pMs - curMs;
+          return diffMs >= MIN_SHIFT_GAP_MS && diffMs <= MAX_SHIFT_WINDOW_MS && !usedPunchIds.has(p._id?.toString() || p.id);
+        });
+      }
 
       if (nextDayOut) {
         const diffMs = new Date(nextDayOut.timestamp).getTime() - curMs;
@@ -526,6 +569,7 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
     const empLogs = logsByEmp[empNo] || [];
 
     let thumbPresentDays = 0, scheduledDutyDays = 0, leaveDays = 0, absentDays = 0;
+    let weekOffDays = 0, holidayDays = 0;
     let totalWorkingHours = 0, totalPayableShifts = 0;
     let totalLateInMinsEmp = 0, totalEarlyOutMinsEmp = 0;
     let lateInsCountEmp = 0, earlyOutsCountEmp = 0;
@@ -650,7 +694,6 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
       if (hasValidShifts && overrideWithThumbs) {
         // ═══ FULL PRESENT — paired shifts ════════════════════════════════════
         status = 'PRESENT';
-        thumbPresentDays++;
 
         shiftData = validPairedShifts.map((rs, idx) => {
           const shift = matchSecurityShiftByTime(rs.inTime, rs.outTime, shifts) || shiftCodeMap['A'] || shifts[0];
@@ -706,7 +749,6 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
         // ═══ PARTIAL STATE — genuine single or incomplete punches on this date ═══
         // Not a full shift. Never falsely marked PRESENT. Payable is 0.5.
         status = 'PARTIAL';
-        thumbPresentDays += 0.5;
 
         const firstPunch = new Date(effectivePunches[0].timestamp);
         const lastPunch = effectivePunches.length > 1
@@ -765,8 +807,10 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
           leaveDays++;
         } else if (isWO) {
           status = 'WEEK_OFF';
+          weekOffDays++;
         } else if (isHOL) {
           status = 'HOLIDAY';
+          holidayDays++;
         } else {
           status = 'ABSENT';
           absentDays++;
@@ -795,6 +839,7 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
       const dayEarly = shiftData.reduce((a, s) => a + (s.earlyOutMinutes || 0), 0);
       const dayOT = shiftData.reduce((a, s) => a + (s.otHours || 0), 0);
 
+      thumbPresentDays += dayPay;
       totalWorkingHours += dayWH;
       totalPayableShifts += dayPay;
       totalLateInMinsEmp += dayLate;
@@ -848,7 +893,8 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
       finalPresentDays: thumbPresentDays,
       leaveDays,
       absentDays,
-      weekOffDays: dates.length - thumbPresentDays - leaveDays - absentDays,
+      weekOffDays,
+      holidayDays,
       totalWorkingHours: Math.round(totalWorkingHours * 100) / 100,
       totalPayableShifts,
       lateInsCount: lateInsCountEmp,
@@ -933,4 +979,9 @@ module.exports = {
   runSecurityDivisionAttendanceEngine,
   isSecurityDivisionEmployee,
   isSecurityEmployeeNumber,
+  detectAndPairSecurityShifts,
+  deduplicatePunches,
+  isPunchIn,
+  isPunchOut,
+  toISTDateStr,
 };
