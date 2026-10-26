@@ -69,134 +69,141 @@ function isPunchOut(p) {
  *  - Consecutive shift boundary protection: ensures shift 1 doesn't jump over shift 2 start.
  *  - Duplicate exit pulse grouping to avoid reuse.
  */
-function filterDuplicateIns(inPunches, thresholdMinutes = 60) {
-  if (!inPunches || inPunches.length === 0) return [];
-  const valid = [];
-  for (let i = 0; i < inPunches.length; i++) {
-    if (i === 0) {
-      valid.push(inPunches[i]);
-    } else {
-      const prevValidIN = valid[valid.length - 1];
-      const gapMinutes = (new Date(inPunches[i].timestamp) - new Date(prevValidIN.timestamp)) / 60000;
-      if (gapMinutes >= thresholdMinutes) {
-        valid.push(inPunches[i]);
-      }
+/**
+ * Deduplicate raw punches: collapse rapid duplicate pulses within threshold minutes.
+ */
+function deduplicatePunches(punches, thresholdMinutes = 15) {
+  if (!punches || punches.length === 0) return [];
+  const sorted = [...punches].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const result = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = result[result.length - 1];
+    const diff = (new Date(sorted[i].timestamp) - new Date(prev.timestamp)) / 60000;
+    if (diff >= thresholdMinutes) {
+      result.push(sorted[i]);
     }
   }
-  return valid;
+  return result;
 }
 
+/**
+ * Robust Security Shift Pairing.
+ * Handles both explicit OUT punches and directionless punches (common on security biometric devices).
+ * - Maximum single shift duration is 15 hours (longest shift is 12h + 3h OT). Never spans 24h.
+ * - Same-day punches with a gap >= 3.5h form complete daytime shifts (e.g. 05:45 - 13:01 -> A-SECURITY).
+ * - Evening punches without a same-day exit (e.g. >= 16:00 IST) look ahead to the next morning (4h to 15h) for overnight shifts.
+ */
 function detectAndPairSecurityShifts(rawLogs, date, maxShifts = 3) {
   if (!rawLogs || rawLogs.length === 0) return [];
 
-  const allPunches = [...rawLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  const allOuts = allPunches.filter(p => isPunchOut(p));
+  const MAX_SHIFT_WINDOW_MS = 15 * 60 * 60 * 1000; // 15 hours maximum
+  const MIN_SHIFT_GAP_MS = 3.5 * 60 * 60 * 1000;    // 3.5 hours minimum gap for a distinct exit
 
-  const targetDateIns = allPunches.filter(p => {
-    return toISTDateStr(p.timestamp) === date && isPunchIn(p);
-  });
+  const cleanLogs = deduplicatePunches(rawLogs, 15);
+  const dayPunches = cleanLogs.filter(p => toISTDateStr(p.timestamp) === date);
+  if (dayPunches.length === 0) return [];
 
-  if (targetDateIns.length === 0) return [];
+  const shifts = [];
+  const usedPunchIds = new Set();
 
-  // Filter checkout-window noise:
-  // If an IN punch is immediately succeeded by an OUT punch within <= 15 minutes,
-  // and there is an earlier IN punch that day seeking an exit,
-  // this IN punch is an accidental checkout tap.
-  const cleanTargetDateIns = [];
-  for (let i = 0; i < targetDateIns.length; i++) {
-    const inP = targetDateIns[i];
-    const inMs = new Date(inP.timestamp).getTime();
+  let pIdx = 0;
+  while (pIdx < dayPunches.length && shifts.length < maxShifts) {
+    const curPunch = dayPunches[pIdx];
+    const curMs = new Date(curPunch.timestamp).getTime();
+    const curISTHour = new Date(curMs + 5.5 * 3600 * 1000).getUTCHours();
 
-    const immediateOut = allOuts.find(o => {
-      const oMs = new Date(o.timestamp).getTime();
-      return oMs > inMs && (oMs - inMs) <= 15 * 60 * 1000;
+    // 1. Check if there is a later punch on the SAME calendar date
+    const nextSameDayPunch = dayPunches[pIdx + 1];
+
+    if (nextSameDayPunch) {
+      const nextMs = new Date(nextSameDayPunch.timestamp).getTime();
+      const diffMs = nextMs - curMs;
+
+      if (diffMs >= MIN_SHIFT_GAP_MS && diffMs <= MAX_SHIFT_WINDOW_MS) {
+        // Complete same-day shift! (e.g. 05:45 -> 13:01 [A-SECURITY], 12:43 -> 21:01 [B-SECURITY])
+        shifts.push({
+          shiftNumber: shifts.length + 1,
+          inTime: curPunch.timestamp,
+          outTime: nextSameDayPunch.timestamp,
+          status: 'complete',
+          duration: Math.round(diffMs / 60000),
+          workingHours: Math.round((diffMs / 3600000) * 100) / 100,
+          inPunchId: curPunch._id || curPunch.id,
+          outPunchId: nextSameDayPunch._id || nextSameDayPunch.id,
+        });
+        usedPunchIds.add(curPunch._id?.toString() || curPunch.id);
+        usedPunchIds.add(nextSameDayPunch._id?.toString() || nextSameDayPunch.id);
+        pIdx += 2; // Advance past both IN and OUT
+        continue;
+      }
+    }
+
+    // 2. Overnight shift: if evening punch (>= 16:00 IST) with NO same-day exit, look into next morning (4h to 15h)
+    if (curISTHour >= 16) {
+      const nextDayOut = cleanLogs.find(p => {
+        const pMs = new Date(p.timestamp).getTime();
+        const diffMs = pMs - curMs;
+        return diffMs >= MIN_SHIFT_GAP_MS && diffMs <= MAX_SHIFT_WINDOW_MS && !usedPunchIds.has(p._id?.toString() || p.id);
+      });
+
+      if (nextDayOut) {
+        const diffMs = new Date(nextDayOut.timestamp).getTime() - curMs;
+        shifts.push({
+          shiftNumber: shifts.length + 1,
+          inTime: curPunch.timestamp,
+          outTime: nextDayOut.timestamp,
+          status: 'complete',
+          duration: Math.round(diffMs / 60000),
+          workingHours: Math.round((diffMs / 3600000) * 100) / 100,
+          inPunchId: curPunch._id || curPunch.id,
+          outPunchId: nextDayOut._id || nextDayOut.id,
+        });
+        usedPunchIds.add(curPunch._id?.toString() || curPunch.id);
+        usedPunchIds.add(nextDayOut._id?.toString() || nextDayOut.id);
+        pIdx += 1;
+        continue;
+      }
+    }
+
+    // 3. Check for any explicit OUT punch later within 15 hours
+    const explicitOut = cleanLogs.find(p => {
+      if (!isPunchOut(p)) return false;
+      const pMs = new Date(p.timestamp).getTime();
+      const diffMs = pMs - curMs;
+      return diffMs > 0 && diffMs <= MAX_SHIFT_WINDOW_MS && !usedPunchIds.has(p._id?.toString() || p.id);
     });
 
-    if (immediateOut && cleanTargetDateIns.length > 0) {
+    if (explicitOut) {
+      const diffMs = new Date(explicitOut.timestamp).getTime() - curMs;
+      shifts.push({
+        shiftNumber: shifts.length + 1,
+        inTime: curPunch.timestamp,
+        outTime: explicitOut.timestamp,
+        status: 'complete',
+        duration: Math.round(diffMs / 60000),
+        workingHours: Math.round((diffMs / 3600000) * 100) / 100,
+        inPunchId: curPunch._id || curPunch.id,
+        outPunchId: explicitOut._id || explicitOut.id,
+      });
+      usedPunchIds.add(curPunch._id?.toString() || curPunch.id);
+      usedPunchIds.add(explicitOut._id?.toString() || explicitOut.id);
+      pIdx += 1;
       continue;
     }
 
-    cleanTargetDateIns.push(inP);
-  }
-
-  // Filter duplicate INs (60-minute threshold)
-  const validIns = filterDuplicateIns(cleanTargetDateIns, 60);
-
-  // Candidate OUT pool:
-  // Include explicit OUTs. For overnight shifts (starting in evening >= 16:00 IST) that have NO explicit OUT punch
-  // within their working window, allow the morning punch (6 to 16 hours later, e.g. 04:00-11:00 IST)
-  // to serve as candidate OUT punch.
-  const candidateOuts = [...allOuts];
-  validIns.forEach(inPunch => {
-    const inMs = new Date(inPunch.timestamp).getTime();
-    const istIn = new Date(inMs + (5 * 60 + 30) * 60 * 1000);
-    const istHour = istIn.getUTCHours();
-
-    if (istHour >= 16) {
-      const hasExplicitOut = candidateOuts.some(o => {
-        const oMs = new Date(o.timestamp).getTime();
-        return oMs > inMs && (oMs - inMs) <= 16 * 60 * 60 * 1000;
-      });
-
-      if (!hasExplicitOut) {
-        const morningPunch = allPunches.find(p => {
-          const pMs = new Date(p.timestamp).getTime();
-          const diffHours = (pMs - inMs) / (60 * 60 * 1000);
-          return diffHours >= 6 && diffHours <= 16;
-        });
-
-        if (morningPunch) {
-          candidateOuts.push(morningPunch);
-        }
-      }
-    }
-  });
-
-  candidateOuts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-  const shifts = [];
-  const pairedOutIds = new Set();
-  const MAX_WINDOW_MS = 36 * 60 * 60 * 1000;
-
-  for (let i = 0; i < validIns.length && i < maxShifts; i++) {
-    const inPunch = validIns[i];
-    const nextInPunch = validIns[i + 1];
-
-    const candidates = candidateOuts.filter(out => {
-      const outMs = new Date(out.timestamp).getTime();
-      const inMs = new Date(inPunch.timestamp).getTime();
-      const timeDiff = outMs - inMs;
-      const isBeforeNextIn = !nextInPunch || outMs < new Date(nextInPunch.timestamp).getTime();
-      return timeDiff > 0 && timeDiff <= MAX_WINDOW_MS && isBeforeNextIn && !pairedOutIds.has(out._id?.toString() || out.id);
+    // 4. Incomplete shift (single punch without exit within 15 hours)
+    shifts.push({
+      shiftNumber: shifts.length + 1,
+      inTime: curPunch.timestamp,
+      outTime: null,
+      status: 'incomplete',
+      duration: 0,
+      workingHours: 0,
+      inPunchId: curPunch._id || curPunch.id,
+      outPunchId: null,
     });
-
-    const outPunch = candidates.find(c => c.source === 'manual') || candidates[0];
-
-    const shift = {
-      shiftNumber: i + 1,
-      inTime: inPunch.timestamp,
-      outTime: outPunch ? outPunch.timestamp : null,
-      status: outPunch ? 'complete' : 'incomplete',
-      inPunchId: inPunch._id || inPunch.id,
-      outPunchId: outPunch ? (outPunch._id || outPunch.id) : null,
-    };
-
-    if (outPunch) {
-      pairedOutIds.add(outPunch._id?.toString() || outPunch.id);
-      const outMs = new Date(outPunch.timestamp).getTime();
-      candidateOuts.forEach(o => {
-        const diff = Math.abs(new Date(o.timestamp).getTime() - outMs);
-        if (diff <= 15 * 60 * 1000) {
-          pairedOutIds.add(o._id?.toString() || o.id);
-        }
-      });
-
-      const durationMs = new Date(shift.outTime) - new Date(shift.inTime);
-      shift.duration = Math.round(durationMs / (1000 * 60));
-      shift.workingHours = Math.round((durationMs / (1000 * 60 * 60)) * 100) / 100;
-    }
-
-    shifts.push(shift);
+    usedPunchIds.add(curPunch._id?.toString() || curPunch.id);
+    pIdx += 1;
   }
 
   return shifts;
