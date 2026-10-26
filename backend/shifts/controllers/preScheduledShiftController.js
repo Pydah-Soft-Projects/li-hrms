@@ -91,6 +91,21 @@ exports.createPreScheduledShift = async (req, res) => {
       { path: 'scheduledBy', select: 'name email' },
     ]);
 
+    try {
+      const { syncOneRosterEntryToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+      await syncOneRosterEntryToAttendance({
+        employeeNumber: preScheduled.employeeNumber,
+        date: preScheduled.date,
+        shiftId: preScheduled.shiftId?._id || preScheduled.shiftId,
+        status: preScheduled.status,
+        firstHalfStatus: preScheduled.firstHalfStatus,
+        secondHalfStatus: preScheduled.secondHalfStatus,
+        notes: preScheduled.notes,
+      });
+    } catch (syncErr) {
+      console.error('[Create PreScheduledShift] Direct sync failed:', syncErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Pre-scheduled shift created successfully',
@@ -254,6 +269,16 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
       } catch (error) {
         results.errors.push(`Error creating schedule: ${error.message}`);
         results.skipped++;
+      }
+    }
+
+    if (results.created > 0) {
+      try {
+        const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+        const toSync = schedules.filter((s) => s && s.date && s.employeeNumber);
+        await syncRosterEntriesToAttendance(toSync);
+      } catch (syncErr) {
+        console.error('[BulkCreate PreScheduledShift] Direct sync failed:', syncErr.message);
       }
     }
 
@@ -584,7 +609,17 @@ exports.saveRoster = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Dispatch async roster sync job
+    // Direct in-process sync so attendance updates immediately without requiring an external background worker (essential for local dev)
+    if (lockFilteredBulk.length > 0) {
+      try {
+        const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+        await syncRosterEntriesToAttendance(lockFilteredBulk);
+      } catch (syncErr) {
+        console.error('[Save Roster] Direct attendance sync failed:', syncErr.message);
+      }
+    }
+
+    // Also dispatch async roster sync job as secondary fallback if worker is active
     if (lockFilteredBulk.length > 0) {
       rosterSyncQueue.add('syncRoster', {
         entries: lockFilteredBulk,
@@ -645,6 +680,14 @@ exports.autoFillNextCycle = async (req, res) => {
           shiftId: e.shiftId,
           status: e.status || null,
         });
+      }
+      if (forSync.length > 0) {
+        try {
+          const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+          await syncRosterEntriesToAttendance(forSync);
+        } catch (syncErr) {
+          console.error('[AutoFill] Direct sync failed:', syncErr.message);
+        }
       }
       rosterSyncQueue.add('syncRoster', { entries: forSync, userId: req.user._id }).catch((err) => console.error('Roster sync job add failed:', err));
     }

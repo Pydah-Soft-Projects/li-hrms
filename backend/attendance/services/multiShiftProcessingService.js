@@ -1248,6 +1248,22 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             && (dailyRecord.status === 'WEEK_OFF' || dailyRecord.status === 'HOLIDAY')
         ) {
             updateData.status = dailyRecord.status;
+        } else if (!dailyRecord) {
+            try {
+                const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+                const rosterDoc = await PreScheduledShift.findOne({
+                    employeeNumber: String(employeeNumber || '').toUpperCase(),
+                    date,
+                }).lean();
+                if (rosterDoc && (rosterDoc.status === 'WO' || rosterDoc.status === 'HOL')) {
+                    updateData.status = rosterDoc.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY';
+                    updateData.notes = rosterDoc.status === 'WO' ? 'Week Off' : 'Holiday';
+                    updateData.rosterFirstHalfNonWorking = rosterDoc.status;
+                    updateData.rosterSecondHalfNonWorking = rosterDoc.status;
+                }
+            } catch (e) {
+                // non-blocking
+            }
         }
 
         // Keep manually corrected attendance immutable ONLY during completed payroll periods.

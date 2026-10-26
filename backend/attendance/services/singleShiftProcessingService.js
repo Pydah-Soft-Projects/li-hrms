@@ -921,6 +921,24 @@ async function upsertDaily(employeeNumber, date, updateData) {
     updateData = { ...updateData, status: dailyRecord.status };
   }
   if (!dailyRecord) {
+    try {
+      const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+      const rosterDoc = await PreScheduledShift.findOne({
+        employeeNumber: String(employeeNumber || '').toUpperCase(),
+        date,
+      }).lean();
+      if (rosterDoc && (rosterDoc.status === 'WO' || rosterDoc.status === 'HOL')) {
+        updateData = {
+          ...updateData,
+          status: rosterDoc.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
+          notes: rosterDoc.status === 'WO' ? 'Week Off' : 'Holiday',
+          rosterFirstHalfNonWorking: rosterDoc.status,
+          rosterSecondHalfNonWorking: rosterDoc.status,
+        };
+      }
+    } catch (e) {
+      // non-blocking
+    }
     dailyRecord = new AttendanceDaily({ employeeNumber, date, ...updateData });
   } else {
     Object.keys(updateData).forEach(k => { dailyRecord[k] = updateData[k]; });
