@@ -406,7 +406,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     endDate: date,
                     empNos: [employeeNumber],
                     overrideWithThumbs: true,
-                    recalculateMonthlySummary: false,
+                    recalculateMonthlySummary: options.recalculateMonthlySummary !== undefined ? options.recalculateMonthlySummary : false,
                 });
                 const secDaily = await AttendanceDaily.findOne({
                     employeeNumber: String(employeeNumber).toUpperCase(),

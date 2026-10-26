@@ -1774,10 +1774,15 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
         }
       }
     } else {
-      // Check if divisionId is Security Division
+      // Check if divisionId is Security Division or all divisions
       const Division = require('../../departments/model/Division');
       const secDiv = divisionId && divisionId !== 'all' ? await Division.findById(divisionId).lean() : null;
       if (secDiv && /security/i.test(secDiv.name || '')) {
+        const { getSecurityDivisionEmployees } = require('../../attendance/services/securityDivisionAttendanceService');
+        const secContext = await getSecurityDivisionEmployees();
+        securityEmpNumbers = secContext.employees.map(e => String(e.emp_no || e.employeeNumber).toUpperCase()).filter(Boolean);
+      } else if (!divisionId || divisionId === 'all') {
+        // Syncing all divisions: also sync security employees via dedicated security engine
         const { getSecurityDivisionEmployees } = require('../../attendance/services/securityDivisionAttendanceService');
         const secContext = await getSecurityDivisionEmployees();
         securityEmpNumbers = secContext.employees.map(e => String(e.emp_no || e.employeeNumber).toUpperCase()).filter(Boolean);
@@ -1817,6 +1822,9 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
         query.employeeNumber = { $in: targetEmployeeNumbers };
       }
     } else {
+      if (securityEmpNumbers.length > 0) {
+        query.employeeNumber = { $nin: securityEmpNumbers };
+      }
       query.$or = [
         { shiftId: { $exists: false }, inTime: { $ne: null } },
         { status: 'PRESENT', totalWorkingHours: { $gt: 0, $lt: 6 } },
