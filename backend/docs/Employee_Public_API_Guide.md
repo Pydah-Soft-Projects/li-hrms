@@ -78,17 +78,21 @@ A successful request will return a `200 OK` status code with a JSON payload cont
   "data": [
     {
       "_id": "64b5c92f1...",
-      "firstName": "John",
-      "lastName": "Doe",
       "empNo": "EMP001",
-      "isActive": true
+      "emp_no": "EMP001",
+      "employee_name": "John Doe",
+      "name": "John Doe",
+      "isActive": true,
+      "status": "Active"
     },
     {
       "_id": "64b5c93a2...",
-      "firstName": "Jane",
-      "lastName": "Smith",
       "empNo": "EMP002",
-      "isActive": true
+      "emp_no": "EMP002",
+      "employee_name": "Jane Smith",
+      "name": "Jane Smith",
+      "isActive": true,
+      "status": "Active"
     }
   ]
 }
