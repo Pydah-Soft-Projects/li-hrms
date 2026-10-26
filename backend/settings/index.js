@@ -2,12 +2,22 @@ const express = require('express');
 const router = express.Router();
 const settingsController = require('./controllers/settingsController');
 const leavePolicySettingsController = require('./controllers/leavePolicySettingsController');
+const apiKeySettingsController = require('./controllers/apiKeySettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 
 // All routes require authentication
 router.use(protect);
 
 // Principal feature control routes (Super Admin only)
+
+// ==========================================
+// PUBLIC API KEY MANAGEMENT ROUTES (Must come before /:key)
+// ==========================================
+router.get('/api-keys/fields', authorize('manager', 'sub_admin', 'super_admin', 'hr'), apiKeySettingsController.getAvailableFields);
+router.get('/api-keys', authorize('manager', 'sub_admin', 'super_admin', 'hr'), apiKeySettingsController.getAllApiKeys);
+router.post('/api-keys', authorize('manager', 'sub_admin', 'super_admin'), apiKeySettingsController.createApiKey);
+router.put('/api-keys/:id', authorize('manager', 'sub_admin', 'super_admin'), apiKeySettingsController.updateApiKey);
+router.delete('/api-keys/:id', authorize('super_admin'), apiKeySettingsController.deleteApiKey);
 
 // ==========================================
 // LEAVE POLICY SETTINGS ROUTES (Must come before /:key)

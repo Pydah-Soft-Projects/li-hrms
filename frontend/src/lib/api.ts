@@ -2455,6 +2455,36 @@ export const api = {
     });
   },
 
+  // Public API Keys Management
+  getPublicApiKeys: async () => {
+    return apiRequest<any>('/settings/api-keys', { method: 'GET' });
+  },
+
+  getPublicApiKeyFields: async () => {
+    return apiRequest<any>('/settings/api-keys/fields', { method: 'GET' });
+  },
+
+  createPublicApiKey: async (data: { clientName: string; allowedFields?: string[]; description?: string }) => {
+    return apiRequest<any>('/settings/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updatePublicApiKey: async (id: string, data: { clientName?: string; allowedFields?: string[]; isActive?: boolean; description?: string }) => {
+    return apiRequest<any>(`/settings/api-keys/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deletePublicApiKey: async (id: string) => {
+    return apiRequest<any>(`/settings/api-keys/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+
   getLoginMetrics: async () => {
     return apiRequest('/auth/login-metrics', { method: 'GET' });
   },

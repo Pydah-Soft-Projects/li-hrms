@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 
 import { SettingsSkeleton } from './SettingsSkeleton';
+import { KeyRound, ArrowRight } from 'lucide-react';
 import {
   SettingsPanel,
   SettingsPanelHeader,
@@ -234,6 +235,30 @@ const EmployeeSettings = () => {
                         checked={defaultApplyAttendanceDeductions}
                         onChange={setDefaultApplyAttendanceDeductions}
                     />
+                </div>
+            </SettingsSectionCard>
+
+            <SettingsSectionCard
+                title="Public API & External Integrations"
+                description="Securely share employee records with third-party biometric devices, mobile apps, and ERP systems using custom API keys and field selections."
+            >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-indigo-600 text-white">
+                            <KeyRound className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-indigo-950">Dynamic API Key Management & Field Exposure</p>
+                            <p className="text-[11px] text-indigo-700">Generate and configure which fields external clients can view via the public employee API.</p>
+                        </div>
+                    </div>
+                    <a
+                        href="/settings?tab=public_api"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors shadow-xs self-start sm:self-auto"
+                    >
+                        <span>Configure API Keys</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
                 </div>
             </SettingsSectionCard>
 

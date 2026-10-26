@@ -34,6 +34,7 @@ const THEMES: Record<SettingsThemeKey, SettingsThemeTokens> = {
   workflow: { border: 'rgb(139 92 246 / 0.38)', soft: 'rgb(139 92 246 / 0.09)', ink: 'rgb(91 33 182)', accent: 'rgb(139 92 246)' },
   complaints: { border: 'rgb(16 185 129 / 0.38)', soft: 'rgb(16 185 129 / 0.09)', ink: 'rgb(4 120 87)', accent: 'rgb(16 185 129)' },
   geofence: { border: 'rgb(16 185 129 / 0.38)', soft: 'rgb(16 185 129 / 0.09)', ink: 'rgb(4 120 87)', accent: 'rgb(16 185 129)' },
+  public_api: { border: 'rgb(99 102 241 / 0.38)', soft: 'rgb(99 102 241 / 0.09)', ink: 'rgb(67 56 202)', accent: 'rgb(99 102 241)' },
 };
 
 export function getSettingsTheme(key: SettingsThemeKey): SettingsThemeTokens {
