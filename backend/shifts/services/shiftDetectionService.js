@@ -1756,7 +1756,62 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
         stats.success = true;
         stats.message = 'No matching employees found for the selected search/filters.';
         return stats;
-      } else if (targetEmployeeNumbers.length === 1) {
+      }
+    }
+
+    // Check for Security Division or Security Department employees to run the dedicated Security Attendance Engine
+    const { isSecurityEmployeeNumber, runSecurityDivisionAttendanceEngine } = require('../../attendance/services/securityDivisionAttendanceService');
+
+    let securityEmpNumbers = [];
+    let generalEmpNumbers = [];
+
+    if (targetEmployeeNumbers !== null) {
+      for (const num of targetEmployeeNumbers) {
+        if (await isSecurityEmployeeNumber(num)) {
+          securityEmpNumbers.push(num);
+        } else {
+          generalEmpNumbers.push(num);
+        }
+      }
+    } else {
+      // Check if divisionId is Security Division
+      const Division = require('../../departments/model/Division');
+      const secDiv = divisionId && divisionId !== 'all' ? await Division.findById(divisionId).lean() : null;
+      if (secDiv && /security/i.test(secDiv.name || '')) {
+        const { getSecurityDivisionEmployees } = require('../../attendance/services/securityDivisionAttendanceService');
+        const secContext = await getSecurityDivisionEmployees();
+        securityEmpNumbers = secContext.employees.map(e => String(e.emp_no || e.employeeNumber).toUpperCase()).filter(Boolean);
+      }
+    }
+
+    if (securityEmpNumbers.length > 0) {
+      const secResult = await runSecurityDivisionAttendanceEngine({
+        startDate,
+        endDate: endD,
+        empNos: securityEmpNumbers,
+        overrideWithThumbs: true,
+        recalculateMonthlySummary: true,
+      });
+
+      stats.processed += secResult.dailyRecordsUpserted || 0;
+      stats.reprocessed += secResult.dailyRecordsUpserted || 0;
+      stats.assigned += secResult.dailyRecordsUpserted || 0;
+
+      // If ONLY security employees were targeted, return immediately with clean summary
+      if (targetEmployeeNumbers !== null && generalEmpNumbers.length === 0) {
+        stats.success = true;
+        stats.message = `Successfully synced ${stats.reprocessed} Security record(s) for ${securityEmpNumbers.length} employee(s).`;
+        return stats;
+      }
+
+      // Otherwise, restrict targetEmployeeNumbers to generalEmpNumbers for general processing below
+      if (targetEmployeeNumbers !== null) {
+        targetEmployeeNumbers = generalEmpNumbers;
+      }
+    }
+
+    if (targetEmployeeNumbers !== null) {
+      if (targetEmployeeNumbers.length === 1) {
         query.employeeNumber = targetEmployeeNumbers[0];
       } else {
         query.employeeNumber = { $in: targetEmployeeNumbers };
@@ -1793,7 +1848,7 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
     const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
 
     records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    stats.processed = records.length;
+    stats.processed += records.length;
 
     for (const record of records) {
       try {
@@ -1820,11 +1875,15 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
     }
 
     if (affectedEmpMonths.size > 0) {
-      const { calculateMonthlySummaryByEmpNo } = require('../../attendance/services/summaryCalculationService');
+      const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
       for (const pair of affectedEmpMonths) {
         const [empNumber, yyyyMm] = pair.split('::');
         try {
-          await calculateMonthlySummaryByEmpNo(empNumber, yyyyMm);
+          const empDoc = await Employee.findOne({ emp_no: empNumber }).select('_id emp_no').lean();
+          if (empDoc) {
+            const [y, m] = yyyyMm.split('-');
+            await calculateMonthlySummary(empDoc._id, empDoc.emp_no, parseInt(y, 10), parseInt(m, 10), true);
+          }
         } catch (sumErr) {
           console.error(`[ShiftSync] Error updating monthly summary for ${empNumber} on ${yyyyMm}:`, sumErr.message);
         }

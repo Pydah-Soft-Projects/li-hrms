@@ -826,7 +826,7 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
       await AttendanceDaily.findOneAndUpdate(
         { employeeNumber: empNo, date },
         { $set: payload },
-        { upsert: true, new: true }
+        { upsert: true, new: true, skipSummaryRecalc: true }
       );
       results.dailyRecordsUpserted++;
     }

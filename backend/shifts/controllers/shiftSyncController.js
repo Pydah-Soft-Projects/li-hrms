@@ -12,6 +12,8 @@ const { syncShiftsForExistingRecords } = require('../services/shiftDetectionServ
  */
 exports.syncShifts = async (req, res) => {
   try {
+    if (req.setTimeout) req.setTimeout(300000);
+    if (res.setTimeout) res.setTimeout(300000);
     const {
       startDate,
       endDate,

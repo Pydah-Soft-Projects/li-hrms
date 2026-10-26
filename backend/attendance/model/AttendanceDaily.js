@@ -837,6 +837,9 @@ attendanceDailySchema.post('findOneAndUpdate', async function (result) {
     const isShiftsUpdate = update.$set?.shifts || update.shifts;
     const isStatusUpdate = update.$set?.status || update.status;
     const isManualOverride = update.$set?.isEdited || update.isEdited;
+    const options = this.getOptions ? this.getOptions() : {};
+    if (options.skipSummaryRecalc || options.skipHooks) return;
+
     if (!isShiftsUpdate && !isStatusUpdate && !isManualOverride) return;
 
     const employeeNumber = (result && result.employeeNumber) || query.employeeNumber;
