@@ -225,16 +225,11 @@ function getPublicOrigin(storedConfig = null) {
 function resolveRequestOrigin(req) {
   if (!req) return null;
 
-  const forwardedProto = req.get('x-forwarded-proto');
-  const forwardedHost = req.get('x-forwarded-host');
-  if (forwardedProto && forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '');
-  }
-
-  const host = req.get('host');
+  const forwardedProto = (req.get('x-forwarded-proto') || '').split(',')[0].trim();
+  const host = req.get('x-forwarded-host') || req.get('host');
   if (!host) return null;
 
-  const protocol = req.protocol || 'http';
+  const protocol = forwardedProto || req.protocol || 'http';
   return `${protocol}://${host}`.replace(/\/$/, '');
 }
 
