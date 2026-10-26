@@ -3706,6 +3706,63 @@ async function buildActionRequiredExportScope(user) {
   return scope;
 }
 
+const resolveHeaderOrgName = async (divisionQuery, ods = [], leaves = []) => {
+  if (divisionQuery && divisionQuery !== 'all') {
+    const divIds = String(divisionQuery).split(',').filter((id) => id && id !== 'all');
+    if (divIds.length > 0) {
+      const foundDivs = await Division.find({ _id: { $in: divIds } }).select('name').lean();
+      if (foundDivs.length > 0) {
+        const names = foundDivs.map((d) => d.name).filter(Boolean);
+        if (names.length > 0) {
+          return names.join(', ').toUpperCase();
+        }
+      }
+    }
+  }
+
+  const divNames = new Set();
+  [...(ods || []), ...(leaves || [])].forEach((item) => {
+    const emp = item?.employeeId;
+    const name = emp?.division?.name || emp?.division_id?.name;
+    if (name) divNames.add(name);
+  });
+  if (divNames.size === 1) {
+    return Array.from(divNames)[0].toUpperCase();
+  }
+  return 'ORGANIZATION';
+};
+
+async function buildFilterSummaryString(query = {}) {
+  const parts = [];
+  const from = query.fromDate || 'Any';
+  const to = query.toDate || 'Any';
+  parts.push(`Period: ${from} to ${to}`);
+
+  const isActionRequired = String(query.status || '') === ACTION_REQUIRED_STATUS;
+  parts.push(`Status: ${isActionRequired ? 'Action Required' : (query.status || 'All')}`);
+
+  if (query.leaveType) parts.push(`Leave Type: ${query.leaveType}`);
+  if (query.odType) parts.push(`OD Type: ${query.odType}`);
+
+  if (query.department && query.department !== 'all') {
+    try {
+      const ids = String(query.department).split(',').filter((id) => id && id !== 'all');
+      const depts = await Department.find({ _id: { $in: ids } }).select('name').lean();
+      if (depts.length) parts.push(`Dept: ${depts.map((d) => d.name).join(', ')}`);
+    } catch {}
+  }
+  if (query.division && query.division !== 'all') {
+    try {
+      const ids = String(query.division).split(',').filter((id) => id && id !== 'all');
+      const divs = await Division.find({ _id: { $in: ids } }).select('name').lean();
+      if (divs.length) parts.push(`Div: ${divs.map((d) => d.name).join(', ')}`);
+    } catch {}
+  }
+  if (query.search) parts.push(`Search: "${query.search}"`);
+
+  return parts.join(' | ');
+}
+
 // @desc    Export Leaves and ODs as PDF
 // @route   GET /api/leaves/export/pdf
 // @access  Private
@@ -4111,7 +4168,11 @@ exports.exportReportXLSX = async (req, res) => {
       return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
     };
 
-    const periodLine = `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${isActionRequired ? 'Action Required' : (status || 'All')}`;
+    const isOdOnlyReport = includeODs === 'true' && includeLeaves !== 'true';
+    const headerOrgName = await resolveHeaderOrgName(division, ods, leaves);
+    const periodLine = isOdOnlyReport
+      ? null
+      : `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${isActionRequired ? 'Action Required' : (status || 'All')}`;
     const wb = XLSX.utils.book_new();
 
     if (includeLeaves === 'true' && leaves.length > 0) {
@@ -4123,28 +4184,36 @@ exports.exportReportXLSX = async (req, res) => {
         formatDate,
         getCleanEmpName,
       }));
-      const { aoa, merges } = buildExcelSheetAoA('LEAVE APPLICATIONS', periodLine, leaveRows, stageCount, stageLabels);
+      const { aoa, merges, cols, rows } = buildExcelSheetAoA('LEAVE APPLICATIONS', periodLine, leaveRows, stageCount, stageLabels, false, headerOrgName);
       const wsLeaves = XLSX.utils.aoa_to_sheet(aoa);
-      wsLeaves['!merges'] = merges;
-      wsLeaves['!cols'] = cols;
-      wsLeaves['!rows'] = rows;
+      if (merges?.length) wsLeaves['!merges'] = merges;
+      if (cols?.length) wsLeaves['!cols'] = cols;
+      if (rows?.length) wsLeaves['!rows'] = rows;
       XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leave Applications');
     }
 
     if (includeODs === 'true' && (ods.length > 0 || isOdOnlyReport)) {
       const { stageCount, stageLabels } = await resolveExportStageMeta(ods, 'od');
-      const odRows = ods.map((o, i) => buildApplicationDetailRow(o, {
-        isOd: true,
-        stageCount,
-        rowIndex: i,
-        formatDate,
-        getCleanEmpName,
-      }));
-      const { aoa, merges } = buildExcelSheetAoA('ON DUTY (OD) APPLICATIONS', periodLine, odRows, stageCount, stageLabels);
+      let odRows = [];
+      if (ods.length > 0) {
+        odRows = ods.map((o, i) => buildApplicationDetailRow(o, {
+          isOd: true,
+          stageCount,
+          rowIndex: i,
+          formatDate,
+          getCleanEmpName,
+        }));
+      } else {
+        const totalCols = 8 + 2 + 1 + stageCount;
+        const emptyRow = Array(totalCols).fill('-');
+        emptyRow[1] = 'No OD records found for selected filters';
+        odRows = [emptyRow];
+      }
+      const { aoa, merges, cols, rows } = buildExcelSheetAoA('ON DUTY (OD) APPLICATIONS', periodLine, odRows, stageCount, stageLabels, true, headerOrgName);
       const wsODs = XLSX.utils.aoa_to_sheet(aoa);
-      wsODs['!merges'] = merges;
-      wsODs['!cols'] = cols;
-      wsODs['!rows'] = rows;
+      if (merges?.length) wsODs['!merges'] = merges;
+      if (cols?.length) wsODs['!cols'] = cols;
+      if (rows?.length) wsODs['!rows'] = rows;
       XLSX.utils.book_append_sheet(wb, wsODs, 'On Duty Applications');
     }
 

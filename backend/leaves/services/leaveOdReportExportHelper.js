@@ -213,6 +213,33 @@ function buildApplicationDetailRow(item, options) {
     getCleanEmpName,
   } = options;
 
+  const emp = item.employeeId || {};
+  const designationName = emp.designation?.name || emp.designation_id?.name || '-';
+  const divisionName = emp.division?.name || emp.division_id?.name || '-';
+  const departmentName = emp.department?.name || emp.department_id?.name || '-';
+  const groupName = emp.employee_group_id?.name || '-';
+  const chain = item.workflow?.approvalChain || [];
+
+  if (isOd) {
+    const row = [
+      emp.emp_no || item.emp_no || '-',
+      getCleanEmpName(emp),
+      designationName,
+      divisionName,
+      departmentName,
+      groupName,
+      String(item.odType || '').replace(/_/g, ' '),
+      getOdSlotType(item),
+      item.odStartTime || '-',
+      item.odEndTime || '-',
+      formatAppliedDate(item.createdAt),
+    ];
+    for (let i = 0; i < stageCount; i++) {
+      row.push(formatStageCell(chain[i]));
+    }
+    return row;
+  }
+
   const row = [
     rowIndex + 1,
     emp.emp_no || item.emp_no || '-',
@@ -221,14 +248,13 @@ function buildApplicationDetailRow(item, options) {
     divisionName,
     departmentName,
     groupName,
-    isOd ? String(item.odType || '').replace(/_/g, ' ') : item.leaveType || 'General',
+    item.leaveType || 'General',
     formatDate(item.fromDate),
     formatDate(item.toDate),
     item.numberOfDays ?? 0,
     formatAppliedDate(item.createdAt),
   ];
 
-  const chain = item.workflow?.approvalChain || [];
   for (let i = 0; i < stageCount; i++) {
     row.push(formatStageCell(chain[i]));
   }
