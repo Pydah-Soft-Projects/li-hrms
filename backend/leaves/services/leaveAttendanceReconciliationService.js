@@ -992,9 +992,18 @@ async function runLeaveAttendanceReconciliation(employee, dateStr, daily) {
     const isHalfOd = od.isHalfDay || String(od.odType_extended) === 'half_day' || Number(od.numberOfDays) < 1;
 
     if (isHalfOd) {
-      const onFirst = String(od.halfDayType || 'first_half') !== 'second_half';
+      // Check authorityConsent for explicit half-day assignments (e.g. locked to second half by approver)
+      const latestConsent = Array.isArray(od.authorityConsent) && od.authorityConsent.length > 0
+        ? od.authorityConsent[od.authorityConsent.length - 1]
+        : null;
+      const effectiveHalf = latestConsent?.halfDayType || od.halfDayType || 'first_half';
+      const onFirst = String(effectiveHalf) !== 'second_half';
       const physConflicts = (onFirst && p1 >= 0.5) || (!onFirst && p2 >= 0.5);
       if (!physConflicts) {
+        if (effectiveHalf && od.halfDayType !== effectiveHalf) {
+          od.halfDayType = effectiveHalf;
+          await saveWithoutReconcileSideEffects(od);
+        }
         results.push({ odId: od._id, action: 'none', reason: 'no_conflict_half_od' });
         continue;
       }

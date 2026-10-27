@@ -3361,7 +3361,7 @@ export default function AttendancePage() {
                             totalLopLeaves: lopLeaveCol,
                             totalODs,
                             totalAbsentDays: monthAbsent,
-                            totalDaysInMonth: item.summary?.totalDaysInMonth ?? daysArray.length,
+                            totalDaysInMonth: daysArray.length,
                           } as any),
                         {
                           processingMode: 'single_shift',
