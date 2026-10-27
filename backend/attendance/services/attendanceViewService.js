@@ -211,6 +211,9 @@ function resolveDayStatus(ctx) {
     if (leaveInfo?.isHalfDay) return { status: 'PARTIAL' };
     return { status: 'LEAVE' };
   }
+  if (hasLeave && hasOD) {
+    if (leaveInfo?.isHalfDay) return { status: 'PARTIAL' };
+  }
   if (hasLeave && record?.status === 'LEAVE') return { status: 'LEAVE' };
   if (record?.status) return { status: record.status };
   if (hasLeave) return { status: 'LEAVE' };
@@ -599,7 +602,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       // Map from first/last shift for display, or use shifts array in frontend
       // inTime and outTime are now provided within the shifts array for multi-shift support
       totalHours: record.totalWorkingHours, // Use aggregate
-      status: isEsiLeaveDay ? 'LEAVE' : record.status,
+      status: isEsiLeaveDay ? 'LEAVE' : (hasLeave && hasOD && leaveMap[record.date]?.isHalfDay ? 'PARTIAL' : record.status),
       payableShifts: record.payableShifts || 0,
       shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
       shiftName: record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.name : null,

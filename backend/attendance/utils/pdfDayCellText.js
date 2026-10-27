@@ -23,7 +23,7 @@ function appendHalfStatus(base, marker) {
   if (!marker) return base || '-';
   if (!base || base === '-') return marker;
   if (base === marker) return base;
-  if (base === 'A') return marker;
+  if (base === 'A' || base === 'PT') return marker;
   return `${base}/${marker}`;
 }
 
@@ -53,16 +53,33 @@ function buildSplitCellStatus(record) {
   const odMarker = odInfo ? 'OD' : '';
   const hasHalfLeave = !!leaveInfo && !!leaveInfo.isHalfDay;
   const isHoursOD = !!(odInfo && odInfo.odType_extended === 'hours');
-  const hasHalfOD = !!(odInfo && (odInfo.odType_extended === 'half_day' || odInfo.isHalfDay));
+  const hasHalfOD = !!(
+    odInfo &&
+    (odInfo.odType_extended === 'half_day' ||
+      odInfo.isHalfDay ||
+      (isHoursOD && (Boolean(odInfo.halfDayType) || (Number(odInfo.durationHours) || 0) >= 3.5)))
+  );
   const hasFullLeave = !!(leaveInfo && !leaveInfo.isHalfDay);
-  const hasFullOD = !!(odInfo && odInfo.odType_extended === 'full_day');
+  const hasFullOD = !!(
+    odInfo &&
+    (odInfo.odType_extended === 'full_day' || (!odInfo.isHalfDay && !isHoursOD && !odInfo.halfDayType))
+  );
   const partialRule = record.policyMeta && record.policyMeta.partialDayRule;
   const hasPartialPolicySplit = String(record.status) === 'PARTIAL' && partialRule && partialRule.applied === true;
+
+  const isPurePunchGapHourOd =
+    isHoursOD &&
+    !hasHalfLeave &&
+    !odInfo?.halfDayType &&
+    !odInfo?.isHalfDay &&
+    String(record.status) === 'PRESENT';
+
   const shouldSplit =
-    !isHoursOD &&
+    !isPurePunchGapHourOd &&
     (String(record.status) === 'HALF_DAY' ||
       hasHalfLeave ||
       hasHalfOD ||
+      (hasHalfLeave && (hasHalfOD || isHoursOD)) ||
       hasPartialPolicySplit);
   if (!shouldSplit) return null;
 
@@ -140,9 +157,17 @@ function buildSplitCellStatus(record) {
   if (hasFullOD && odMarker) {
     top = appendHalfStatus(top, odMarker);
     bottom = appendHalfStatus(bottom, odMarker);
-  } else if (hasHalfOD && odMarker) {
-    if (odInfo.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, odMarker);
-    else top = appendHalfStatus(top, odMarker);
+  } else if ((hasHalfOD || (isHoursOD && (Boolean(odInfo?.halfDayType) || hasHalfLeave))) && odMarker) {
+    if (odInfo?.halfDayType === 'second_half') {
+      bottom = appendHalfStatus(bottom, odMarker);
+    } else if (odInfo?.halfDayType === 'first_half') {
+      top = appendHalfStatus(top, odMarker);
+    } else if (hasHalfLeave) {
+      if (leaveInfo?.halfDayType === 'second_half') top = appendHalfStatus(top, odMarker);
+      else bottom = appendHalfStatus(bottom, odMarker);
+    } else {
+      top = appendHalfStatus(top, odMarker);
+    }
   }
 
   return { top, bottom };

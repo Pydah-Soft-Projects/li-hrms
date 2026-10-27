@@ -44,7 +44,7 @@ function appendHalfStatus(base: string, marker: string): string {
   if (!marker) return base || '-';
   if (!base || base === '-') return marker;
   if (base === marker) return base;
-  if (base === 'A') return marker;
+  if (base === 'A' || base === 'PT') return marker;
   return `${base}/${marker}`;
 }
 
@@ -89,16 +89,38 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
   const odMarker = odInfo ? 'OD' : '';
   const hasHalfLeave = !!leaveInfo?.isHalfDay;
   const isHoursOD = !!(odInfo && odInfo.odType_extended === 'hours');
-  const hasHalfOD = !!(odInfo && odInfo.odType_extended === 'half_day' && odInfo.isHalfDay);
+  const hasHalfOD = !!(
+    odInfo &&
+    (odInfo.odType_extended === 'half_day' ||
+      odInfo.isHalfDay ||
+      (isHoursOD && (Boolean(odInfo.halfDayType) || (Number(odInfo.durationHours) || 0) >= 3.5)))
+  );
   const hasFullLeave = !!(leaveInfo && !leaveInfo.isHalfDay);
-  const hasFullOD = !!(odInfo && odInfo.odType_extended === 'full_day');
+  const hasFullOD = !!(
+    odInfo &&
+    (odInfo.odType_extended === 'full_day' || (!odInfo.isHalfDay && !isHoursOD && !odInfo.halfDayType))
+  );
 
   const partialRule = record.policyMeta?.partialDayRule;
   const hasPartialPolicySplit = record.status === 'PARTIAL' && partialRule?.applied === true;
   const hasRosterHalf = hasRosterHalfNonWorking(record);
+
+  // Pure punch-gap hour OD on a regular full presence day should NOT force split
+  const isPurePunchGapHourOd =
+    isHoursOD &&
+    !hasHalfLeave &&
+    !odInfo?.halfDayType &&
+    !odInfo?.isHalfDay &&
+    record.status === 'PRESENT';
+
   const shouldSplit =
-    !isHoursOD &&
-    (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD || hasPartialPolicySplit || hasRosterHalf);
+    !isPurePunchGapHourOd &&
+    (record.status === 'HALF_DAY' ||
+      hasHalfLeave ||
+      hasHalfOD ||
+      (hasHalfLeave && (hasHalfOD || isHoursOD)) ||
+      hasPartialPolicySplit ||
+      hasRosterHalf);
   if (!shouldSplit) return null;
 
   let top = 'A';
@@ -201,9 +223,17 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
   if (hasFullOD && odMarker) {
     top = appendHalfStatus(top, odMarker);
     bottom = appendHalfStatus(bottom, odMarker);
-  } else if (hasHalfOD && odMarker) {
-    if (odInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, odMarker);
-    else top = appendHalfStatus(top, odMarker);
+  } else if ((hasHalfOD || (isHoursOD && (Boolean(odInfo?.halfDayType) || hasHalfLeave))) && odMarker) {
+    if (odInfo?.halfDayType === 'second_half') {
+      bottom = appendHalfStatus(bottom, odMarker);
+    } else if (odInfo?.halfDayType === 'first_half') {
+      top = appendHalfStatus(top, odMarker);
+    } else if (hasHalfLeave) {
+      if (leaveInfo?.halfDayType === 'second_half') top = appendHalfStatus(top, odMarker);
+      else bottom = appendHalfStatus(bottom, odMarker);
+    } else {
+      top = appendHalfStatus(top, odMarker);
+    }
   }
 
   if (hasRosterHalf) {

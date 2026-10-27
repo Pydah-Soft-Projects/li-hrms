@@ -994,8 +994,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           // Half-day OD while daily status is OD: credit the office half toward present (same intent as HD/OD in UI).
           const halfOd = day.ods.find(
             (o) =>
-              o.isHalfDay &&
-              o.odType_extended === 'half_day' &&
+              (o.isHalfDay || String(o.odType_extended) === 'half_day') &&
               (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
           );
           if (halfOd) {
@@ -1020,8 +1019,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
                 attFirst = 0.5;
                 attSecond = 0.5;
               } else if (hourPay >= 0.45) {
-                attFirst = 0.5;
-                attSecond = 0;
+                const isSecondHalf =
+                  hourOd.halfDayType === 'second_half' ||
+                  approvedLeaveCovFirst > 0 ||
+                  (hourOd.odStartTime && hourOd.odStartTime >= '12:00');
+                if (isSecondHalf) {
+                  attSecond = 0.5;
+                  attFirst = 0;
+                } else {
+                  attFirst = 0.5;
+                  attSecond = 0;
+                }
               }
             }
           }
@@ -1033,11 +1041,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let hasFullDayOdCoverage = false;
       if (day.ods.length > 0 && !day.isWO && !day.isHOL) {
         for (const od of day.ods) {
-          // Hour-based OD credits attendance gaps only — not counted as OD days in summary totals.
-          if (String(od.odType_extended || '') === 'hours') continue;
+          const isHoursOd = String(od.odType_extended || '') === 'hours';
+          const isExplicitHalfOd =
+            od.isHalfDay ||
+            String(od.odType_extended || '') === 'half_day' ||
+            (isHoursOd && (od.halfDayType === 'first_half' || od.halfDayType === 'second_half'));
+
+          // Hour-based OD credits attendance gaps only when punches exist covering the shift.
+          // BUT when it's an explicit half-day OD (or on a day without full presence / with leave),
+          // it must be counted in OD totals so the employee gets proper OD credit.
+          if (isHoursOd && !isExplicitHalfOd) continue;
+
           const odDays = Number(od.numberOfDays) || 0;
           const isFullDayOd =
-            (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
+            (!od.isHalfDay && !isHoursOd) ||
             od.odType_extended === 'full_day' ||
             odDays >= 1 - 1e-6;
           if (isFullDayOd) {
@@ -1051,6 +1068,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           } else if (od.halfDayType === 'second_half') {
             odSecond = 0.5;
             day.earlyOutWaved = true;
+          } else if (approvedLeaveCovFirst > 0) {
+            odSecond = 0.5;
+            day.earlyOutWaved = true;
+          } else if (approvedLeaveCovSecond > 0) {
+            odFirst = 0.5;
+            day.lateInWaved = true;
           } else {
             odFirst = 0.5; // Default half-day OD to first half
             day.lateInWaved = true;

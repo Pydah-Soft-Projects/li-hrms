@@ -200,6 +200,7 @@ function buildPrAllRowForExport(item: any) {
         totalLopLeaves: lopLeaveCol,
         totalODs,
         totalAbsentDays: monthAbsentUnits,
+        totalDaysInMonth: item.summary?.totalDaysInMonth ?? dayCols.length,
       } as any),
     {
       processingMode: 'single_shift',

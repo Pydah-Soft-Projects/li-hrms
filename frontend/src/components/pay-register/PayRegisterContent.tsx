@@ -4057,9 +4057,14 @@ export function PayRegisterContent({
                           {/* Dynamic columns based on active tab */}
                           {activeTable === 'all' && (() => {
                             const isSecurity = isSecurityEmployee(pr);
+                            const isSingleShift = attendanceProcessingMode === 'single_shift';
                             const rawPayableShifts = Number(pr.totals?.totalPayableShifts);
                             const basePresent = pr.totals?.totalPresentDays ?? 0;
-                            const usePayableShifts = Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
+                            const usePayableShifts = Boolean(
+                              (isSecurity || (!isSingleShift && rawPayableShifts > basePresent)) &&
+                              Number.isFinite(rawPayableShifts) &&
+                              rawPayableShifts > basePresent
+                            );
                             const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
                             const present = basePresent;
                             const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;
@@ -4071,12 +4076,18 @@ export function PayRegisterContent({
                             const lopDays = pr.totals?.totalLopDays ?? 0;
                             const attDed = getAttendanceDeductionDaysNumber(pr);
                             const totalDaysSummed = present + weekOffs + holidays + totalLeaves + od + absent;
-                            const paidDays = Math.max(
+                            let paidDays = Math.max(
                               0,
                               usePayableShifts
                                 ? payableBase + od + weekOffs + holidays + paidLeaves - attDed
                                 : present + od + weekOffs + holidays + paidLeaves - attDed
                             );
+                            if (isSingleShift && !isSecurity) {
+                              const maxDays = Number((pr as any)?.totalDaysInMonth) || totalDaysSummed || 31;
+                              if (maxDays > 0) {
+                                paidDays = Math.min(paidDays, maxDays);
+                              }
+                            }
                             const presentContribKeys: PayRegisterContribKey[] = ['present'];
                             const paidDaysContribKeys: PayRegisterContribKey[] = [
                               usePayableShifts ? 'payableShifts' : 'present',

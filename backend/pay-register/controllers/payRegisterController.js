@@ -1618,15 +1618,18 @@ function buildPayrollSummaryExportRow(employee, payRegister, primaryRecord, seco
   );
   const rawPayableShifts = Number(totals.totalPayableShifts);
   const basePresent = Number(totals.totalPresentDays) || 0;
-  const usePayableShifts = (isSecurity || rawPayableShifts > basePresent) && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
+  const usePayableShifts = isSecurity && Number.isFinite(rawPayableShifts) && rawPayableShifts > basePresent;
   const payableBase = usePayableShifts ? rawPayableShifts : basePresent;
 
-  const totalPaidDays = Math.max(
+  let totalPaidDays = Math.max(
     0,
     usePayableShifts
       ? payableBase + (Number(totals.totalODDays) || 0) + (Number(totals.totalWeeklyOffs) || 0) + (Number(totals.totalHolidays) || 0) + leaveDays.cl + leaveDays.ccl - lateEarlyDeduction
       : totalDays - absent - lopDeduction - lateEarlyDeduction
   );
+  if (!isSecurity && totalDays > 0) {
+    totalPaidDays = Math.min(totalPaidDays, totalDays);
+  }
 
   return {
     employeeCode: employee.emp_no || '',

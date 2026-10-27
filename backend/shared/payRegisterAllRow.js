@@ -84,12 +84,13 @@ function payRegisterAllRowFromSummary(s, options) {
   }
   const mode = typeof options === 'string' ? options : options?.processingMode;
   const isSecurity = Boolean(typeof options === 'object' && options?.isSecurity);
-  const useMerge = mode === 'single_shift';
+  const isSingleShift = mode === 'single_shift';
+  const useMerge = isSingleShift;
   const present = useMerge
     ? mergeSingleShiftPresentForPayRegisterRow(s)
     : round2(s.totalPresentDays);
   const rawPayableShifts = Number(s.totalPayableShifts);
-  const usePayableShifts = (isSecurity || rawPayableShifts > present) && Number.isFinite(rawPayableShifts) && rawPayableShifts > present;
+  const usePayableShifts = (isSecurity || (!isSingleShift && rawPayableShifts > present)) && Number.isFinite(rawPayableShifts) && rawPayableShifts > present;
   const payableBase = usePayableShifts ? round2(rawPayableShifts) : present;
   const weekOffs = round2(s.totalWeeklyOffs);
   const holidays = round2(s.totalHolidays);
@@ -109,7 +110,7 @@ function payRegisterAllRowFromSummary(s, options) {
   const attRaw = s.totalAttendanceDeductionDays ?? s.attendanceDeductionBreakdown?.daysDeducted;
   const attDed = Number.isFinite(Number(attRaw)) ? round2(Number(attRaw)) : 0;
   const totalDaysSummed = round2(present + weekOffs + holidays + totalLeaves + od + absent);
-  const paidDays = Math.max(
+  let paidDays = Math.max(
     0,
     round2(
       usePayableShifts
@@ -117,6 +118,12 @@ function payRegisterAllRowFromSummary(s, options) {
         : present + weekOffs + holidays + od + paidLeaves - attDed
     )
   );
+  if (isSingleShift && !isSecurity) {
+    const maxDays = Number(s?.totalDaysInMonth) || totalDaysSummed || 31;
+    if (maxDays > 0) {
+      paidDays = Math.min(paidDays, maxDays);
+    }
+  }
   return {
     present,
     weekOffs,
