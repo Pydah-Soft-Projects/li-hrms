@@ -2103,7 +2103,7 @@ function LeavesPageContent() {
           remarks: formData.remarks,
         });
       } else {
-        if (approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
+        if (!canOdUploadFromDevice(auth.getUser() as any) && approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
           const att: any = approvedRecordsInfo.attendanceInfo;
           const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
           const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);

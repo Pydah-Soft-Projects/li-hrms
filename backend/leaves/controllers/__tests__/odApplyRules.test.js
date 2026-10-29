@@ -318,4 +318,54 @@ describe('odController.applyOD - Rules verification', () => {
       );
     }
   });
+
+  test('allows OD on single punch day when user has file upload permission (LEAVE_OD:file)', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const req = {
+      body: {
+        fromDate: today,
+        toDate: today,
+        purpose: 'Client visit authorized by manager',
+        placeVisited: 'Site A',
+        empNo: 'EMP100',
+        startEvidence: {
+          photoEvidence: { url: 'https://example.com/photo.jpg' },
+          geoLocation: { latitude: 12.97, longitude: 77.59 },
+        },
+      },
+      user: {
+        _id: new mongoose.Types.ObjectId(),
+        role: 'hr',
+        featureControl: ['LEAVE_OD:file'],
+        emp_no: 'HR001',
+      },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    AttendanceDaily.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue({
+        status: 'HALF_DAY',
+        shifts: [
+          {
+            inTime: new Date(`${today}T09:00:00+05:30`),
+            outTime: null,
+          },
+        ],
+      }),
+    });
+
+    await odController.applyOD(req, res);
+
+    // Should NOT be blocked for single punch because user has file upload permission
+    if (res.status.mock.calls.length > 0) {
+      expect(res.json).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringMatching(/single punch/i),
+        })
+      );
+    }
+  });
 });

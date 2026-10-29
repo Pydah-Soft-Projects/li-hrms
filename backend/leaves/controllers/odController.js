@@ -939,9 +939,12 @@ exports.applyOD = async (req, res) => {
       isHalfDay ? halfDayType : null,
       true, // approvedOnly = true for creation
       null,
-      resolvedOdTypeExtendedEarly === 'hours'
-        ? { odType_extended: 'hours', odStartTime, odEndTime }
-        : null
+      {
+        ...(resolvedOdTypeExtendedEarly === 'hours'
+          ? { odType_extended: 'hours', odStartTime, odEndTime }
+          : {}),
+        hasFileUploadPermission,
+      }
     );
 
     // Block if there are errors (approved conflicts), but allow if only warnings (non-approved conflicts)
@@ -1053,10 +1056,12 @@ exports.applyOD = async (req, res) => {
         const isSinglePunchIn = hasIn && !hasOut;
         const isSinglePunch = !isNullPunches && !isTwoPunches;
 
-        if (isSinglePunchIn || isSinglePunch) {
+        // Regular employees cannot apply OD on partial attendance days with single punch.
+        // Users with file upload permission in User Management (or super_admin) can apply OD.
+        if (!hasFileUploadPermission && (isSinglePunchIn || isSinglePunch)) {
           return res.status(400).json({
             success: false,
-            error: `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, OD can only be applied if both IN and OUT punches are present or if there are no punches (null punches).`,
+            error: `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, employees can only apply OD if both IN and OUT punches are present or if there are no punches (null punches).`,
           });
         }
       }

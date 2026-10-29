@@ -870,9 +870,9 @@ const validateODRequest = async (
           const isSinglePunchIn = hasIn && !hasOut;
           const isSinglePunch = !isNullPunches && !isTwoPunches;
 
-          if (isSinglePunchIn || isSinglePunch) {
+          if (!options?.hasFileUploadPermission && (isSinglePunchIn || isSinglePunch)) {
             errors.push(
-              `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, OD can only be applied if both IN and OUT punches are present or if there are no punches (null punches).`
+              `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, employees can only apply OD if both IN and OUT punches are present or if there are no punches (null punches).`
             );
           }
         }

@@ -2266,8 +2266,8 @@ function LeavesPageContent() {
           return;
         }
 
-        // Single punch restriction on partial / attendance days
-        if (approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
+        // Single punch restriction on partial / attendance days (for users without file upload permission)
+        if (!canOdUploadFromDevice(currentUser) && approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
           const att: any = approvedRecordsInfo.attendanceInfo;
           const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
           const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);
@@ -2281,7 +2281,7 @@ function LeavesPageContent() {
           }
         }
 
-        if (applyDateCheckState?.blocked) {
+        if (!canOdUploadFromDevice(currentUser) && applyDateCheckState?.blocked) {
           if (/single punch/i.test(applyDateCheckState.headline || '') || /single punch/i.test(applyDateCheckState.body || '')) {
             showOdSinglePunchAlert(formData.fromDate);
             setLoading(false);
@@ -6644,15 +6644,21 @@ function LeavesPageContent() {
                 {applyDateBlocked && (
                   <div className={`mt-3 rounded-lg sm:rounded-xl border px-3.5 py-2.5 text-xs ${
                     applyDateCheckState?.variant === 'error'
-                      ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200'
+                      ? (canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                          ? 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-800/60 dark:bg-blue-950/40 dark:text-blue-200'
+                          : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200')
                       : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200'
                   }`}>
                     <div className="font-bold flex items-center justify-between mb-1">
                       <div className="flex items-center gap-1.5">
-                        <span>⚠️</span>
-                        <span>{applyDateCheckState?.headline || (applyDateCheckState?.dateFullyCovered ? 'Date Fully Covered' : 'Application Not Allowed')}</span>
+                        <span>{canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered ? 'ℹ️' : '⚠️'}</span>
+                        <span>
+                          {canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                            ? 'Single Punch (File Upload Permission Granted)'
+                            : (applyDateCheckState?.headline || (applyDateCheckState?.dateFullyCovered ? 'Date Fully Covered' : 'Application Not Allowed'))}
+                        </span>
                       </div>
-                      {applyType === 'od' && (
+                      {applyType === 'od' && !canOdUploadFromDevice(currentUser) && (
                         <button
                           type="button"
                           onClick={() => showOdSinglePunchAlert(formData.fromDate)}
@@ -6663,7 +6669,9 @@ function LeavesPageContent() {
                       )}
                     </div>
                     <div className="leading-relaxed text-slate-700 dark:text-slate-300">
-                      {applyDateCheckState?.body || (applyDateCheckState?.dateFullyCovered ? `This date is already complete for both halves. Pick another date if you need to apply ${applyType === 'leave' ? 'leave' : 'OD'}.` : '')}
+                      {canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                        ? 'A single punch is recorded on this date. As an authorized user with file upload permission in User Management, you can proceed to apply OD for this employee.'
+                        : (applyDateCheckState?.body || (applyDateCheckState?.dateFullyCovered ? `This date is already complete for both halves. Pick another date if you need to apply ${applyType === 'leave' ? 'leave' : 'OD'}.` : ''))}
                     </div>
                   </div>
                 )}
@@ -6688,7 +6696,7 @@ function LeavesPageContent() {
                       loading ||
                       !isFormValid() ||
                       capLeaveDepleted ||
-                      applyDateBlocked
+                      (applyDateBlocked && !(canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered))
                     }
                     className={`flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-white rounded-lg sm:rounded-xl transition-all ${(loading ||
                       !isFormValid() ||
