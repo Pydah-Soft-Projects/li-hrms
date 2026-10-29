@@ -912,6 +912,77 @@ type AttendancePresenceInfo = {
   label: string | null;
 };
 
+function showOdSinglePunchAlert(dateStr?: string) {
+  Swal.fire({
+    icon: 'warning',
+    title: 'OD Application Not Allowed',
+    html: `
+      <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #1e293b;">
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; color: #92400e;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 4px;">⚠️ Single Punch Detected ${dateStr ? `for ${dateStr}` : ''}:</strong>
+          An IN punch is recorded, but the OUT punch is missing (partial day attendance).
+        </div>
+        <p style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 13px;">OD Application Criteria & Policy Rules:</p>
+        <ul style="margin: 0 0 14px 18px; padding: 0; color: #334155; font-size: 12.5px; line-height: 1.6;">
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #0f172a;">Two Punches (IN & OUT):</strong> OD application is <strong>permitted</strong> when both punches exist (e.g., worked half day or official duty hours during the shift).
+          </li>
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #0f172a;">Null Punches (No punches):</strong> OD application is <strong>permitted</strong> when no punches are recorded (full day official duty away from office).
+          </li>
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #b91c1c;">Single Punch (IN only):</strong> OD application is <strong>strictly restricted</strong>. Employees cannot apply for OD on partial attendance days with only a single punch.
+          </li>
+        </ul>
+        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; color: #1e40af; font-size: 12.5px; line-height: 1.5;">
+          ℹ️ <strong>Action Required:</strong> Please contact your Reporting Manager or HR to regularize your missing punch / attendance before applying for On Duty.
+        </div>
+      </div>
+    `,
+    confirmButtonText: 'Understood',
+    confirmButtonColor: '#7c3aed',
+    customClass: {
+      container: '!z-[99999]',
+      popup: 'rounded-2xl shadow-2xl',
+      confirmButton: 'rounded-xl px-6 py-2.5 font-medium text-sm',
+    },
+  });
+}
+
+function showOdPastDateAlert(dateStr?: string) {
+  Swal.fire({
+    icon: 'warning',
+    title: 'Past Date OD Restricted',
+    html: `
+      <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #1e293b;">
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; color: #92400e;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 4px;">⚠️ Backdated Application Restricted ${dateStr ? `for ${dateStr}` : ''}:</strong>
+          OD applications for past dates cannot be submitted by regular employees.
+        </div>
+        <p style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 13px;">Past Date Policy Guidelines:</p>
+        <ul style="margin: 0 0 14px 18px; padding: 0; color: #334155; font-size: 12.5px; line-height: 1.6;">
+          <li style="margin-bottom: 6px;">
+            When the date changes, OD requests for past dates can <strong>only</strong> be submitted by authorized users who have the <strong>File Upload</strong> permission granted in <strong>User Management</strong>.
+          </li>
+          <li style="margin-bottom: 6px;">
+            Regular employees may only submit OD requests for the <strong>current date</strong> or <strong>future dates</strong>.
+          </li>
+        </ul>
+        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; color: #1e40af; font-size: 12.5px; line-height: 1.5;">
+          ℹ️ <strong>Action Required:</strong> Please contact HR or your administrator if you need a past-dated OD to be applied on your behalf.
+        </div>
+      </div>
+    `,
+    confirmButtonText: 'Understood',
+    confirmButtonColor: '#7c3aed',
+    customClass: {
+      container: '!z-[99999]',
+      popup: 'rounded-2xl shadow-2xl',
+      confirmButton: 'rounded-xl px-6 py-2.5 font-medium text-sm',
+    },
+  });
+}
+
 function LeavesPageContent() {
   const initialUrl = useLeavesUrlHydration();
   const restoreDateFromUrl = useLeavesUrlDateRestoreFlag(initialUrl);
@@ -1220,6 +1291,13 @@ function LeavesPageContent() {
       punchOutTime?: string | null;
       shiftStartTime?: string | null;
       shiftEndTime?: string | null;
+      hasIn?: boolean;
+      hasOut?: boolean;
+      isNullPunches?: boolean;
+      isTwoPunches?: boolean;
+      isSinglePunchIn?: boolean;
+      isSinglePunchOut?: boolean;
+      isSinglePunch?: boolean;
     } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
@@ -2025,6 +2103,20 @@ function LeavesPageContent() {
           remarks: formData.remarks,
         });
       } else {
+        if (approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
+          const att: any = approvedRecordsInfo.attendanceInfo;
+          const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
+          const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);
+          const isSinglePunchIn = att.isSinglePunchIn !== undefined ? att.isSinglePunchIn : (hasIn && !hasOut);
+          const isSinglePunch = att.isSinglePunch !== undefined ? att.isSinglePunch : (!(!hasIn && !hasOut) && !(hasIn && hasOut));
+
+          if (isSinglePunchIn || isSinglePunch) {
+            showOdSinglePunchAlert(formData.fromDate);
+            setLoading(false);
+            return;
+          }
+        }
+
         response = await api.applyOD({
           empNo: selectedEmployee.emp_no, // Use emp_no as primary identifier
           odType: formData.odType,
@@ -2072,7 +2164,14 @@ function LeavesPageContent() {
         resetForm();
         loadData();
       } else {
-        toast.error(response.error || 'Failed to apply');
+        const errMsg = response.error || 'Failed to apply';
+        if (applyType === 'od' && /single punch|null punches/i.test(errMsg)) {
+          showOdSinglePunchAlert(formData.fromDate);
+        } else if (applyType === 'od' && /past dates|file upload permission/i.test(errMsg)) {
+          showOdPastDateAlert();
+        } else {
+          toast.error(errMsg);
+        }
         // Show warnings even on error (for non-approved conflicts)
         if (response.warnings && response.warnings.length > 0) {
           response.warnings.forEach((warning: string) => {
@@ -2081,7 +2180,14 @@ function LeavesPageContent() {
         }
       }
     } catch (err: any) {
-      toast.error(err.message || 'Failed to apply');
+      const errMsg = err.message || 'Failed to apply';
+      if (applyType === 'od' && /single punch|null punches/i.test(errMsg)) {
+        showOdSinglePunchAlert(formData.fromDate);
+      } else if (applyType === 'od' && /past dates|file upload permission/i.test(errMsg)) {
+        showOdPastDateAlert();
+      } else {
+        toast.error(errMsg);
+      }
     } finally {
       setLoading(false);
       setLoadingMessage('');

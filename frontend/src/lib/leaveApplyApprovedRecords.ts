@@ -15,6 +15,13 @@ export type AttendancePresenceInfo = {
   shiftEndTime?: string | null;
   expectedHours?: number | null;
   punchHours?: number | null;
+  hasIn?: boolean;
+  hasOut?: boolean;
+  isNullPunches?: boolean;
+  isTwoPunches?: boolean;
+  isSinglePunchIn?: boolean;
+  isSinglePunchOut?: boolean;
+  isSinglePunch?: boolean;
 };
 
 export type HoursOdOnDateInfo = {
@@ -303,6 +310,32 @@ export function getApplyDateCheckBannerState(
         ? `${info.odInfo.halfDayType === 'first_half' ? 'First' : 'Second'} half OD (approved)`
         : 'Full day OD (approved)'
     : null;
+
+  // On partial days / attendance days, OD can ONLY be applied if both IN and OUT punches are present or if null punches.
+  // If single punch of IN or single punch, restrict the OD application.
+  if (options.applyType === 'od' && info.attendanceInfo?.hasAttendance) {
+    const att = info.attendanceInfo;
+    const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
+    const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);
+    const isSinglePunchIn = att.isSinglePunchIn !== undefined ? att.isSinglePunchIn : (hasIn && !hasOut);
+    const isSinglePunch = att.isSinglePunch !== undefined ? att.isSinglePunch : (!(!hasIn && !hasOut) && !(hasIn && hasOut));
+
+    if (isSinglePunchIn || isSinglePunch) {
+      return {
+        variant: 'error',
+        headline: 'OD Not Allowed (Single Punch)',
+        body: `A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded for this date. On partial attendance days, OD can only be applied if both IN and OUT punches are present or if there are no punches (null punches).`,
+        blocked: true,
+        dateFullyCovered: false,
+        showOppositeHalfNote: false,
+        attendanceLabel,
+        leaveLine,
+        odLine,
+        halfDayAction: null,
+        coverage,
+      };
+    }
+  }
 
   if (dateFullyCovered) {
     return {

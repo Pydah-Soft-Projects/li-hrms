@@ -42,6 +42,16 @@ export function getHoursOdAttendanceSuggestion(
     return { blocked: true, suggestion: 'End time must be after start time.', credit: null };
   }
 
+  const hasIn = Boolean(attendance?.punchInTime);
+  const hasOut = Boolean(attendance?.punchOutTime && attendance.punchOutTime !== attendance.punchInTime);
+  if (hasIn && !hasOut) {
+    return {
+      blocked: true,
+      suggestion: 'A single punch (IN only) is recorded for this date. On partial attendance days, OD can only be applied if both IN and OUT punches are present or if there are no punches (null punches).',
+      credit: null,
+    };
+  }
+
   const credit = computeHoursOdCredit({
     odStartTime,
     odEndTime,

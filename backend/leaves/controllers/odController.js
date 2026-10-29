@@ -588,22 +588,29 @@ exports.applyOD = async (req, res) => {
     // Validate Date in IST calendar space (avoid server-local timezone drift)
     const todayIst = extractISTComponents(new Date()).dateStr;
     const fromIst = extractISTComponents(new Date(fromDate)).dateStr;
+    const toIst = extractISTComponents(new Date(toDate || fromDate)).dateStr;
     const todayMid = createISTDate(todayIst, '00:00');
     const fromMid = createISTDate(fromIst, '00:00');
     const diffTime = fromMid - todayMid;
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-    // 1. Backdate validation
-    if (diffDays < 0) {
-      if (!settings.allowBackdated) {
-        return res.status(400).json({
+    // File upload option in User Management (LEAVE_OD:file or super_admin)
+    const hasFileUploadPermission =
+      req.user.role === 'super_admin' ||
+      (Array.isArray(req.user.featureControl) && req.user.featureControl.includes('LEAVE_OD:file'));
+
+    // 1. Backdate validation: When the date changes (past dates), only users with file upload option in user management can apply OD
+    const isPastDate = diffDays < 0 || fromIst < todayIst || toIst < todayIst;
+    if (isPastDate) {
+      if (!hasFileUploadPermission) {
+        return res.status(403).json({
           success: false,
-          error: 'Backdated OD applications are not allowed.'
+          error: 'OD applications for past dates can only be applied by users with the file upload permission in User Management.'
         });
       }
 
       const backdateDays = Math.abs(diffDays);
-      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && backdateDays > settings.maxBackdatedDays) {
+      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && settings.maxBackdatedDays > 0 && backdateDays > settings.maxBackdatedDays) {
         return res.status(400).json({
           success: false,
           error: `OD application can only be backdated up to ${settings.maxBackdatedDays} days.`
@@ -1024,6 +1031,37 @@ exports.applyOD = async (req, res) => {
       resolvedIsHalfDay ||
       resolvedOdTypeExtended === 'half_day' ||
       (resolvedNumberOfDays > 0 && resolvedNumberOfDays < 1);
+
+    // Punch criteria validation: on partial / attendance days, OD can ONLY be applied if
+    // there are two punches (both IN and OUT) or null punches (no punches recorded).
+    // If there is a single punch of IN (or single punch overall), restrict the employee.
+    const { dailyHasShiftLevelIn, dailyHasShiftLevelOut } = require('../../attendance/utils/attendanceHalfPresence');
+    const { eachDateStrInRange } = require('../../shared/utils/leaveDayRangeUtils');
+    const datesToCheck = eachDateStrInRange(fromStr, toStr);
+
+    for (const dStr of datesToCheck) {
+      const dDaily = await AttendanceDaily.findOne({
+        employeeNumber: String(employee.emp_no || '').toUpperCase(),
+        date: dStr,
+      }).select('status shifts inTime outTime');
+
+      if (dDaily) {
+        const hasIn = dailyHasShiftLevelIn(dDaily);
+        const hasOut = dailyHasShiftLevelOut(dDaily);
+        const isNullPunches = !hasIn && !hasOut;
+        const isTwoPunches = hasIn && hasOut;
+        const isSinglePunchIn = hasIn && !hasOut;
+        const isSinglePunch = !isNullPunches && !isTwoPunches;
+
+        if (isSinglePunchIn || isSinglePunch) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, OD can only be applied if both IN and OUT punches are present or if there are no punches (null punches).`,
+          });
+        }
+      }
+    }
+
     if (isSingleDayOd && odType_extended !== 'hours') {
       try {
         const daily = await AttendanceDaily.findOne({
