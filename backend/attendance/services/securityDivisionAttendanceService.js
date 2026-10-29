@@ -937,16 +937,20 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
       const periodInfo = await dateCycleService.getPeriodInfo(baseDate);
       const { year, month: monthNumber } = periodInfo.payrollCycle;
 
-      for (const emp of employees) {
-        const empNo = emp.emp_no || emp.employeeNumber || emp.customId;
-        if (empNo && emp._id) {
-          await calculateMonthlySummary(emp._id, empNo, year, monthNumber);
-          const endBase = createISTDate(endDate);
-          const endInfo = await dateCycleService.getPeriodInfo(endBase);
-          if (endInfo.payrollCycle.month !== monthNumber || endInfo.payrollCycle.year !== year) {
-            await calculateMonthlySummary(emp._id, empNo, endInfo.payrollCycle.year, endInfo.payrollCycle.month);
+      const batchSize = 4;
+      for (let i = 0; i < employees.length; i += batchSize) {
+        const chunk = employees.slice(i, i + batchSize);
+        await Promise.all(chunk.map(async emp => {
+          const empNo = emp.emp_no || emp.employeeNumber || emp.customId;
+          if (empNo && emp._id) {
+            await calculateMonthlySummary(emp._id, empNo, year, monthNumber);
+            const endBase = createISTDate(endDate);
+            const endInfo = await dateCycleService.getPeriodInfo(endBase);
+            if (endInfo.payrollCycle.month !== monthNumber || endInfo.payrollCycle.year !== year) {
+              await calculateMonthlySummary(emp._id, empNo, endInfo.payrollCycle.year, endInfo.payrollCycle.month);
+            }
           }
-        }
+        }));
       }
     } catch (err) {
       console.warn('[SecurityDivision] Monthly summary recalculation warning:', err.message);

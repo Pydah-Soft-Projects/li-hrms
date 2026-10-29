@@ -1760,33 +1760,47 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
     }
 
     // Check for Security Division or Security Department employees to run the dedicated Security Attendance Engine
-    const { isSecurityEmployeeNumber, runSecurityDivisionAttendanceEngine } = require('../../attendance/services/securityDivisionAttendanceService');
+    const { getSecurityDivisionEmployees, runSecurityDivisionAttendanceEngine, isSecurityEmployeeNumber } = require('../../attendance/services/securityDivisionAttendanceService');
+    const Division = require('../../departments/model/Division');
+
+    const secContext = await getSecurityDivisionEmployees();
+    const allSecEmpNos = new Set(
+      secContext.employees.map(e => String(e.emp_no || e.employeeNumber || e.customId).trim().toUpperCase()).filter(Boolean)
+    );
+
+    let isSecurityDivisionSync = false;
+    if (divisionId && divisionId !== 'all') {
+      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+      for (const dId of divIds) {
+        const secDiv = await Division.findById(dId).lean();
+        if (secDiv && /security/i.test(secDiv.name || '')) {
+          isSecurityDivisionSync = true;
+          break;
+        }
+      }
+    }
 
     let securityEmpNumbers = [];
     let generalEmpNumbers = [];
 
-    if (targetEmployeeNumbers !== null) {
+    if (isSecurityDivisionSync) {
+      securityEmpNumbers = Array.from(allSecEmpNos);
+      if (targetEmployeeNumbers !== null) {
+        const filteredSec = targetEmployeeNumbers.filter(num => allSecEmpNos.has(num));
+        if (filteredSec.length > 0) {
+          securityEmpNumbers = filteredSec;
+        }
+      }
+    } else if (targetEmployeeNumbers !== null) {
       for (const num of targetEmployeeNumbers) {
-        if (await isSecurityEmployeeNumber(num)) {
+        if (allSecEmpNos.has(num) || (await isSecurityEmployeeNumber(num))) {
           securityEmpNumbers.push(num);
         } else {
           generalEmpNumbers.push(num);
         }
       }
     } else {
-      // Check if divisionId is Security Division or all divisions
-      const Division = require('../../departments/model/Division');
-      const secDiv = divisionId && divisionId !== 'all' ? await Division.findById(divisionId).lean() : null;
-      if (secDiv && /security/i.test(secDiv.name || '')) {
-        const { getSecurityDivisionEmployees } = require('../../attendance/services/securityDivisionAttendanceService');
-        const secContext = await getSecurityDivisionEmployees();
-        securityEmpNumbers = secContext.employees.map(e => String(e.emp_no || e.employeeNumber).toUpperCase()).filter(Boolean);
-      } else if (!divisionId || divisionId === 'all') {
-        // Syncing all divisions: also sync security employees via dedicated security engine
-        const { getSecurityDivisionEmployees } = require('../../attendance/services/securityDivisionAttendanceService');
-        const secContext = await getSecurityDivisionEmployees();
-        securityEmpNumbers = secContext.employees.map(e => String(e.emp_no || e.employeeNumber).toUpperCase()).filter(Boolean);
-      }
+      securityEmpNumbers = Array.from(allSecEmpNos);
     }
 
     if (securityEmpNumbers.length > 0) {
@@ -1803,7 +1817,7 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
       stats.assigned += secResult.dailyRecordsUpserted || 0;
 
       // If ONLY security employees were targeted, return immediately with clean summary
-      if (targetEmployeeNumbers !== null && generalEmpNumbers.length === 0) {
+      if (isSecurityDivisionSync || (targetEmployeeNumbers !== null && generalEmpNumbers.length === 0)) {
         stats.success = true;
         stats.message = `Successfully synced ${stats.reprocessed} Security record(s) for ${securityEmpNumbers.length} employee(s).`;
         return stats;
