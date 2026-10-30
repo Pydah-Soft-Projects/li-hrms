@@ -753,7 +753,14 @@ async function refreshAccessToken(): Promise<boolean> {
 
 function shouldAttemptTokenRefresh(endpoint: string, code?: string): boolean {
   if (!AUTH_SKIP_REFRESH_PATHS.some((path) => endpoint.includes(path))) {
-    return code === 'TOKEN_EXPIRED';
+    if (
+      code === 'SESSION_REPLACED' ||
+      code === 'TOKEN_VERSION_MISMATCH' ||
+      code === 'INVALID_REFRESH_TOKEN'
+    ) {
+      return false;
+    }
+    return Boolean(auth.getRefreshToken());
   }
   return false;
 }
@@ -778,6 +785,7 @@ export async function apiRequest<T>(
   options: RequestInit = {},
   retryOnRefresh = true
 ): Promise<ApiResponse<T>> {
+  auth.recordActivity();
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   const headers: Record<string, string> = {
@@ -1682,7 +1690,8 @@ export const api = {
     data: Partial<Holiday> & { rosterFillMode?: 'HOL' | 'WEEK_OFF'; streamProgress?: boolean },
     onProgress?: HolidaySaveProgressCallback
   ) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/x-ndjson, application/json',
@@ -2167,7 +2176,8 @@ export const api = {
 
   // Bulk Allowance & Deduction
   downloadAllowanceDeductionTemplate: async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const response = await fetch(`${API_BASE_URL}/allowances-deductions/template`, {
       method: 'GET',
       headers: {
@@ -2518,7 +2528,8 @@ export const api = {
   },
 
   exportEmployees: async (fields: string[], filters?: any, empNo?: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -2778,7 +2789,8 @@ export const api = {
 
   // Bulk export passwords
   bulkExportEmployeePasswords: async (data: { empNos?: string[]; passwordMode: string }) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const response = await fetch(`${API_BASE_URL}/employees/bulk-export-passwords`, {
       method: 'POST',
       headers: {
@@ -3366,7 +3378,8 @@ export const api = {
     if (filters.includeODs !== undefined) params.append('includeODs', String(filters.includeODs));
     if (filters.includeSummary !== undefined) params.append('includeSummary', String(filters.includeSummary));
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const url = `${API_BASE_URL}/leaves/export/pdf?${params.toString()}`;
     
     const response = await fetch(url, {
@@ -3409,7 +3422,8 @@ export const api = {
     if (filters.includeODs !== undefined) params.append('includeODs', String(filters.includeODs));
     if (filters.includeSummary !== undefined) params.append('includeSummary', String(filters.includeSummary));
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const url = `${API_BASE_URL}/leaves/export/xlsx?${params.toString()}`;
     
     const response = await fetch(url, {
@@ -4462,7 +4476,8 @@ export const api = {
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -4509,7 +4524,8 @@ export const api = {
 
   // Attendance Upload
   uploadAttendanceExcel: async (file: File) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const formData = new FormData();
     formData.append('file', file);
 
@@ -5118,7 +5134,8 @@ export const api = {
       query.append('strategy', params.strategy);
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -5227,7 +5244,8 @@ export const api = {
     if (params.search) queryParams.append('search', params.search);
     if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
     const query = queryParams.toString();
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const response = await fetch(`${API_BASE_URL}/payroll/paysheet/export-bundle?${query}`, {
@@ -5400,7 +5418,8 @@ export const api = {
   },
 
   exportBatchHeldSalaryPdf: async (id: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const response = await fetch(`${API_BASE_URL}/payroll-batch/${id}/export-held-salary-pdf`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -5629,7 +5648,8 @@ export const api = {
     },
     onProgress?: PayRegisterBulkSyncProgressCallback
   ) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/x-ndjson, application/json',
@@ -5804,7 +5824,8 @@ export const api = {
     const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
     const query = payRegisterExportQueryParams(params);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -5835,7 +5856,8 @@ export const api = {
     const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
     const query = payRegisterExportQueryParams(params);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -5865,7 +5887,8 @@ export const api = {
     const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
     const query = payRegisterExportQueryParams(params);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -5894,7 +5917,8 @@ export const api = {
     const { payRegisterExportQueryParams } = await import('@/lib/payRegisterApiFilters');
     const query = payRegisterExportQueryParams(params);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -6288,7 +6312,8 @@ export const api = {
     components?: string[],
     filters?: { division_id?: string; department_id?: string; designation_id?: string; employee_group_id?: string }
   ) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     let url = `${API_BASE_URL}/salary-updates/bulk-update/template`;
     const params = new URLSearchParams();
     if (fields && fields.length > 0) {
@@ -6333,7 +6358,8 @@ export const api = {
 
   // Second Salary Bulk Update
   downloadSecondSalaryTemplate: async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const response = await fetch(`${API_BASE_URL}/salary-updates/second-salary/template`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
@@ -6365,7 +6391,8 @@ export const api = {
       query.append('employeeIds', params.employeeIds.join(','));
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -6399,7 +6426,8 @@ export const api = {
     if (params.designationId) query.append('designationId', params.designationId);
     if (params.search) query.append('search', params.search);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -6634,7 +6662,8 @@ export const api = {
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');
     if (params?.includeEL === false) q.set('includeEL', 'false');
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const response = await fetch(`${API_BASE_URL}/leaves/register/export/pdf?${q.toString()}`, {
@@ -6682,7 +6711,8 @@ export const api = {
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');
     if (params?.includeEL === false) q.set('includeEL', 'false');
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const response = await fetch(`${API_BASE_URL}/leaves/register/export/xlsx?${q.toString()}`, {
@@ -6849,7 +6879,8 @@ export const api = {
     if (params.strict) query.append('strict', 'true');
     if (params.groupBy) query.append('groupBy', params.groupBy);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -6897,7 +6928,8 @@ export const api = {
     if (params.strict) query.append('strict', 'true');
     if (params.groupBy) query.append('groupBy', params.groupBy);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    auth.recordActivity();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 

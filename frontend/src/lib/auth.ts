@@ -24,12 +24,36 @@ export interface User {
 }
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
-const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+const LAST_ACTIVITY_KEY = 'hrms_last_activity';
+const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
+  'mousemove',
+  'mousedown',
+  'mouseup',
+  'click',
+  'dblclick',
+  'contextmenu',
+  'keydown',
+  'keyup',
+  'wheel',
+  'scroll',
+  'touchstart',
+  'touchmove',
+  'touchend',
+  'pointerdown',
+  'pointermove',
+  'pointerup',
+  'input',
+  'change',
+  'focus',
+];
 const DEVICE_ID_KEY = 'hrms_device_id';
 
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
 let inactivityListenersBound = false;
 let inactivityLogoutHandler: (() => void) | null = null;
+let activeInactivityListenersCount = 0;
+let lastActivityRecordedAt = 0;
+let lastStorageWriteAt = 0;
 
 const clearInactivityTimer = () => {
   if (inactivityTimer) {
@@ -38,19 +62,139 @@ const clearInactivityTimer = () => {
   }
 };
 
-const resetInactivityTimer = () => {
-  if (typeof window === 'undefined') return;
+const getLatestActivityTimestamp = (): number => {
+  let latest = lastActivityRecordedAt;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(LAST_ACTIVITY_KEY);
+      if (stored) {
+        const parsed = Number(stored);
+        if (!Number.isNaN(parsed) && parsed > latest) {
+          latest = parsed;
+        }
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+  return latest;
+};
 
+const scheduleInactivityCheck = () => {
+  if (typeof window === 'undefined') return;
   clearInactivityTimer();
+
+  const latestActivity = getLatestActivityTimestamp();
+  const now = Date.now();
+  const elapsed = now - (latestActivity || now);
+  const remaining = Math.max(0, INACTIVITY_TIMEOUT_MS - elapsed);
 
   inactivityTimer = setTimeout(() => {
     if (!auth.getToken() || !auth.getUser()) return;
 
+    // Check if user was active in another tab or recently
+    const currentLatest = getLatestActivityTimestamp();
+    const actualElapsed = Date.now() - (currentLatest || Date.now());
+
+    if (actualElapsed < INACTIVITY_TIMEOUT_MS) {
+      // User was active; reschedule timer for the remaining time
+      scheduleInactivityCheck();
+      return;
+    }
+
+    // Check if employee is currently typing in an input/textarea/select/contentEditable
+    if (typeof document !== 'undefined') {
+      const activeEl = document.activeElement;
+      const isInteractingWithForm =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT' ||
+          (activeEl as HTMLElement).isContentEditable);
+
+      if (document.hasFocus() && isInteractingWithForm) {
+        // User is actively working in a form field - do not log out
+        recordActivity(true);
+        return;
+      }
+    }
+
+    // Truly inactive for full duration and not working -> Logout
     auth.logout().catch(() => {
-      auth.clearLocalSession();
+      auth.clearLocalSession('INACTIVITY_TIMEOUT');
     });
     inactivityLogoutHandler?.();
-  }, INACTIVITY_TIMEOUT_MS);
+  }, remaining > 0 ? remaining : INACTIVITY_TIMEOUT_MS);
+};
+
+const recordActivity = (force = false) => {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  lastActivityRecordedAt = now;
+
+  // Throttle writes to localStorage to avoid spamming on every pixel move (at most once every 3 seconds)
+  if (force || now - lastStorageWriteAt > 3000) {
+    lastStorageWriteAt = now;
+    try {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+    } catch {
+      // ignore
+    }
+  }
+
+  scheduleInactivityCheck();
+};
+
+const handleUserActivity = () => {
+  recordActivity(false);
+};
+
+const handleStorageActivity = (event: StorageEvent) => {
+  if (event.key === LAST_ACTIVITY_KEY && event.newValue) {
+    const timestamp = Number(event.newValue);
+    if (!Number.isNaN(timestamp) && timestamp > lastActivityRecordedAt) {
+      lastActivityRecordedAt = timestamp;
+      scheduleInactivityCheck();
+    }
+  }
+};
+
+const handleVisibilityChange = () => {
+  if (typeof document !== 'undefined' && !document.hidden) {
+    // When tab becomes visible again, check latest activity across tabs
+    const latest = getLatestActivityTimestamp();
+    const elapsed = Date.now() - (latest || Date.now());
+    if (elapsed >= INACTIVITY_TIMEOUT_MS && auth.getToken() && auth.getUser()) {
+      auth.logout().catch(() => {
+        auth.clearLocalSession('INACTIVITY_TIMEOUT');
+      });
+      inactivityLogoutHandler?.();
+    } else {
+      recordActivity(false);
+    }
+  }
+};
+
+const addActivityListeners = () => {
+  if (typeof window === 'undefined') return;
+
+  ACTIVITY_EVENTS.forEach((eventName) => {
+    window.addEventListener(eventName, handleUserActivity, { passive: true, capture: true });
+  });
+
+  window.addEventListener('storage', handleStorageActivity);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+};
+
+const removeActivityListeners = () => {
+  if (typeof window === 'undefined') return;
+
+  ACTIVITY_EVENTS.forEach((eventName) => {
+    window.removeEventListener(eventName, handleUserActivity, { capture: true } as EventListenerOptions);
+  });
+
+  window.removeEventListener('storage', handleStorageActivity);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 };
 
 function generateDeviceId(): string {
@@ -107,6 +251,7 @@ export const auth = {
     if (refreshToken) {
       auth.setRefreshToken(refreshToken);
     }
+    auth.recordActivity(true);
   },
 
   setUser: (user: User) => {
@@ -129,6 +274,7 @@ export const auth = {
       localStorage.removeItem('user');
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
       clearWorkspaceData();
       window.dispatchEvent(new CustomEvent('auth-logout', { detail: { reason } }));
     }
@@ -172,34 +318,42 @@ export const auth = {
     return true;
   },
 
+  recordActivity: (force = false) => {
+    recordActivity(force);
+  },
+
   startInactivityAutoLogout: (onLogout?: () => void) => {
     if (typeof window === 'undefined') return;
 
-    inactivityLogoutHandler = onLogout || null;
+    if (onLogout) {
+      inactivityLogoutHandler = onLogout;
+    }
+
+    activeInactivityListenersCount++;
 
     if (!inactivityListenersBound) {
-      ACTIVITY_EVENTS.forEach((eventName) => {
-        window.addEventListener(eventName, resetInactivityTimer, { passive: true });
-      });
+      addActivityListeners();
       inactivityListenersBound = true;
     }
 
-    resetInactivityTimer();
+    recordActivity(true);
   },
 
   stopInactivityAutoLogout: () => {
     if (typeof window === 'undefined') return;
 
-    clearInactivityTimer();
+    activeInactivityListenersCount = Math.max(0, activeInactivityListenersCount - 1);
 
-    if (inactivityListenersBound) {
-      ACTIVITY_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, resetInactivityTimer);
-      });
-      inactivityListenersBound = false;
+    if (activeInactivityListenersCount === 0) {
+      clearInactivityTimer();
+
+      if (inactivityListenersBound) {
+        removeActivityListeners();
+        inactivityListenersBound = false;
+      }
+
+      inactivityLogoutHandler = null;
     }
-
-    inactivityLogoutHandler = null;
   },
 
   isAuthenticated: (): boolean => {
