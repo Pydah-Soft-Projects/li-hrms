@@ -655,7 +655,7 @@ export default function EmployeesPage() {
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [showRejoinModal, setShowRejoinModal] = useState(false);
   const [rejoinEmployee, setRejoinEmployee] = useState<Employee | null>(null);
-  const [leftDateForm, setLeftDateForm] = useState<{ leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' }>({ leftDate: '', leftReason: '', requestType: 'resignation' });
+  const [leftDateForm, setLeftDateForm] = useState<{ leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' | 'obsconded' }>({ leftDate: '', leftReason: '', requestType: 'resignation' });
   const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(true);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');

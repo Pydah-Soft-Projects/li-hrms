@@ -57,7 +57,7 @@ function assertCanCreateRequest(user, requestType, settings) {
 
   const fc = resolveFeatureControl(user);
 
-  if (type === 'termination') {
+  if (type === 'termination' || type === 'obsconded' || type === 'absconded') {
     if (role === 'employee') {
       const err = new Error('Employees cannot initiate terminations.');
       err.statusCode = 403;
@@ -110,7 +110,7 @@ function assertCanManageRequest(user, requestType, settings) {
 
   const fc = resolveFeatureControl(user);
 
-  if (type === 'termination') {
+  if (type === 'termination' || type === 'obsconded' || type === 'absconded') {
     if (fc.length === 0) {
       if (!canInitiateTerminationLegacy(user, settings)) {
         const err = new Error('You are not authorized to manage termination requests.');

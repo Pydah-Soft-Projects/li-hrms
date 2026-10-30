@@ -39,7 +39,7 @@ exports.createResignationRequest = async (req, res) => {
     const userRole = (req.user?.role || '').toLowerCase();
     const isEmployeeSelf = userRole === 'employee';
     if (isEmployeeSelf) {
-      if (requestType === 'termination') {
+      if (requestType === 'termination' || requestType === 'obsconded' || requestType === 'absconded') {
         return res.status(403).json({ success: false, message: 'Employees cannot initiate their own termination.' });
       }
       emp_no = req.user?.employeeId || req.user?.emp_no;
@@ -192,7 +192,7 @@ exports.createResignationRequest = async (req, res) => {
       status: 'pending',
       requestedBy: req.user._id,
       requestType,
-      isLwdManual: requestType === 'termination' ? true : isManual,
+      isLwdManual: (requestType === 'termination' || requestType === 'obsconded' || requestType === 'absconded') ? true : isManual,
       workflow: {
         currentStepRole: firstRole,
         nextApproverRole: firstRole,
@@ -607,14 +607,17 @@ exports.approveResignationRequest = async (req, res) => {
       const emp = await Employee.findById(resignation.employeeId._id || resignation.employeeId);
       if (emp) {
         emp.leftDate = resignation.leftDate;
-        emp.leftReason = resignation.remarks || (resignation.requestType === 'termination' ? 'Terminated' : null);
+        emp.leftReason = resignation.remarks || (resignation.requestType === 'termination' ? 'Terminated' : (resignation.requestType === 'obsconded' || resignation.requestType === 'absconded') ? 'Obsconded' : null);
         
         // If termination, deactivate immediately
-        if (resignation.requestType === 'termination') {
+        if (resignation.requestType === 'termination' || resignation.requestType === 'obsconded' || resignation.requestType === 'absconded') {
+          if (resignation.requestType === 'obsconded' || resignation.requestType === 'absconded') {
+            emp.status = 'absconding';
+          }
           emp.is_active = false;
         }
 
-        const closedBy = resignation.requestType === 'termination' ? 'termination' : 'resignation';
+        const closedBy = resignation.requestType === 'termination' ? 'termination' : (resignation.requestType === 'obsconded' || resignation.requestType === 'absconded') ? 'obsconded' : 'resignation';
         closeCurrentTenure(emp, emp.leftDate, emp.leftReason, closedBy);
 
         await emp.save();
@@ -622,9 +625,10 @@ exports.approveResignationRequest = async (req, res) => {
         // Employee history: final approval / left date set
         try {
           const isTermination = resignation.requestType === 'termination';
+          const isObsconded = resignation.requestType === 'obsconded' || resignation.requestType === 'absconded';
           await EmployeeHistory.create({
             emp_no: emp.emp_no,
-            event: isTermination ? 'termination_final_approved' : 'resignation_final_approved',
+            event: isTermination ? 'termination_final_approved' : isObsconded ? 'obsconded_final_approved' : 'resignation_final_approved',
             performedBy: req.user._id,
             performedByName: req.user.name,
             performedByRole: req.user.role,
@@ -661,6 +665,8 @@ exports.approveResignationRequest = async (req, res) => {
         success: true,
         message: resignation.requestType === 'termination' 
           ? 'Termination approved. Employee has been deactivated.' 
+          : (resignation.requestType === 'obsconded' || resignation.requestType === 'absconded')
+          ? 'Obsconded request approved. Employee has been marked as obsconded.'
           : 'Resignation approved. Employee left date has been set. Account remains active until last working date.',
         data: resignation,
       });

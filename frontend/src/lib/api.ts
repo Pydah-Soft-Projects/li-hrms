@@ -3929,7 +3929,7 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-  createResignationRequest: async (data: { emp_no: string; leftDate: string; remarks?: string, requestType?: 'resignation' | 'termination' }) => {
+  createResignationRequest: async (data: { emp_no: string; leftDate: string; remarks?: string, requestType?: 'resignation' | 'termination' | 'obsconded' | 'absconded' }) => {
     return apiRequest<any>('/resignations', {
       method: 'POST',
       body: JSON.stringify(data),
