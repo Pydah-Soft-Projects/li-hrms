@@ -57,6 +57,7 @@ type PtRequest = {
   incrementAmount?: number;
   effectivePayrollYear?: number;
   effectivePayrollMonth?: number;
+  effectDate?: string | Date | null;
   createdAt?: string;
   employeeId?: {
     employee_name?: string;
@@ -442,6 +443,27 @@ export default function PromotionsTransfersPage() {
       return;
     }
 
+    const getEffectedDateDisplay = (item: PtRequest) => {
+      if (item.effectDate) {
+        try {
+          const d = new Date(item.effectDate);
+          if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+        } catch {
+          // ignore
+        }
+        return formatDateDDMMYYYY(String(item.effectDate).slice(0, 10));
+      }
+      if (item.effectivePayrollYear && item.effectivePayrollMonth) {
+        const m = String(item.effectivePayrollMonth).padStart(2, '0');
+        const d = new Date(Date.UTC(item.effectivePayrollYear, item.effectivePayrollMonth - 1, 1));
+        const monthName = d.toLocaleString('en-IN', { month: 'short', timeZone: 'UTC' });
+        return `01/${m}/${item.effectivePayrollYear} (${monthName} ${item.effectivePayrollYear})`;
+      }
+      return '—';
+    };
+
     const formatDateDDMMYYYY = (dStr: string) => {
       if (!dStr) return '';
       const [y, m, d] = dStr.split('-');
@@ -467,6 +489,13 @@ export default function PromotionsTransfersPage() {
       printStatusFilter === 'all'
         ? 'All Statuses'
         : printStatusFilter.charAt(0).toUpperCase() + printStatusFilter.slice(1);
+
+    const reportTitle =
+      printTypeFilter === 'increment'
+        ? 'Increment Report'
+        : printTypeFilter !== 'all'
+          ? `${typeLabel} Report`
+          : 'Promotions & Transfers Report';
 
     const rowsHtml = printFilteredList
       .map((item, idx) => {
@@ -495,7 +524,8 @@ export default function PromotionsTransfersPage() {
         } else if (item.requestType === 'increment') {
           const incAmt = item.incrementAmount != null ? `+₹${item.incrementAmount.toLocaleString('en-IN')}` : '—';
           const newSal = item.newGrossSalary != null ? `₹${item.newGrossSalary.toLocaleString('en-IN')}` : '—';
-          detailsStr = `Increment: ${incAmt}<br/>New Gross: ${newSal}`;
+          const effectedDate = getEffectedDateDisplay(item);
+          detailsStr = `Increment: ${incAmt}<br/>New Gross: ${newSal}<br/><strong>Effected Date:</strong> <span style="color: #4f46e5; font-weight: 600;">${effectedDate}</span>`;
         }
 
         if (item.workflow?.approvalChain && item.workflow.approvalChain.length > 0) {
@@ -538,6 +568,7 @@ export default function PromotionsTransfersPage() {
             <td style="padding: 8px; border: 1px solid #cbd5e1;">${empName}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600; color: #4f46e5;">${reqType}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; font-size: 11px;">${detailsStr}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-size: 11px; font-weight: 600; color: #0f172a;">${getEffectedDateDisplay(item)}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${status}</td>
           </tr>
         `;
@@ -548,7 +579,7 @@ export default function PromotionsTransfersPage() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Promotions & Transfers Report</title>
+          <title>${reportTitle}</title>
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -600,7 +631,7 @@ export default function PromotionsTransfersPage() {
         </head>
         <body>
           <div class="header">
-            <h2>Promotions & Transfers Report</h2>
+            <h2>${reportTitle}</h2>
             <span style="font-size: 12px; color: #64748b;">Printed on: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
           </div>
           <div class="meta">
@@ -617,11 +648,12 @@ export default function PromotionsTransfersPage() {
                 <th>Employee Name</th>
                 <th>Type</th>
                 <th>Details</th>
+                <th style="text-align: center;">Effected Date</th>
                 <th style="text-align: center;">Status</th>
               </tr>
             </thead>
             <tbody>
-              ${rowsHtml || '<tr><td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">No records match the selected filters.</td></tr>'}
+              ${rowsHtml || '<tr><td colspan="7" style="text-align: center; padding: 24px; color: #94a3b8;">No records match the selected filters.</td></tr>'}
             </tbody>
           </table>
           <script>
@@ -1847,8 +1879,8 @@ export default function PromotionsTransfersPage() {
             type="button"
             onClick={() => setTab('all')}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'all'
-                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
               }`}
           >
             All
@@ -1858,8 +1890,8 @@ export default function PromotionsTransfersPage() {
               type="button"
               onClick={() => setTab('pending')}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'pending'
-                  ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
             >
               Pending my action
@@ -2182,8 +2214,8 @@ export default function PromotionsTransfersPage() {
                                 aria-selected={selectedEmpNo === e.emp_no}
                                 onClick={() => onEmpChange(e.emp_no)}
                                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${selectedEmpNo === e.emp_no
-                                    ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200'
-                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/80'
+                                  ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/80'
                                   }`}
                               >
                                 <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{e.emp_no}</span>
@@ -2290,6 +2322,7 @@ export default function PromotionsTransfersPage() {
                                     const totalDays = Number(r.totalDays) || 0;
                                     const paidCurrent = totalDays > 0 ? (baseGross / totalDays) * paidDays : 0;
                                     const paidAfter = totalDays > 0 ? (safeNewGross / totalDays) * paidDays : 0;
+
                                     return (
                                       <tr key={r.month}>
                                         <td className="px-3 py-2 font-mono">{r.month}</td>
@@ -2479,8 +2512,8 @@ export default function PromotionsTransfersPage() {
                                   <span className="text-slate-500 dark:text-slate-400">Change</span>
                                   <span
                                     className={`font-bold ${promotionComparison.delta >= 0
-                                        ? 'text-emerald-700 dark:text-emerald-400'
-                                        : 'text-amber-700 dark:text-amber-400'
+                                      ? 'text-emerald-700 dark:text-emerald-400'
+                                      : 'text-amber-700 dark:text-amber-400'
                                       }`}
                                   >
                                     {promotionComparison.delta >= 0 ? '+' : ''}
@@ -2960,6 +2993,11 @@ export default function PromotionsTransfersPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-900 dark:text-white">{r.emp_no || r.employeeId?.emp_no}</span>
                           <span className="text-slate-500">{r.employeeId?.employee_name}</span>
+                          {(r.effectDate || (r.effectivePayrollYear && r.effectivePayrollMonth)) && (
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                              · Eff: {r.effectDate ? new Date(r.effectDate).toLocaleDateString('en-GB') : `01/${String(r.effectivePayrollMonth).padStart(2, '0')}/${r.effectivePayrollYear}`}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="capitalize text-indigo-600 dark:text-indigo-400 font-semibold">{r.requestType}</span>
