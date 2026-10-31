@@ -76,6 +76,9 @@ function renderBadges(
       {flags.hasRelease ? (
         <Badge label="Release" className={isMatrix ? 'bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400' : 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300'} />
       ) : null}
+      {flags.hasProfileApproval ? (
+        <Badge label="Profile Appr" className={isMatrix ? 'bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400' : 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300'} />
+      ) : null}
     </>
   );
 }

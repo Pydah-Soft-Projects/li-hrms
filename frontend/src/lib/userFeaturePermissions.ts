@@ -7,6 +7,7 @@ export const FEATURE_SUFFIX = {
   file: 'file',
   terminate: 'terminate',
   release: 'release',
+  profileApproval: 'profile_approval',
 } as const;
 
 export type GranularModuleDef = {
@@ -19,6 +20,7 @@ export type GranularModuleDef = {
   fileUploadable?: boolean;
   terminable?: boolean;
   releasable?: boolean;
+  profileApprover?: boolean;
 };
 
 export function featurePerm(moduleCode: string, suffix: string): string {
@@ -44,6 +46,7 @@ export type ModulePermissionFlags = {
   hasFile: boolean;
   hasTerminate: boolean;
   hasRelease: boolean;
+  hasProfileApproval: boolean;
 };
 
 export function collectModulePermissionFlags(
@@ -64,6 +67,7 @@ export function collectModulePermissionFlags(
     hasFile: module.fileUploadable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.file)) : false,
     hasTerminate: module.terminable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.terminate)) : false,
     hasRelease: module.releasable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.release)) : false,
+    hasProfileApproval: module.profileApprover ? fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval)) : false,
   };
 }
 
@@ -77,9 +81,13 @@ export function moduleHasAnyGrantedPermission(flags: ModulePermissionFlags): boo
     flags.hasSecondSalary ||
     flags.hasFile ||
     flags.hasTerminate ||
-    flags.hasRelease
+    flags.hasRelease ||
+    flags.hasProfileApproval
   );
 }
+
+export const PROFILE_APPROVAL_TOGGLE_TITLE =
+  'Profile Appr: allows sub-admins or principals to review, edit, and approve employee profile change requests within their mapped division/scope (SDMS flow). Independent of Read/Write.';
 
 export const SECOND_SALARY_TOGGLE_TITLE =
   '2nd Salary: allows setting second salary on employee applications and employee records. Independent of Read/Write. Super Admin always has this.';

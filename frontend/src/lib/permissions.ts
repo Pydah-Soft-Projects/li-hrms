@@ -726,6 +726,20 @@ export function canUpdateBankDetails(user: User): boolean {
 }
 
 // ==========================================
+/**
+ * Sub Admin / Principal profile approval permission (SDMS flow).
+ * Allowed if super_admin, or user has explicit EMPLOYEES:profile_approval or EMPLOYEES:edit.
+ */
+export function canApproveProfileRequests(user: User | null | undefined): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!user.featureControl || user.featureControl.length === 0) {
+        return hasAnyRole(user, ['super_admin', 'sub_admin']);
+    }
+    return user.featureControl.includes('EMPLOYEES:profile_approval') ||
+        user.featureControl.includes('EMPLOYEES:edit');
+}
+
 // DATA SCOPE HELPERS
 // ==========================================
 

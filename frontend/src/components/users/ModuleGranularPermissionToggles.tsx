@@ -7,6 +7,7 @@ import {
   type GranularModuleDef,
   SECOND_SALARY_TOGGLE_TITLE,
   VERIFY_EMPLOYEES_TOGGLE_TITLE,
+  PROFILE_APPROVAL_TOGGLE_TITLE,
 } from '@/lib/userFeaturePermissions';
 
 type Props = {
@@ -109,6 +110,16 @@ export default function ModuleGranularPermissionToggles({
         title="Edit: profile update requests from this user are auto-approved without Super Admin review."
         label="Edit"
         activeClass="bg-rose-500"
+      />
+    ) : null,
+    module.profileApprover ? (
+      <ToggleButton
+        key="profileApproval"
+        active={fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval))}
+        onClick={() => toggle(FEATURE_SUFFIX.profileApproval)}
+        title={PROFILE_APPROVAL_TOGGLE_TITLE}
+        label="Profile Appr"
+        activeClass="bg-purple-600"
       />
     ) : null,
   ].filter(Boolean);
