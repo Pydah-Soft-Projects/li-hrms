@@ -897,6 +897,77 @@ const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDay
   };
 };
 
+function showOdSinglePunchAlert(dateStr?: string) {
+  Swal.fire({
+    icon: 'warning',
+    title: 'OD Application Not Allowed',
+    html: `
+      <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #1e293b;">
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; color: #92400e;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 4px;">⚠️ Single Punch Detected ${dateStr ? `for ${dateStr}` : ''}:</strong>
+          An IN punch is recorded, but the OUT punch is missing (partial day attendance).
+        </div>
+        <p style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 13px;">OD Application Criteria & Policy Rules:</p>
+        <ul style="margin: 0 0 14px 18px; padding: 0; color: #334155; font-size: 12.5px; line-height: 1.6;">
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #0f172a;">Two Punches (IN & OUT):</strong> OD application is <strong>permitted</strong> when both punches exist (e.g., worked half day or official duty hours during the shift).
+          </li>
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #0f172a;">Null Punches (No punches):</strong> OD application is <strong>permitted</strong> when no punches are recorded (full day official duty away from office).
+          </li>
+          <li style="margin-bottom: 6px;">
+            <strong style="color: #b91c1c;">Single Punch (IN only):</strong> OD application is <strong>strictly restricted</strong>. Employees cannot apply for OD on partial attendance days with only a single punch.
+          </li>
+        </ul>
+        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; color: #1e40af; font-size: 12.5px; line-height: 1.5;">
+          ℹ️ <strong>Action Required:</strong> Please contact your Reporting Manager or HR to regularize your missing punch / attendance before applying for On Duty.
+        </div>
+      </div>
+    `,
+    confirmButtonText: 'Understood',
+    confirmButtonColor: '#7c3aed',
+    customClass: {
+      container: '!z-[99999]',
+      popup: 'rounded-2xl shadow-2xl',
+      confirmButton: 'rounded-xl px-6 py-2.5 font-medium text-sm',
+    },
+  });
+}
+
+function showOdPastDateAlert(dateStr?: string) {
+  Swal.fire({
+    icon: 'warning',
+    title: 'Past Date OD Restricted',
+    html: `
+      <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #1e293b;">
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; color: #92400e;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 4px;">⚠️ Backdated Application Restricted ${dateStr ? `for ${dateStr}` : ''}:</strong>
+          OD applications for past dates cannot be submitted by regular employees.
+        </div>
+        <p style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 13px;">Past Date Policy Guidelines:</p>
+        <ul style="margin: 0 0 14px 18px; padding: 0; color: #334155; font-size: 12.5px; line-height: 1.6;">
+          <li style="margin-bottom: 6px;">
+            When the date changes, OD requests for past dates can <strong>only</strong> be submitted by authorized users who have the <strong>File Upload</strong> permission granted in <strong>User Management</strong>.
+          </li>
+          <li style="margin-bottom: 6px;">
+            Regular employees may only submit OD requests for the <strong>current date</strong> or <strong>future dates</strong>.
+          </li>
+        </ul>
+        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; color: #1e40af; font-size: 12.5px; line-height: 1.5;">
+          ℹ️ <strong>Action Required:</strong> Please contact HR or your administrator if you need a past-dated OD to be applied on your behalf.
+        </div>
+      </div>
+    `,
+    confirmButtonText: 'Understood',
+    confirmButtonColor: '#7c3aed',
+    customClass: {
+      container: '!z-[99999]',
+      popup: 'rounded-2xl shadow-2xl',
+      confirmButton: 'rounded-xl px-6 py-2.5 font-medium text-sm',
+    },
+  });
+}
+
 function LeavesPageContent() {
   const initialUrl = useLeavesUrlHydration();
   const restoreDateFromUrl = useLeavesUrlDateRestoreFlag(initialUrl);
@@ -1274,6 +1345,13 @@ function LeavesPageContent() {
       punchOutTime?: string | null;
       shiftStartTime?: string | null;
       shiftEndTime?: string | null;
+      hasIn?: boolean;
+      hasOut?: boolean;
+      isNullPunches?: boolean;
+      isTwoPunches?: boolean;
+      isSinglePunchIn?: boolean;
+      isSinglePunchOut?: boolean;
+      isSinglePunch?: boolean;
     } | null;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
@@ -2141,13 +2219,15 @@ function LeavesPageContent() {
           employeeToApplyFor = employees[0];
         } else {
           console.warn('[Workspace Leaves] Constructing synthetic employee in handleApply fallback');
+          const userEmpNo = (currentUser as any).emp_no || currentUser.employeeId || (currentUser as any).employee_no || 'UNKNOWN';
+          const userEmpId = (currentUser as any).employeeRef || (currentUser as any)._id || currentUser.id || 'current-user';
           employeeToApplyFor = {
-            _id: currentUser.id || 'current-user',
-            emp_no: (currentUser as any).emp_no || currentUser.employeeId || 'UNKNOWN',
+            _id: userEmpId,
+            emp_no: userEmpNo,
             employee_name: currentUser.name || 'Current User',
             email: currentUser.email || '',
             role: 'employee',
-            phone_number: (currentUser as any).phone || '',
+            phone_number: (currentUser as any).phone_number || (currentUser as any).phone || '',
             department: currentUser.department,
           } as Employee;
         }
@@ -2175,6 +2255,39 @@ function LeavesPageContent() {
         toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per ${applyType === 'leave' ? 'leave' : 'OD'} settings.`);
         setLoading(false);
         return;
+      }
+
+      if (applyType === 'od') {
+        const todayStr = todayIsoDate();
+        const isPastDate = (formData.fromDate && formData.fromDate < todayStr) || (formData.toDate && formData.toDate < todayStr);
+        if (isPastDate && !canOdUploadFromDevice(currentUser)) {
+          showOdPastDateAlert(formData.fromDate);
+          setLoading(false);
+          return;
+        }
+
+        // Single punch restriction on partial / attendance days (for users without file upload permission)
+        if (!canOdUploadFromDevice(currentUser) && approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
+          const att: any = approvedRecordsInfo.attendanceInfo;
+          const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
+          const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);
+          const isSinglePunchIn = att.isSinglePunchIn !== undefined ? att.isSinglePunchIn : (hasIn && !hasOut);
+          const isSinglePunch = att.isSinglePunch !== undefined ? att.isSinglePunch : (!(!hasIn && !hasOut) && !(hasIn && hasOut));
+
+          if (isSinglePunchIn || isSinglePunch) {
+            showOdSinglePunchAlert(formData.fromDate);
+            setLoading(false);
+            return;
+          }
+        }
+
+        if (!canOdUploadFromDevice(currentUser) && applyDateCheckState?.blocked) {
+          if (/single punch/i.test(applyDateCheckState.headline || '') || /single punch/i.test(applyDateCheckState.body || '')) {
+            showOdSinglePunchAlert(formData.fromDate);
+            setLoading(false);
+            return;
+          }
+        }
       }
 
       if (applyType === 'leave') {
@@ -2311,7 +2424,11 @@ function LeavesPageContent() {
           formData.odEndTime
         );
         if (hoursGuidance.blocked) {
-          toast.error(hoursGuidance.suggestion || 'Hour-based OD conflicts with attendance punches.');
+          if (/single punch|null punches/i.test(hoursGuidance.suggestion || '')) {
+            showOdSinglePunchAlert(formData.fromDate);
+          } else {
+            toast.error(hoursGuidance.suggestion || 'Hour-based OD conflicts with attendance punches.');
+          }
           setLoading(false);
           return;
         }
@@ -2484,10 +2601,52 @@ function LeavesPageContent() {
         resetForm();
         loadData();
       } else {
-        toast.error(response.error || 'Failed to apply');
+        const errMsg = response.error || 'Failed to apply';
+        if (applyType === 'od') {
+          if (/single punch|null punches/i.test(errMsg)) {
+            showOdSinglePunchAlert(formData.fromDate);
+          } else if (/past dates|file upload permission/i.test(errMsg)) {
+            showOdPastDateAlert(formData.fromDate);
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'Cannot Apply OD',
+              text: errMsg,
+              confirmButtonColor: '#7c3aed',
+              customClass: {
+                container: '!z-[99999]',
+                popup: 'rounded-2xl shadow-2xl',
+                confirmButton: 'rounded-xl px-5 py-2 font-medium',
+              },
+            });
+          }
+        } else {
+          toast.error(errMsg);
+        }
       }
     } catch (err: any) {
-      toast.error(err.message || 'An error occurred');
+      const errMsg = err.message || 'An error occurred';
+      if (applyType === 'od') {
+        if (/single punch|null punches/i.test(errMsg)) {
+          showOdSinglePunchAlert(formData.fromDate);
+        } else if (/past dates|file upload permission/i.test(errMsg)) {
+          showOdPastDateAlert(formData.fromDate);
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Cannot Apply OD',
+            text: errMsg,
+            confirmButtonColor: '#7c3aed',
+            customClass: {
+              container: '!z-[99999]',
+              popup: 'rounded-2xl shadow-2xl',
+              confirmButton: 'rounded-xl px-5 py-2 font-medium',
+            },
+          });
+        }
+      } else {
+        toast.error(errMsg);
+      }
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -2792,7 +2951,20 @@ function LeavesPageContent() {
   // Check approved records when employee and date are selected
   useEffect(() => {
     const checkApprovedRecords = async () => {
-      if (!selectedEmployee || !formData.fromDate) {
+      const userEmpNo = (currentUser as any)?.emp_no || currentUser?.employeeId || (currentUser as any)?.employee_no;
+      const userEmpId = (currentUser as any)?.employeeRef || (currentUser as any)?._id || currentUser?.id;
+      const targetEmp =
+        selectedEmployee ||
+        (currentUser?.role === 'employee'
+          ? (employees.length > 0
+              ? employees[0]
+              : {
+                  _id: userEmpId,
+                  emp_no: userEmpNo,
+                })
+          : (employees.length > 0 ? employees[0] : null));
+
+      if (!targetEmp?._id || !targetEmp?.emp_no || !formData.fromDate) {
         setApprovedRecordsInfo(null);
         return;
       }
@@ -2802,8 +2974,8 @@ function LeavesPageContent() {
         setCheckingApprovedRecords(true);
         try {
           const response = await api.getApprovedRecordsForDate(
-            selectedEmployee._id,
-            selectedEmployee.emp_no,
+            targetEmp._id,
+            targetEmp.emp_no,
             formData.fromDate
           );
 
@@ -2857,7 +3029,7 @@ function LeavesPageContent() {
     };
 
     checkApprovedRecords();
-  }, [selectedEmployee, formData.fromDate, formData.toDate]);
+  }, [selectedEmployee, formData.fromDate, formData.toDate, currentUser, employees]);
 
   // Check holiday status for OD
   useEffect(() => {
@@ -6046,18 +6218,35 @@ function LeavesPageContent() {
                   (() => {
                     const policy = odPolicy;
                     const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
+                    const canUploadFile = canOdUploadFromDevice(currentUser);
+                    const todayStr = todayIsoDate();
+                    // Persons who have the file upload option for user management can apply OD for past dates.
+                    // Others cannot apply for past dates (when the date changes).
+                    const effectiveMin = canUploadFile ? singleMin : (singleMin > todayStr ? singleMin : todayStr);
                     return (
                       <div>
                         <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Date *</label>
                         <input
                           type="date"
-                          min={singleMin}
+                          min={effectiveMin}
                           max={singleMax}
                           value={formData.fromDate}
-                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (!canUploadFile && val && val < todayStr) {
+                              showOdPastDateAlert(val);
+                              return;
+                            }
+                            setFormData({ ...formData, fromDate: val, toDate: val });
+                          }}
                           required
                           className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
+                        {!canUploadFile && (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Past dates are restricted. OD applications for past dates require the file upload permission in User Management.
+                          </p>
+                        )}
                       </div>
                     );
                   })()
@@ -6452,10 +6641,38 @@ function LeavesPageContent() {
                   />
                 </div>
 
-                {applyDateBlocked && applyDateCheckState?.dateFullyCovered && (
-                  <div className="mt-3 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
-                    This date is already complete for both halves. Pick another date if you need to apply{' '}
-                    {applyType === 'leave' ? 'leave' : 'OD'}.
+                {applyDateBlocked && (
+                  <div className={`mt-3 rounded-lg sm:rounded-xl border px-3.5 py-2.5 text-xs ${
+                    applyDateCheckState?.variant === 'error'
+                      ? (canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                          ? 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-800/60 dark:bg-blue-950/40 dark:text-blue-200'
+                          : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200')
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200'
+                  }`}>
+                    <div className="font-bold flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span>{canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered ? 'ℹ️' : '⚠️'}</span>
+                        <span>
+                          {canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                            ? 'Single Punch (File Upload Permission Granted)'
+                            : (applyDateCheckState?.headline || (applyDateCheckState?.dateFullyCovered ? 'Date Fully Covered' : 'Application Not Allowed'))}
+                        </span>
+                      </div>
+                      {applyType === 'od' && !canOdUploadFromDevice(currentUser) && (
+                        <button
+                          type="button"
+                          onClick={() => showOdSinglePunchAlert(formData.fromDate)}
+                          className="text-[11px] underline font-semibold text-purple-700 dark:text-purple-300 hover:text-purple-900 cursor-pointer"
+                        >
+                          View Instructions
+                        </button>
+                      )}
+                    </div>
+                    <div className="leading-relaxed text-slate-700 dark:text-slate-300">
+                      {canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered
+                        ? 'A single punch is recorded on this date. As an authorized user with file upload permission in User Management, you can proceed to apply OD for this employee.'
+                        : (applyDateCheckState?.body || (applyDateCheckState?.dateFullyCovered ? `This date is already complete for both halves. Pick another date if you need to apply ${applyType === 'leave' ? 'leave' : 'OD'}.` : ''))}
+                    </div>
                   </div>
                 )}
                 {capLeaveDepleted && (
@@ -6479,7 +6696,7 @@ function LeavesPageContent() {
                       loading ||
                       !isFormValid() ||
                       capLeaveDepleted ||
-                      applyDateBlocked
+                      (applyDateBlocked && !(canOdUploadFromDevice(currentUser) && applyType === 'od' && !applyDateCheckState?.dateFullyCovered))
                     }
                     className={`flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-white rounded-lg sm:rounded-xl transition-all ${(loading ||
                       !isFormValid() ||

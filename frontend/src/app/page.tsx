@@ -24,6 +24,16 @@ export default function Home() {
   ];
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ssoToken = urlParams.get('token');
+      if (ssoToken) {
+        auth.clearLocalSession();
+        router.replace(`/login?${urlParams.toString()}`);
+        return;
+      }
+    }
+
     // Check if user is already authenticated
     const token = auth.getToken();
     const user = auth.getUser();

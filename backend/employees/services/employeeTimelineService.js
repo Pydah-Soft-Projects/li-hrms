@@ -454,12 +454,12 @@ async function findEmployeesMatchingOrgInRange(Employee, {
 
   const employees = await Employee.find(extraFilter).select(select).lean();
   return employees.filter((emp) => {
+    const divOkMaster = !divSet.length || divSet.includes(idStr(emp.division_id));
+    const deptOkMaster = !deptSet.length || deptSet.includes(idStr(emp.department_id));
+    if (divOkMaster && deptOkMaster) return true;
+
     const hist = Array.isArray(emp.orgHistory) ? emp.orgHistory : [];
-    if (hist.length === 0) {
-      const divOk = !divSet.length || divSet.includes(idStr(emp.division_id));
-      const deptOk = !deptSet.length || deptSet.includes(idStr(emp.department_id));
-      return divOk && deptOk;
-    }
+    if (hist.length === 0) return false;
     return hist.some((seg) => {
       if (!segmentsOverlapRange(seg, rs, re)) return false;
       const divOk = !divSet.length || divSet.includes(idStr(seg.division_id));

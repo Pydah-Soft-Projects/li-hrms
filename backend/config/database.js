@@ -31,6 +31,12 @@ const closeMongoDB = async () => {
 
 const initializeDatabases = async () => {
   await connectMongoDB();
+  try {
+    const { getTransportConnection } = require('../transport/services/transportDbService');
+    await getTransportConnection();
+  } catch (err) {
+    console.warn('⚠️ Transport Database initialization note:', err.message);
+  }
 };
 
 module.exports = {

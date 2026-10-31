@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { api, Division, Department, Employee, Designation } from '@/lib/api';
+import { api, Division, Department, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import { 
     FileText, 
@@ -20,7 +20,15 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { downloadLeaveODReportPdf, type LeaveODReportExportFilters } from '@/lib/leaveOdReportExport';
+import { 
+    downloadLeaveODReportPdf, 
+    downloadLeaveODReportXlsx,
+    normalizeLeaveOdTypesForSelect, 
+    type LeaveODReportExportFilters, 
+    type LeaveOdTypeOption 
+} from '@/lib/leaveOdReportExport';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 export default function LeaveReportsTab() {
     const [loading, setLoading] = useState(false);
@@ -31,14 +39,18 @@ export default function LeaveReportsTab() {
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
-    
     const [designations, setDesignations] = useState<Designation[]>([]);
+    const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<LeaveOdTypeOption[]>([]);
     
     // Selection states
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
+    const [groupFilterIds, setGroupFilterIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+    const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('');
+    const [statusFilter, setStatusFilter] = useState<string>('');
     
     // Date/Mode states
     const [dateMode, setDateMode] = useState<'pay_cycle' | 'monthly' | 'range'>('pay_cycle');
@@ -55,7 +67,7 @@ export default function LeaveReportsTab() {
         totalLeaves: 0,
         totalApprovedLeaves: 0,
         totalPendingLeaves: 0,
-        totalRejectedLeaves: 0 // Will calculate if not provided
+        totalRejectedLeaves: 0
     });
     const [loadingData, setLoadingData] = useState(false);
     const [page, setPage] = useState(1);
@@ -69,13 +81,17 @@ export default function LeaveReportsTab() {
     const loadInitialFilters = async () => {
         setFetchingFilters(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, grpRes, typeRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
+                api.getLeaveTypes('leave'),
                 api.getSetting('payroll_cycle_start_day'),
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (desRes.success) setDesignations(desRes.data || []);
+            if (grpRes.success) setGroups(grpRes.data || []);
+            if (typeRes.success) setLeaveTypes(normalizeLeaveOdTypesForSelect(typeRes.data || []));
             if (settingRes?.success && settingRes.data?.value) {
                 setPayrollStartDay(parseInt(settingRes.data.value));
             }
@@ -166,24 +182,31 @@ export default function LeaveReportsTab() {
         division: divisionIds,
         department: departmentIds,
         designation: designationIds,
+        group: groupFilterIds,
         employeeId: employeeIds,
+        leaveType: leaveTypeFilter || undefined,
+        status: statusFilter || undefined,
     };
 
     const fetchReportData = async () => {
         setLoadingData(true);
         try {
-            const query = new URLSearchParams({
+            const queryParams: Record<string, string> = {
                 page: page.toString(),
                 limit: limit.toString(),
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
-                ...(searchQuery ? { search: searchQuery } : {}),
-                division: divisionIds.join(','),
-                department: departmentIds.join(','),
-                designation: designationIds.join(','),
-                employeeId: employeeIds.join(',')
-            }).toString();
+            };
+            if (searchQuery) queryParams.search = searchQuery;
+            if (divisionIds.length) queryParams.division = divisionIds.join(',');
+            if (departmentIds.length) queryParams.department = departmentIds.join(',');
+            if (designationIds.length) queryParams.designation = designationIds.join(',');
+            if (groupFilterIds.length) queryParams.group = groupFilterIds.join(',');
+            if (employeeIds.length) queryParams.employeeId = employeeIds.join(',');
+            if (leaveTypeFilter) queryParams.leaveType = leaveTypeFilter;
+            if (statusFilter) queryParams.status = statusFilter;
 
+            const query = new URLSearchParams(queryParams).toString();
             const res = await api.get(`/leaves/?${query}`);
             if (res.success) {
                 setReportData(res.data || []);
@@ -198,16 +221,20 @@ export default function LeaveReportsTab() {
 
     const fetchStats = async () => {
         try {
-            const query = new URLSearchParams({
+            const queryParams: Record<string, string> = {
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
-                ...(searchQuery ? { search: searchQuery } : {}),
-                division: divisionIds.join(','),
-                department: departmentIds.join(','),
-                designation: designationIds.join(','),
-                employeeId: employeeIds.join(',')
-            }).toString();
+            };
+            if (searchQuery) queryParams.search = searchQuery;
+            if (divisionIds.length) queryParams.division = divisionIds.join(',');
+            if (departmentIds.length) queryParams.department = departmentIds.join(',');
+            if (designationIds.length) queryParams.designation = designationIds.join(',');
+            if (groupFilterIds.length) queryParams.group = groupFilterIds.join(',');
+            if (employeeIds.length) queryParams.employeeId = employeeIds.join(',');
+            if (leaveTypeFilter) queryParams.leaveType = leaveTypeFilter;
+            if (statusFilter) queryParams.status = statusFilter;
 
+            const query = new URLSearchParams(queryParams).toString();
             const res = await api.get(`/leaves/dashboard-stats?${query}`);
             if (res.success && res.data) {
                 setReportStats(res.data);
@@ -223,66 +250,75 @@ export default function LeaveReportsTab() {
             fetchStats();
         }, 500);
         return () => clearTimeout(timer);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, page, payrollStartDay]);
+    }, [divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, leaveTypeFilter, statusFilter, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, page, payrollStartDay]);
 
     // Reset pagination on filter change
     useEffect(() => {
         setPage(1);
-    }, [divisionIds, departmentIds, designationIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
+    }, [divisionIds, departmentIds, designationIds, groupFilterIds, employeeIds, leaveTypeFilter, statusFilter, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery]);
 
-    const handleExport = async () => {
-        const toastId = toast.loading('Generating PDF report...');
-        setLoading(true);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
 
-        try {
-            await downloadLeaveODReportPdf(
-                exportFilters,
-                { includeLeaves: true, includeODs: false, includeSummary: true },
-                `Leaves_Report_${effectiveDates.start}_to_${effectiveDates.end}.pdf`
-            );
-            toast.success('PDF downloaded successfully!', { id: toastId });
-        } catch (error: unknown) {
-            console.error('PDF export error:', error);
-            const msg = error instanceof Error ? error.message : 'Failed to export PDF';
-            toast.error(msg, { id: toastId });
-        } finally {
-            setLoading(false);
-        }
+    const LEAVE_COLUMNS: ColumnOption[] = [
+        { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+        { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row.employee_name || row.employeeName || '—' },
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const dept = emp.department_id || emp.department;
+                if (dept && typeof dept === 'object' && dept.name) return dept.name;
+                if (typeof dept === 'string' && dept.length !== 24) return dept;
+            }
+            const raw = row.department_id || row.department || row.departmentName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const div = emp.division_id || emp.division;
+                if (div && typeof div === 'object' && div.name) return div.name;
+                if (typeof div === 'string' && div.length !== 24) return div;
+            }
+            const raw = row.division_id || row.division || row.divisionName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'leaveType', label: 'Leave Type', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.leaveType?.name || row.leaveType?.code || (typeof row.leaveType === 'string' ? row.leaveType : '—') },
+        { key: 'fromDate', label: 'From Date', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.fromDate ? dayjs(row.fromDate).format('YYYY-MM-DD') : '—' },
+        { key: 'toDate', label: 'To Date', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.toDate ? dayjs(row.toDate).format('YYYY-MM-DD') : '—' },
+        { key: 'totalDays', label: 'Total Days', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.totalDays ?? row.numberOfDays ?? '—' },
+        { key: 'reason', label: 'Reason', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.reason || '—' },
+        { key: 'status', label: 'Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.status || '—' },
+        { key: 'createdAt', label: 'Applied On', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.createdAt ? dayjs(row.createdAt).format('YYYY-MM-DD') : '—' },
+    ];
+
+    const openExportModal = (fmt: 'excel' | 'pdf') => {
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
     };
 
-    const handleExportXLSX = async () => {
-        const toastId = toast.loading('Generating Leave Excel report...');
-        setLoadingXlsx(true);
-        
+    const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        setLoading(true);
         try {
-            const blob = await api.downloadLeaveODReportXLSX({
-                fromDate: effectiveDates.start,
-                toDate: effectiveDates.end,
-                search: searchQuery || undefined,
-                division: divisionIds,
-                department: departmentIds,
-                designation: designationIds,
-                employeeId: employeeIds,
-                includeLeaves: true,
-                includeODs: false,
-                includeSummary: true,
+            exportReportWithColumns({
+                title: 'Leave Applications Report',
+                subtitle: `Period: ${effectiveDates.start} to ${effectiveDates.end}`,
+                data: reportData,
+                columns: LEAVE_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `Leaves_Report_${effectiveDates.start}_to_${effectiveDates.end}`,
             });
-
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Leaves_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            
-            toast.success('Leaves Excel Downloaded Successfully!', { id: toastId });
+            toast.success(`${format.toUpperCase()} downloaded successfully!`);
+            setIsColumnModalOpen(false);
         } catch (error: any) {
-            console.error('Export error:', error);
-            toast.error(error.message || 'Failed to generate Excel', { id: toastId });
+            toast.error(error.message || 'Export failed');
         } finally {
-            setLoadingXlsx(false);
+            setLoading(false);
         }
     };
 
@@ -298,28 +334,28 @@ export default function LeaveReportsTab() {
                         <div>
                             <h3 className="text-sm font-black text-indigo-900 dark:text-indigo-100 uppercase tracking-wider">Leave Applications Report</h3>
                             <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 mt-1 font-medium">
-                                Generate detailed PDF reports for employee leave applications. 
+                                Generate detailed PDF & Excel reports for employee leave applications. 
                             </p>
                         </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={handleExport}
-                            disabled={loading || loadingXlsx}
+                            onClick={() => openExportModal('pdf')}
+                            disabled={loading}
                             className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
                         >
                             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                            {loading ? 'Generating...' : 'Export PDF'}
+                            Export PDF
                         </button>
 
                         <button
-                            onClick={handleExportXLSX}
-                            disabled={loading || loadingXlsx}
+                            onClick={() => openExportModal('excel')}
+                            disabled={loading}
                             className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50"
                         >
-                            {loadingXlsx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                            {loadingXlsx ? 'Generating...' : 'Export XLSX'}
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                            Export XLSX
                         </button>
                     </div>
                 </div>
@@ -358,12 +394,46 @@ export default function LeaveReportsTab() {
                             loading={fetchingFilters}
                         />
                         <MultiSelect
+                            label="Group"
+                            options={groups.map(g => ({ id: g._id, name: g.name }))}
+                            selectedIds={groupFilterIds}
+                            onChange={setGroupFilterIds}
+                            loading={fetchingFilters}
+                        />
+                        <MultiSelect
                             label="Employee"
                             options={employees.map(e => ({ id: e._id, name: `${e.employee_name} (${e.emp_no})` }))}
                             selectedIds={employeeIds}
                             onChange={setEmployeeIds}
                             disabled={departmentIds.length === 0}
                         />
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Leave Type</label>
+                            <select
+                                value={leaveTypeFilter}
+                                onChange={(e) => setLeaveTypeFilter(e.target.value)}
+                                className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500/20 outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                            >
+                                <option value="">All Leave Types</option>
+                                {leaveTypes.map((t) => (
+                                    <option key={t.code} value={t.code}>{t.name} ({t.code})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Status</label>
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500/20 outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                            >
+                                <option value="">All Status</option>
+                                <option value="approved">Approved</option>
+                                <option value="pending">Pending</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -657,6 +727,16 @@ export default function LeaveReportsTab() {
                     </table>
                 </div>
             </div>
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="Leave Applications Report"
+                exportFormat={exportFormat}
+                columns={LEAVE_COLUMNS}
+                onConfirmExport={handleConfirmExport}
+                loading={loading}
+            />
         </div>
     );
 }

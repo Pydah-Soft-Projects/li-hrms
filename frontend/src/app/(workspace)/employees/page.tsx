@@ -441,6 +441,8 @@ export default function EmployeesPage() {
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
   const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
   const [selectedEmployeeGroupFilter, setSelectedEmployeeGroupFilter] = useState('');
+  const [dojStartDate, setDojStartDate] = useState('');
+  const [dojEndDate, setDojEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -943,7 +945,7 @@ export default function EmployeesPage() {
     if (activeTab !== 'requests' && canViewApplications) {
       loadUpdateRequests();
     }
-  }, [searchQuery, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, includeLeftEmployees, itemsPerPage]);
+  }, [searchQuery, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, selectedEmployeeGroupFilter, includeLeftEmployees, itemsPerPage, dojStartDate, dojEndDate]);
 
   // Server-side search with debounce removed - Search only on Enter or Button click
   // useEffect(() => {
@@ -1412,6 +1414,8 @@ export default function EmployeesPage() {
         ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
         ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
         ...(selectedEmployeeGroupFilter ? { employee_group_id: selectedEmployeeGroupFilter } : {}),
+        ...(dojStartDate ? { doj_start: dojStartDate } : {}),
+        ...(dojEndDate ? { doj_end: dojEndDate } : {}),
       });
       if (response.success) {
         const employeesData = (response.data || []).map((emp: any) => ({
@@ -2488,6 +2492,23 @@ export default function EmployeesPage() {
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
     const matchesActive = includeLeftEmployees || emp.is_active !== false;
 
+    // Filter by DOJ
+    let matchesDoj = true;
+    if (dojStartDate || dojEndDate) {
+      if (!emp.doj) {
+        matchesDoj = false;
+      } else {
+        const empDoj = new Date(emp.doj);
+        if (Number.isNaN(empDoj.getTime())) {
+          matchesDoj = false;
+        } else {
+          const empDateStr = empDoj.toISOString().slice(0, 10);
+          if (dojStartDate && empDateStr < dojStartDate) matchesDoj = false;
+          if (dojEndDate && empDateStr > dojEndDate) matchesDoj = false;
+        }
+      }
+    }
+
     // Apply only non-scope header filters (e.g. status); division/department/designation are server-side
     const scopeFilterKeys = ['division.name', 'department.name', 'designation.name', 'employee_group.name'];
     const matchesHeaderFilters = Object.entries(employeeFilters).every(([key, value]) => {
@@ -2497,7 +2518,7 @@ export default function EmployeesPage() {
       return String(actualValue || '') === value;
     });
 
-    return matchesLeftFilter && matchesActive && matchesHeaderFilters;
+    return matchesLeftFilter && matchesActive && matchesDoj && matchesHeaderFilters;
   });
 
 
@@ -3328,6 +3349,8 @@ export default function EmployeesPage() {
       designation_id: selectedDesignationFilter || undefined,
       employee_group_id: selectedEmployeeGroupFilter || undefined,
       includeLeft: includeLeftEmployees ? 'true' : 'false',
+      doj_start: dojStartDate || undefined,
+      doj_end: dojEndDate || undefined,
     }),
     [
       searchQuery,
@@ -3336,6 +3359,8 @@ export default function EmployeesPage() {
       selectedDesignationFilter,
       selectedEmployeeGroupFilter,
       includeLeftEmployees,
+      dojStartDate,
+      dojEndDate,
     ]
   );
 
@@ -3666,6 +3691,39 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {/* Date of Joining (DOJ) Filter */}
+                <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-900 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0">DOJ:</span>
+                  <input
+                    type="date"
+                    value={dojStartDate}
+                    onChange={(e) => setDojStartDate(e.target.value)}
+                    title="Date of Joining: From"
+                    className="bg-transparent text-xs text-slate-700 focus:outline-none dark:text-slate-200"
+                  />
+                  <span className="text-xs text-slate-400">-</span>
+                  <input
+                    type="date"
+                    value={dojEndDate}
+                    onChange={(e) => setDojEndDate(e.target.value)}
+                    title="Date of Joining: To"
+                    className="bg-transparent text-xs text-slate-700 focus:outline-none dark:text-slate-200"
+                  />
+                  {(dojStartDate || dojEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDojStartDate('');
+                        setDojEndDate('');
+                      }}
+                      className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 text-xs"
+                      title="Clear DOJ filter"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
                 <label className="flex items-center gap-1.5 cursor-pointer shrink-0 ml-1">
                   <input
                     type="checkbox"
@@ -3962,6 +4020,11 @@ export default function EmployeesPage() {
                 setSearchTerm('');
                 setEmployeeFilters({});
                 setSelectedDivisionFilter('');
+                setSelectedDepartmentFilter('');
+                setSelectedDesignationFilter('');
+                setSelectedEmployeeGroupFilter('');
+                setDojStartDate('');
+                setDojEndDate('');
               }}
               className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
             >
@@ -3985,6 +4048,9 @@ export default function EmployeesPage() {
                           Department
                         </th>
                       )}
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">
+                        DOJ
+                      </th>
                       {userRole !== 'hod' && userRole !== 'employee' && (
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-650 dark:text-slate-350 select-none">Gross Salary</th>
                       )}
@@ -4042,6 +4108,9 @@ export default function EmployeesPage() {
                             {employee.department?.name || '-'}
                           </td>
                         )}
+                        <td className="whitespace-nowrap px-3 py-2 text-xs font-normal text-text-secondary">
+                          {employee.doj ? new Date(employee.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        </td>
                         {userRole !== 'hod' && userRole !== 'employee' && (
                           <td className="whitespace-nowrap px-3 py-2 text-xs font-normal text-text-secondary">
                             {employee.gross_salary ? `₹${employee.gross_salary.toLocaleString()}` : '-'}
@@ -4286,6 +4355,12 @@ export default function EmployeesPage() {
                       <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                         <span className="font-medium">Role:</span>
                         <span className="font-bold">{employee.designation.name}</span>
+                      </div>
+                    )}
+                    {employee.doj && (
+                      <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="font-medium">DOJ:</span>
+                        <span className="font-bold">{new Date(employee.doj).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                       </div>
                     )}
                     {employee.phone_number && (

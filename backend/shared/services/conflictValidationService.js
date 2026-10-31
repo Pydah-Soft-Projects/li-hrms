@@ -315,6 +315,17 @@ const getAttendanceCoverageForDate = async (employeeNumber, date) => {
       out.punchOutTime = dateToIstTimeStr(attendance.outTime);
     }
 
+    const { dailyHasShiftLevelIn, dailyHasShiftLevelOut } = require('../../attendance/utils/attendanceHalfPresence');
+    const hasIn = dailyHasShiftLevelIn(attendance);
+    const hasOut = dailyHasShiftLevelOut(attendance);
+    out.hasIn = hasIn;
+    out.hasOut = hasOut;
+    out.isNullPunches = !hasIn && !hasOut;
+    out.isTwoPunches = hasIn && hasOut;
+    out.isSinglePunchIn = hasIn && !hasOut;
+    out.isSinglePunchOut = !hasIn && hasOut;
+    out.isSinglePunch = !out.isNullPunches && !out.isTwoPunches;
+
     const st = String(attendance.status || '').toUpperCase();
     if (st === 'PRESENT') {
       setFullDayAttendancePresence(out);
@@ -837,6 +848,37 @@ const validateODRequest = async (
     const reqMins = timeStrToMins(reqOdEnd) - timeStrToMins(reqOdStart);
     if (reqMins > 0 && existingHoursOdMinutes + reqMins > 8 * 60) {
       errors.push('Total hour-based OD on this date would exceed 8 hours. Use half day or full day OD instead.');
+    }
+  }
+
+  // 3. Validate punch requirements for OD: on partial / attendance days, OD can ONLY be applied
+  // if there are two punches (both IN and OUT) or null punches. Single punch of IN is restricted.
+  if (employeeNumber) {
+    try {
+      const { dailyHasShiftLevelIn, dailyHasShiftLevelOut } = require('../../attendance/utils/attendanceHalfPresence');
+      const dates = eachDateStrInRange(fromDate, toDate);
+      for (const dStr of dates) {
+        const dDaily = await AttendanceDaily.findOne({
+          employeeNumber: employeeNumber.toUpperCase(),
+          date: dStr,
+        }).select('status shifts inTime outTime');
+        if (dDaily) {
+          const hasIn = dailyHasShiftLevelIn(dDaily);
+          const hasOut = dailyHasShiftLevelOut(dDaily);
+          const isNullPunches = !hasIn && !hasOut;
+          const isTwoPunches = hasIn && hasOut;
+          const isSinglePunchIn = hasIn && !hasOut;
+          const isSinglePunch = !isNullPunches && !isTwoPunches;
+
+          if (!options?.hasFileUploadPermission && (isSinglePunchIn || isSinglePunch)) {
+            errors.push(
+              `Cannot apply OD on ${dStr}. A single punch (${isSinglePunchIn ? 'IN only' : 'single punch'}) is recorded. On partial attendance days, employees can only apply OD if both IN and OUT punches are present or if there are no punches (null punches).`
+            );
+          }
+        }
+      }
+    } catch (punchErr) {
+      console.error('Error validating OD attendance punches:', punchErr);
     }
   }
 

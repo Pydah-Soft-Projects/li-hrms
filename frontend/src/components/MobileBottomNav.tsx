@@ -114,9 +114,8 @@ export default function MobileBottomNav() {
     isWorkspacePathActive(code, href, pathname);
 
   const handleLogout = async () => {
-    if (!(await auth.logoutWithConfirmation())) return;
-    router.push('/login');
     setIsMoreOpen(false);
+    await auth.logoutWithConfirmation();
   };
 
   return (

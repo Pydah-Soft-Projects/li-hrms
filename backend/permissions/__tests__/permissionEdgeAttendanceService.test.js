@@ -3,6 +3,7 @@
  */
 
 const {
+  applyEdgePermissionAdjustmentsToShiftSegment,
   applyStatusFromDuration,
   resolveDailyStatusFromShifts,
   timeOnDate,
@@ -64,5 +65,25 @@ describe('permissionEdgeAttendanceService helpers', () => {
     expect(resolveDailyStatusFromShifts([
       { status: 'ABSENT', payableShift: 0, outTime: null },
     ])).toBe('PARTIAL');
+  });
+
+  test('applyEdgePermissionAdjustmentsToShiftSegment resets edgePermissionHours to 0 when outTime is missing', async () => {
+    const pShift = {
+      shiftStartTime: '09:00',
+      shiftEndTime: '21:00',
+      inTime: new Date('2026-09-05T10:00:00+05:30'),
+      outTime: null,
+      punchHours: 0,
+      odHours: 0,
+      edgePermissionHours: 0.75,
+      workingHours: 0.75,
+    };
+    await applyEdgePermissionAdjustmentsToShiftSegment({
+      employeeNumber: '1139',
+      date: '2026-09-05',
+      pShift,
+    });
+    expect(pShift.edgePermissionHours).toBe(0);
+    expect(pShift.workingHours).toBe(0);
   });
 });

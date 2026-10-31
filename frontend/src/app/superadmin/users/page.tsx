@@ -82,6 +82,7 @@ import {
   loansFormInputStyle,
   loansFormSelectClass,
 } from '@/components/loans/LoanDetailDialogShell';
+import Link from 'next/link';
 import { ledgerActionButtonClass, ledgerTableActionsCellClass, ledgerTableActionsGroupClass, ledgerTableActionsHeaderClass } from '@/lib/ledgerUi';
 import { UserViewDialog } from '@/components/users/UserViewDialog';
 import {
@@ -1777,6 +1778,15 @@ export default function UsersPage() {
               </select>
             </div>
             <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+              <Link
+                href="/superadmin/user-audits"
+                className={hdrOutlineBtn}
+                style={loansDialogOutlineButtonStyle()}
+                title="View user audit history"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
+                User Audits
+              </Link>
               <button
                 type="button"
                 onClick={openFromEmployeeDialog}

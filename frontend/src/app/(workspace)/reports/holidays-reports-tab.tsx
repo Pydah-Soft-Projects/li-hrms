@@ -10,6 +10,8 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { auth } from '@/lib/auth';
 
 dayjs.extend(isSameOrAfter);
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 export default function HolidaysReportsTab() {
   const [loading, setLoading] = useState(false);
@@ -140,38 +142,51 @@ export default function HolidaysReportsTab() {
     return 'All Groups';
   };
 
-  const handleDownloadPDF = async () => {
-    setLoadingPdf(true);
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const HOLIDAY_COLUMNS: ColumnOption[] = [
+    { key: 'name', label: 'Holiday Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.name || '—' },
+    { key: 'date', label: 'Date', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.date ? dayjs(row.date).format('YYYY-MM-DD') : '—' },
+    { key: 'day', label: 'Day of Week', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.date ? dayjs(row.date).format('dddd') : '—' },
+    { key: 'type', label: 'Type', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.type || 'Mandatory' },
+    { key: 'scope', label: 'Applicable Scope', defaultChecked: true, isNecessary: true, getValue: (row: any) => getAppliedGroupsText(row) },
+    { key: 'description', label: 'Description', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.description || '—' },
+  ];
+
+  const openExportModal = (fmt: 'excel' | 'pdf') => {
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    setLoading(true);
     try {
-      await api.downloadHolidaysPDF({
-        year: selectedYear,
-        division: divisionIds.length > 0 ? divisionIds.join(',') : undefined,
-        search: searchQuery || undefined,
+      exportReportWithColumns({
+        title: `Holidays List Report (${selectedYear})`,
+        subtitle: `Generated on ${dayjs().format('YYYY-MM-DD')}`,
+        data: holidays,
+        columns: HOLIDAY_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Holidays_Report_${selectedYear}`,
       });
-      toast.success('PDF report downloaded successfully');
-    } catch (e) {
-      console.error('PDF export error:', e);
-      toast.error('Failed to download PDF report');
+      toast.success(`${format.toUpperCase()} report downloaded successfully!`);
+      setIsColumnModalOpen(false);
+    } catch (e: any) {
+      console.error('Export error:', e);
+      toast.error(e.message || 'Export failed');
     } finally {
-      setLoadingPdf(false);
+      setLoading(false);
     }
   };
 
+  const handleDownloadPDF = async () => {
+    openExportModal('pdf');
+  };
+
   const handleDownloadXLSX = async () => {
-    setLoadingXlsx(true);
-    try {
-      await api.downloadHolidaysXLSX({
-        year: selectedYear,
-        division: divisionIds.length > 0 ? divisionIds.join(',') : undefined,
-        search: searchQuery || undefined,
-      });
-      toast.success('Excel report downloaded successfully');
-    } catch (e) {
-      console.error('Excel export error:', e);
-      toast.error('Failed to download Excel report');
-    } finally {
-      setLoadingXlsx(false);
-    }
+    openExportModal('excel');
   };
 
   const currentYearNum = new Date().getFullYear();
@@ -405,6 +420,16 @@ export default function HolidaysReportsTab() {
           </div>
         )}
       </div>
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Holidays Report"
+        exportFormat={exportFormat}
+        columns={HOLIDAY_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={loading}
+      />
     </div>
   );
 }

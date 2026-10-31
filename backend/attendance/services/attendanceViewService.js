@@ -1,6 +1,7 @@
 const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Leave = require('../../leaves/model/Leave');
+const LeaveSplit = require('../../leaves/model/LeaveSplit');
 const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
@@ -209,6 +210,9 @@ function resolveDayStatus(ctx) {
   if (hasLeave && (record?.status === 'HOLIDAY' || record?.status === 'WEEK_OFF')) {
     if (leaveInfo?.isHalfDay) return { status: 'PARTIAL' };
     return { status: 'LEAVE' };
+  }
+  if (hasLeave && hasOD) {
+    if (leaveInfo?.isHalfDay) return { status: 'PARTIAL' };
   }
   if (hasLeave && record?.status === 'LEAVE') return { status: 'LEAVE' };
   if (record?.status) return { status: record.status };
@@ -487,6 +491,33 @@ exports.getCalendarViewData = async (employee, year, month) => {
     }
   });
 
+  const approvedLeaveSplits = await LeaveSplit.find({
+    employeeId: employee._id,
+    status: 'approved',
+    date: { $gte: startDateObj, $lte: endDateObj },
+  }).lean();
+
+  approvedLeaveSplits.forEach((split) => {
+    const dateStr = extractISTComponents(split.date).dateStr;
+    if (dateStr >= startDateStr && dateStr <= endDateStr) {
+      leaveMap[dateStr] = {
+        leaveId: split.leaveId || split._id,
+        leaveType: split.leaveType,
+        leaveNature: split.leaveNature,
+        isHalfDay: Boolean(split.isHalfDay),
+        halfDayType: split.halfDayType || null,
+        fromIsHalfDay: Boolean(split.isHalfDay),
+        fromHalfDayType: split.halfDayType || null,
+        toIsHalfDay: Boolean(split.isHalfDay),
+        toHalfDayType: split.halfDayType || null,
+        numberOfDays: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+        segmentDaysOnDate: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+        dayInLeave: 1,
+        appliedAt: split.created_at || split.createdAt,
+      };
+    }
+  });
+
   const odMap = {};
   approvedODs.forEach(od => {
     const odRangeStart = extractISTComponents(od.fromDate).dateStr;
@@ -571,7 +602,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       // Map from first/last shift for display, or use shifts array in frontend
       // inTime and outTime are now provided within the shifts array for multi-shift support
       totalHours: record.totalWorkingHours, // Use aggregate
-      status: isEsiLeaveDay ? 'LEAVE' : record.status,
+      status: isEsiLeaveDay ? 'LEAVE' : (hasLeave && hasOD && leaveMap[record.date]?.isHalfDay ? 'PARTIAL' : record.status),
       payableShifts: record.payableShifts || 0,
       shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
       shiftName: record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.name : null,
@@ -731,6 +762,17 @@ exports.getMonthlyTableViewData = async (
           )
           .lean()
       : Promise.resolve([]),
+    needs.leaves
+      ? LeaveSplit.find({
+          employeeId: { $in: empIds },
+          status: 'approved',
+          date: { $gte: startDateObj, $lte: endDateObj },
+        })
+          .select(
+            'leaveId employeeId date leaveType leaveNature isHalfDay halfDayType numberOfDays'
+          )
+          .lean()
+      : Promise.resolve([]),
     needs.od
       ? OD.find({
           employeeId: { $in: empIds },
@@ -754,6 +796,7 @@ exports.getMonthlyTableViewData = async (
     attendanceRecords,
     approvedOTs,
     allLeaves,
+    allLeaveSplits,
     allODs,
     preCalculatedSummaries,
     employeePolicyMap,
@@ -771,6 +814,28 @@ exports.getMonthlyTableViewData = async (
         const entry = buildAttendanceLeaveInfoForDate(leave, dateStr);
         if (entry) leaveMapByEmployee[empNo][dateStr] = entry;
       }
+    }
+  });
+
+  allLeaveSplits.forEach((split) => {
+    const empNo = empIdToNo.get(String(split.employeeId));
+    if (!empNo) return;
+    if (!leaveMapByEmployee[empNo]) leaveMapByEmployee[empNo] = {};
+    const dateStr = extractISTComponents(split.date).dateStr;
+    if (dateStr >= startYmd && dateStr <= endYmd) {
+      leaveMapByEmployee[empNo][dateStr] = {
+        leaveId: split.leaveId || split._id,
+        leaveType: split.leaveType,
+        leaveNature: split.leaveNature,
+        isHalfDay: Boolean(split.isHalfDay),
+        halfDayType: split.halfDayType || null,
+        fromIsHalfDay: Boolean(split.isHalfDay),
+        fromHalfDayType: split.halfDayType || null,
+        toIsHalfDay: Boolean(split.isHalfDay),
+        toHalfDayType: split.halfDayType || null,
+        numberOfDays: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+        segmentDaysOnDate: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+      };
     }
   });
 

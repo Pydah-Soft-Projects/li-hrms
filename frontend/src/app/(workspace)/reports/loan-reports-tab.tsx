@@ -24,6 +24,8 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import LoanDetailsModal from './loan-details-modal';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface LoanSummary {
     id: string;
@@ -353,40 +355,67 @@ export default function LoanReportsTab({
         }
     };
 
-    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', options?: { exportMode?: string; groupBy?: string }) => {
-        const toastId = toast.loading(`Preparing your ${format.toUpperCase()} report...`);
-        try {
-            const params: any = {
-                ...buildReportParams(1),
-                exportMode: options?.exportMode || exportMode,
-                groupBy: options?.groupBy || (exportMode === 'summary' ? exportGroupBy : undefined),
-            };
-            delete params.page;
-            delete params.limit;
-
-            let blob;
-            if (format === 'xlsx') {
-                blob = await api.exportLoanReport(params);
-            } else {
-                blob = await api.exportLoanReportPDF(params);
+    const LOAN_COLUMNS: ColumnOption[] = [
+        { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+        { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row.employee_name || row.employeeName || '—' },
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const dept = emp.department_id || emp.department;
+                if (dept && typeof dept === 'object' && dept.name) return dept.name;
+                if (typeof dept === 'string' && dept.length !== 24) return dept;
             }
+            const raw = row.department_id || row.department || row.departmentName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const div = emp.division_id || emp.division;
+                if (div && typeof div === 'object' && div.name) return div.name;
+                if (typeof div === 'string' && div.length !== 24) return div;
+            }
+            const raw = row.division_id || row.division || row.divisionName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'requestType', label: 'Type', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.requestType === 'salary_advance' ? 'Salary Advance' : 'Loan' },
+        { key: 'amount', label: 'Sanctioned Amount (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.amount ?? '—' },
+        { key: 'monthlyEmi', label: 'Monthly EMI (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.monthlyEmi ?? row.emiAmount ?? '—' },
+        { key: 'totalRecovered', label: 'Total Recovered (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.totalRecovered ?? row.paidAmount ?? 0 },
+        { key: 'balanceAmount', label: 'Balance Outstanding (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.balanceAmount ?? '—' },
+        { key: 'status', label: 'Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.status || '—' },
+        { key: 'createdAt', label: 'Applied Date', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.createdAt ? dayjs(row.createdAt).format('YYYY-MM-DD') : '—' },
+    ];
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
+    const handleConfirmColumnExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        setLoading(true);
+        try {
             const fileNamePrefix = requestType === 'salary_advance' ? 'salary_advance' : 'loan';
-            const scopeSuffix = exportMode === 'summary' ? `_${exportGroupBy}` : employeeIds.length === 1 ? '_personal' : '';
-            a.download = `${fileNamePrefix}_report${scopeSuffix}_${effectiveDates.start}_to_${effectiveDates.end}.${format}`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
+            exportReportWithColumns({
+                title: `${requestType === 'salary_advance' ? 'Salary Advance' : 'Loan'} Applications Report`,
+                subtitle: `Period: ${effectiveDates.start} to ${effectiveDates.end}`,
+                data: records,
+                columns: LOAN_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `${fileNamePrefix}_report_${effectiveDates.start}_to_${effectiveDates.end}`,
+            });
+            toast.success(`${format.toUpperCase()} report downloaded successfully`);
             setShowExportModal(false);
-            toast.success(`${format.toUpperCase()} report downloaded successfully`, { id: toastId });
         } catch (error: any) {
             console.error('Export error:', error);
-            toast.error(error.message || 'Export failed', { id: toastId });
+            toast.error(error.message || 'Export failed');
+        } finally {
+            setLoading(false);
         }
+    };
+
+    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', options?: { exportMode?: string; groupBy?: string }) => {
+        setShowExportModal(true);
     };
 
     const navigateTo = (level: 'all' | 'division' | 'department' | 'employee', id?: string) => {
@@ -1135,65 +1164,15 @@ export default function LoanReportsTab({
                     />
                 )}
 
-                {/* Export Modal */}
-                {showExportModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Export Report</h3>
-                                <button onClick={() => setShowExportModal(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                                    <X className="h-5 w-5 text-slate-400" />
-                                </button>
-                            </div>
-                            <div className="p-6 space-y-5">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Export Type</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            onClick={() => setExportMode('detailed')}
-                                            className={`py-3 rounded-xl text-xs font-black uppercase ${exportMode === 'detailed' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}
-                                        >
-                                            Detailed List
-                                        </button>
-                                        <button
-                                            onClick={() => setExportMode('summary')}
-                                            className={`py-3 rounded-xl text-xs font-black uppercase ${exportMode === 'summary' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}
-                                        >
-                                            Grouped Summary
-                                        </button>
-                                    </div>
-                                </div>
-                                {exportMode === 'summary' && (
-                                    <div>
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Group By</label>
-                                        <select
-                                            value={exportGroupBy}
-                                            onChange={(e) => setExportGroupBy(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-bold p-3"
-                                        >
-                                            <option value="division">Division Wise</option>
-                                            <option value="department">Department Wise</option>
-                                            <option value="designation">Designation Wise</option>
-                                            <option value="employee_group">Employee Group Wise</option>
-                                            <option value="employee">Employee Wise</option>
-                                        </select>
-                                    </div>
-                                )}
-                                <p className="text-[10px] text-slate-500">
-                                    Period: {dayjs(effectiveDates.start).format('DD MMM YYYY')} – {dayjs(effectiveDates.end).format('DD MMM YYYY')}
-                                    {employeeIds.length === 1 && ' · Personal report'}
-                                </p>
-                                <button
-                                    onClick={() => handleExport(exportFormat)}
-                                    className="w-full py-4 rounded-2xl bg-rose-600 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-700 flex items-center justify-center gap-2"
-                                >
-                                    <Download className="h-4 w-4" />
-                                    Download {exportFormat.toUpperCase()}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <ExportColumnModal
+                    isOpen={showExportModal}
+                    onClose={() => setShowExportModal(false)}
+                    reportName={`${requestType === 'salary_advance' ? 'Salary Advance' : 'Loans'} Report`}
+                    exportFormat={exportFormat === 'pdf' ? 'pdf' : 'excel'}
+                    columns={LOAN_COLUMNS}
+                    onConfirmExport={handleConfirmColumnExport}
+                    loading={loading}
+                />
             </div>
         </div>
     );

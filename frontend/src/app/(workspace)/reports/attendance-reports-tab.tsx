@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api, Department, Division, Employee, Designation } from '@/lib/api';
+import { api, Department, Division, Employee, Designation, EmployeeGroup } from '@/lib/api';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
     Search,
@@ -21,6 +21,8 @@ import {
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { format } from 'date-fns';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface AttendanceSummary {
     id: string;
@@ -43,6 +45,7 @@ interface AttendanceSummary {
     totalLate?: number;
     totalOD?: number;
     lateMinutes: number;
+    employee?: any;
 }
 
 interface AttendanceRecord {
@@ -74,6 +77,7 @@ export default function AttendanceReportsTab() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
 
     // View & Tab states
     const [viewMode, setViewMode] = useState<'detailed' | 'abstract'>('abstract');
@@ -103,6 +107,7 @@ export default function AttendanceReportsTab() {
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [designationIds, setDesignationIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+    const [employeeGroupIds, setEmployeeGroupIds] = useState<string[]>([]);
     const [allDesignations, setAllDesignations] = useState<Designation[]>([]);
     const [designations, setDesignations] = useState<Designation[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -114,6 +119,7 @@ export default function AttendanceReportsTab() {
     const [summaries, setSummaries] = useState<AttendanceSummary[]>([]);
 
     // Export Dialog states
+    const [isExportLoading, setIsExportLoading] = useState(false);
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [exportParams, setExportParams] = useState({
         startDate: dayjs().startOf('month').format('YYYY-MM-DD'),
@@ -124,15 +130,51 @@ export default function AttendanceReportsTab() {
         strict: false
     });
 
+    const getResolvedDateRange = useCallback(() => {
+        let s = startDate;
+        let e = endDate;
+        if (dateMode === 'monthly') {
+            const year = parseInt(selectedYear);
+            const month = parseInt(selectedMonth);
+            s = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
+            e = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
+        } else if (dateMode === 'pay_cycle') {
+            const startDay = payrollStartDay;
+            const year = parseInt(selectedYear);
+            const month = parseInt(selectedMonth);
+            if (startDay === 1) {
+                s = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
+                e = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
+            } else {
+                const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
+                const prevMonthStart = currentMonthStart.subtract(1, 'month');
+                s = prevMonthStart.format('YYYY-MM-DD');
+                e = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
+            }
+        }
+        return { startDate: s, endDate: e };
+    }, [dateMode, selectedYear, selectedMonth, payrollStartDay, startDate, endDate]);
+
+    const openAdvancedExportDialog = useCallback(() => {
+        const range = getResolvedDateRange();
+        setExportParams(prev => ({
+            ...prev,
+            startDate: range.startDate || prev.startDate,
+            endDate: range.endDate || prev.endDate,
+        }));
+        setIsExportDialogOpen(true);
+    }, [getResolvedDateRange]);
+
     const loadReport = useCallback(async (pageToLoad: number = page) => {
         setLoading(true);
         try {
-            // Determine groupBy based on drilldownLevel
-            let groupBy: string | undefined;
-            if (viewMode === 'abstract') {
-                if (drilldownLevel === 'all') groupBy = 'division';
-                else if (drilldownLevel === 'division') groupBy = 'department';
-                else if (drilldownLevel === 'department') groupBy = 'employee';
+            let groupBy: string | undefined = undefined;
+            if (drilldownLevel === 'all') {
+                groupBy = 'division';
+            } else if (drilldownLevel === 'division') {
+                groupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                groupBy = 'employee';
             }
 
             const params: any = {
@@ -167,10 +209,11 @@ export default function AttendanceReportsTab() {
                 params.endDate = endDate;
             }
 
-            if (departmentIds.length > 0) params.departmentId = departmentIds;
-            if (divisionIds.length > 0) params.divisionId = divisionIds;
-            if (designationIds.length > 0) params.designationId = designationIds;
-            if (employeeIds.length > 0) params.employeeId = employeeIds;
+            if (departmentIds.length > 0) params.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) params.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) params.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) params.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds.join(',');
 
             const response = await api.getAttendanceReportSummary(params);
             if (response.success) {
@@ -197,7 +240,7 @@ export default function AttendanceReportsTab() {
         } finally {
             setLoading(false);
         }
-    }, [page, limit, searchQuery, viewMode, drilldownLevel, dateMode, selectedMonth, selectedYear, startDate, endDate, departmentIds, divisionIds, designationIds, employeeIds]);
+    }, [page, limit, searchQuery, viewMode, drilldownLevel, dateMode, selectedMonth, selectedYear, startDate, endDate, departmentIds, divisionIds, designationIds, employeeIds, employeeGroupIds]);
 
     useEffect(() => {
         loadInitialFilters();
@@ -211,12 +254,14 @@ export default function AttendanceReportsTab() {
         setFetchingFilters(true);
         setFetchingSettings(true);
         try {
-            const [divRes, desRes, settingRes] = await Promise.all([
+            const [divRes, desRes, groupRes, settingRes] = await Promise.all([
                 api.getDivisions(true),
                 api.getAllDesignations(),
+                api.getEmployeeGroups(true),
                 api.getSetting('payroll_cycle_start_day')
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
+            if (groupRes.success) setEmployeeGroups(groupRes.data || []);
             if (desRes.success) {
                 setAllDesignations(desRes.data || []);
                 setDesignations(desRes.data || []);
@@ -334,80 +379,460 @@ export default function AttendanceReportsTab() {
         }
     };
 
-    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', usePageFilters: boolean = false) => {
-        const toastId = toast.loading(`Preparing your ${format.toUpperCase()} report...`);
+    const ATTENDANCE_COLUMNS: ColumnOption[] = useMemo(() => [
+        { key: 'emp_no', label: 'EC No.', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : null) || (typeof row.employeeNumber === 'string' && row.employeeNumber.length !== 24 ? row.employeeNumber : null) || (typeof row.empNo === 'string' && row.empNo.length !== 24 ? row.empNo : null) || (typeof row.id === 'string' && row.id.length !== 24 ? row.id : null) || '—' },
+        { key: 'employee_name', label: 'Name of the Employee', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.employee_name || row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee_name || row.name || '—' },
+        { key: 'designation', label: 'Designation', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employee || row.employeeId || row.employee_id;
+            if (emp && typeof emp === 'object') {
+                const des = emp.designation_id || emp.designation;
+                if (des && typeof des === 'object' && des.name) return des.name;
+                if (typeof des === 'string' && des.length !== 24) return des;
+            }
+            const raw = row.designation_id || row.designation || row.designationName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.division_id?.name || row.employeeId?.division_id?.name || row.division_id?.name || row.division || '—' },
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employee?.department_id?.name || row.employeeId?.department_id?.name || row.department_id?.name || row.department || '—' },
+        { key: 'group', label: 'Group', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.employee?.group_id?.name || row.employeeId?.group_id?.name || row.group || '—' },
+        { key: 'present', label: 'PRESENT DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.present === 'number') return row.present;
+            if (typeof row.totalPresent === 'number') return row.totalPresent;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('PRESENT_FULL') || st === 'PRESENT') return 1;
+                if (st.includes('HALF_DAY') || st === 'PARTIAL') return 0.5;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'absent', label: 'ABSENT DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.absent === 'number') return row.absent;
+            if (typeof row.totalAbsent === 'number') return row.totalAbsent;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('ABSENT')) return 1;
+                if (st.includes('HALF_DAY')) return 0.5;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'leave', label: 'LEAVE DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.leave === 'number') return row.leave;
+            if (typeof row.totalLeave === 'number') return row.totalLeave;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('LEAVE')) return 1;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'cl', label: 'LEAVE DAYS - CL', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.cl ?? 0 },
+        { key: 'ccl', label: 'LEAVE DAYS - CCL', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.ccl ?? 0 },
+        { key: 'lop', label: 'LEAVE DAYS - LOP', defaultChecked: true, isNecessary: false, getValue: (row: any) => row.lop ?? 0 },
+        { key: 'wo', label: 'WEEK OFFS', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.wo === 'number') return row.wo;
+            if (typeof row.totalWO === 'number') return row.totalWO;
+            if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('WEEK_OFF') || st === 'WO') return 1;
+                return 0;
+            }
+            return 0;
+        }},
+        { key: 'totalDays', label: 'TOTAL DAYS', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.totalCount ?? row.daysInRange ?? row.totalDays ?? 1 },
+        { key: 'late', label: 'LATES / EARLY OUTS', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.late ?? row.totalLateInMinutes ?? 0 },
+        { key: 'absDeduction', label: 'Deduction Days - ABS (extra)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.absDeduction ?? row.absentDeduction ?? 0 },
+        { key: 'lopDeduction', label: 'Deduction Days - LOP', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lopDeduction ?? row.lop ?? 0 },
+        { key: 'lateDeduction', label: 'Deduction Days - Late/Early out related', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lateDeduction ?? 0 },
+        { key: 'totalPaidDays', label: 'Total Paid Days', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            if (typeof row.totalPaidDays === 'number') return row.totalPaidDays;
+            if (typeof row.paidDays === 'number') return row.paidDays;
+            if (typeof row.payableShifts === 'number') return row.payableShifts;
+            const p = (typeof row.status === 'string' && (row.status.toUpperCase().includes('PRESENT_FULL') || row.status.toUpperCase() === 'PRESENT')) ? 1 : (typeof row.status === 'string' && (row.status.toUpperCase().includes('HALF_DAY') || row.status.toUpperCase() === 'PARTIAL')) ? 0.5 : (row.present || 0);
+            const w = (typeof row.status === 'string' && (row.status.toUpperCase().includes('WEEK_OFF') || row.status.toUpperCase() === 'WO')) ? 1 : (row.wo || 0);
+            return p + w;
+        }},
+        { key: 'firstInTime', label: 'First Punch (In Time)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.firstInTime ? dayjs(row.firstInTime).format('hh:mm A') : (row.inTime ? dayjs(row.inTime).format('hh:mm A') : '—') },
+        { key: 'lastOutTime', label: 'Last Punch (Out Time)', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.lastOutTime ? dayjs(row.lastOutTime).format('hh:mm A') : (row.outTime ? dayjs(row.outTime).format('hh:mm A') : '—') },
+        { key: 'workingHours', label: 'Total Working Hours', defaultChecked: false, isNecessary: false, getValue: (row: any) => (typeof row.totalWorkingHours === 'number' ? row.totalWorkingHours.toFixed(2) : (typeof row.workingHours === 'number' ? row.workingHours.toFixed(2) : '—')) },
+    ], []);
+
+    const THUMB_COLUMNS: ColumnOption[] = useMemo(() => [
+        { key: 'timestamp', label: 'Timestamp', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.timestamp ? dayjs(row.timestamp).format('YYYY-MM-DD HH:mm:ss') : '—' },
+        { key: 'employeeId', label: 'Employee ID / Code', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.emp_no : null) || (typeof row.employeeId === 'string' && row.employeeId.length !== 24 ? row.employeeId : null) || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : null) || '—' },
+        { key: 'employeeName', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.employee_name : null) || row.employeeName || row.employee_name || '—' },
+        { key: 'logType', label: 'Log Type (IN/OUT)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.logType || '—' },
+        { key: 'attendanceStatus', label: 'Day Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.attendanceStatus || '—' },
+        { key: 'deviceName', label: 'Device Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.deviceName || '—' },
+        { key: 'receivedAt', label: 'Received At', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.receivedAt ? dayjs(row.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '—' },
+    ], []);
+
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+    const openColumnExportModal = (fmt: 'excel' | 'pdf') => {
+        setIsExportDialogOpen(false);
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
+    };
+
+    const aggregateRecordsByEmployee = (rawRecords: any[]) => {
+        if (!rawRecords || rawRecords.length === 0) return [];
+
+        const empCountMap = new Map<string, number>();
+        rawRecords.forEach((row: any) => {
+            const empNo = row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || row.emp_no || row.employeeNumber || row.empNo || row.id;
+            const key = empNo && empNo !== '—' ? String(empNo) : (row.employee?.employee_name || row.employeeId?.employee_name || row.employee_name || row.name || 'unknown');
+            empCountMap.set(key, (empCountMap.get(key) || 0) + 1);
+        });
+
+        const hasDuplicates = Array.from(empCountMap.values()).some(count => count > 1);
+        if (!hasDuplicates) {
+            return rawRecords;
+        }
+
+        const empMap = new Map<string, any>();
+        rawRecords.forEach((row: any) => {
+            const empNo = row.employee?.emp_no || row.employeeId?.emp_no || row.employee_id?.emp_no || row.emp_no || row.employeeNumber || row.empNo || row.id;
+            const empKey = empNo && empNo !== '—' ? String(empNo) : (row.employee?.employee_name || row.employeeId?.employee_name || row.employee_name || row.name || 'unknown');
+
+            if (!empMap.has(empKey)) {
+                empMap.set(empKey, {
+                    ...row,
+                    emp_no: empNo,
+                    present: 0,
+                    absent: 0,
+                    leave: 0,
+                    cl: 0,
+                    ccl: 0,
+                    lop: 0,
+                    wo: 0,
+                    totalDays: 0,
+                    late: 0,
+                    absDeduction: 0,
+                    lopDeduction: 0,
+                    lateDeduction: 0,
+                    totalPaidDays: 0,
+                });
+            }
+
+            const aggregated = empMap.get(empKey)!;
+            aggregated.totalDays += 1;
+
+            if (typeof row.present === 'number') aggregated.present += row.present;
+            else if (typeof row.totalPresent === 'number') aggregated.present += row.totalPresent;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('PRESENT_FULL') || st === 'PRESENT') aggregated.present += 1;
+                else if (st.includes('HALF_DAY') || st === 'PARTIAL') aggregated.present += 0.5;
+            }
+
+            if (typeof row.absent === 'number') aggregated.absent += row.absent;
+            else if (typeof row.totalAbsent === 'number') aggregated.absent += row.totalAbsent;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('ABSENT')) aggregated.absent += 1;
+                else if (st.includes('HALF_DAY')) aggregated.absent += 0.5;
+            }
+
+            if (typeof row.wo === 'number') aggregated.wo += row.wo;
+            else if (typeof row.totalWO === 'number') aggregated.wo += row.totalWO;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('WEEK_OFF') || st === 'WO') aggregated.wo += 1;
+            }
+
+            if (typeof row.leave === 'number') aggregated.leave += row.leave;
+            else if (typeof row.totalLeave === 'number') aggregated.leave += row.totalLeave;
+            else if (typeof row.status === 'string') {
+                const st = row.status.toUpperCase();
+                if (st.includes('LEAVE')) aggregated.leave += 1;
+            }
+
+            if (typeof row.late === 'number') aggregated.late += row.late;
+            else if (typeof row.totalLateInMinutes === 'number') aggregated.late += row.totalLateInMinutes;
+
+            aggregated.totalPaidDays = aggregated.present + aggregated.wo;
+        });
+
+        return Array.from(empMap.values());
+    };
+
+    const handleConfirmColumnExport = async (
+        selectedKeys: string[],
+        format: 'excel' | 'pdf',
+        extraOptions?: {
+            includeThumbLogs?: boolean;
+            selectedThumbKeys?: string[];
+        }
+    ) => {
+        setIsExportLoading(true);
         try {
-            const params: any = {
-                divisionId: divisionIds,
-                departmentId: departmentIds,
-                designationId: designationIds,
-                employeeId: employeeIds,
-                groupBy: drilldownLevel === 'all' ? 'division' : (drilldownLevel === 'division' ? 'department' : 'employee')
+            let effectiveGroupBy = 'division';
+            if (drilldownLevel === 'division') {
+                effectiveGroupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                effectiveGroupBy = 'employee';
+            }
+
+
+            const range = getResolvedDateRange();
+            const effectiveStart = exportParams.startDate || range.startDate;
+            const effectiveEnd = exportParams.endDate || range.endDate;
+
+            const exportApiParams: any = {
+                startDate: effectiveStart,
+                endDate: effectiveEnd,
+                groupBy: effectiveGroupBy,
+                search: searchQuery || undefined,
             };
 
-            if (usePageFilters) {
-                if (dateMode === 'monthly') {
-                    params.month = selectedMonth;
-                    params.year = selectedYear;
-                } else if (dateMode === 'pay_cycle') {
-                    const startDay = payrollStartDay;
-                    const year = parseInt(selectedYear);
-                    const month = parseInt(selectedMonth);
-                    if (startDay === 1) {
-                        params.startDate = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
-                        params.endDate = dayjs(`${year}-${month}-01`).endOf('month').format('YYYY-MM-DD');
-                    } else {
-                        const currentMonthStart = dayjs(`${year}-${month}-${startDay}`);
-                        const prevMonthStart = currentMonthStart.subtract(1, 'month');
-                        params.startDate = prevMonthStart.format('YYYY-MM-DD');
-                        params.endDate = currentMonthStart.subtract(1, 'day').format('YYYY-MM-DD');
-                    }
-                } else {
-                    params.startDate = startDate;
-                    params.endDate = endDate;
-                }
-            } else {
-                params.startDate = exportParams.startDate;
-                params.endDate = exportParams.endDate;
-                if (exportParams.strict) params.strict = true;
+            if (departmentIds.length > 0) exportApiParams.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) exportApiParams.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) exportApiParams.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) exportApiParams.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) exportApiParams.employeeGroupId = employeeGroupIds.join(',');
+            if (exportParams.strict) exportApiParams.strict = true;
 
-                // Sync with page's month/year if not in range mode
-                if (dateMode === 'monthly') {
-                    params.month = selectedMonth;
-                    params.year = selectedYear;
-                    delete params.startDate;
-                    delete params.endDate;
+            if (format === 'excel') {
+                const blob = await api.exportAttendanceReport(exportApiParams);
+                const fileName = `attendance_report_${effectiveStart}_to_${effectiveEnd}.xlsx`;
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+
+                toast.success('Excel attendance report with Summary, Details & Biometric Logs downloaded successfully!');
+                setIsColumnModalOpen(false);
+                setIsExportDialogOpen(false);
+                return;
+            }
+
+            if (format === 'pdf') {
+                try {
+                    const blob = await api.exportAttendanceReportPDF(exportApiParams);
+                    const fileName = `attendance_report_${effectiveStart}_to_${effectiveEnd}.pdf`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    }, 100);
+                    toast.success('PDF attendance report downloaded successfully!');
+                    setIsColumnModalOpen(false);
+                    setIsExportDialogOpen(false);
+                    return;
+                } catch (pdfErr) {
+                    console.warn('Backend PDF export failed, falling back to client exporter:', pdfErr);
                 }
             }
 
-            let blob;
-            let extension;
-            if (format === 'xlsx') {
-                blob = await api.exportAttendanceReport(params);
-                extension = 'xlsx';
+            // Fallback for PDF or legacy exporter
+            let rawData: any[] = [];
+            const params: any = {
+                page: 1,
+                limit: 100000,
+                search: searchQuery,
+                groupBy: effectiveGroupBy
+            };
+            params.startDate = effectiveStart;
+            params.endDate = effectiveEnd;
+            if (departmentIds.length > 0) params.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) params.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) params.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) params.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) params.employeeGroupId = employeeGroupIds.join(',');
+
+            const shouldFetchThumbLogs = Boolean(
+                extraOptions?.includeThumbLogs &&
+                extraOptions.selectedThumbKeys &&
+                extraOptions.selectedThumbKeys.length > 0
+            );
+
+            const attendancePromise = api.getAttendanceReportSummary(params);
+            const thumbLogsPromise = shouldFetchThumbLogs
+                ? api.getThumbReports({
+                    startDate: dayjs(effectiveStart).startOf('day').toISOString(),
+                    endDate: dayjs(effectiveEnd).endOf('day').toISOString(),
+                    employeeId: employeeIds.length > 0 ? employeeIds : undefined,
+                    employeeGroupId: employeeGroupIds.length > 0 ? employeeGroupIds : undefined,
+                    departmentId: departmentIds.length > 0 ? departmentIds : undefined,
+                    divisionId: divisionIds.length > 0 ? divisionIds : undefined,
+                    designationId: designationIds.length > 0 ? designationIds : undefined,
+                    search: searchQuery || undefined,
+                    page: 1,
+                    limit: 100000,
+                })
+                : Promise.resolve(null);
+
+            const [response, thumbRes] = await Promise.all([attendancePromise, thumbLogsPromise]);
+
+            if (response.success && response.summaries && response.summaries.length > 0) {
+                rawData = response.summaries;
+            } else if (response.success && response.data && response.data.length > 0) {
+                rawData = response.data;
             } else {
-                blob = await api.exportAttendanceReportPDF(params);
-                extension = 'pdf';
+                rawData = records && records.length > 0 ? records : summaries;
             }
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const dateStr = params.startDate ? `${params.startDate}_to_${params.endDate}` : `${params.month}_${params.year}`;
-            a.download = `attendance_report_${dateStr}.${extension}`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            toast.success(`${format.toUpperCase()} report downloaded successfully`, { id: toastId });
+            const dataToExport = aggregateRecordsByEmployee(rawData);
+
+            const additionalSheets: any[] = [];
+            if (shouldFetchThumbLogs && thumbRes?.data) {
+                const thumbData = Array.isArray(thumbRes.data) ? thumbRes.data : [];
+                additionalSheets.push({
+                    sheetName: 'Biometric Logs',
+                    title: 'BIOMETRIC THUMB LOGS REPORT',
+                    subtitle: `Period: ${effectiveStart} to ${effectiveEnd}`,
+                    data: thumbData,
+                    columns: THUMB_COLUMNS,
+                    selectedKeys: extraOptions!.selectedThumbKeys!,
+                });
+            }
+
+            exportReportWithColumns({
+                title: 'REPORT ON ATTENDANCE',
+                subtitle: 'Parameters are as per Department, Division, Designation, Group, Date Range, etc',
+                sheetName: 'Attendance Summary',
+                data: dataToExport,
+                columns: ATTENDANCE_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `Attendance_Report_${effectiveStart}_to_${effectiveEnd}`,
+                additionalSheets: additionalSheets.length > 0 ? additionalSheets : undefined,
+            });
+
+            toast.success(
+                shouldFetchThumbLogs
+                    ? `${format.toUpperCase()} attendance report with biometric logs downloaded successfully!`
+                    : `${format.toUpperCase()} attendance report downloaded successfully!`
+            );
+            setIsColumnModalOpen(false);
             setIsExportDialogOpen(false);
         } catch (error: any) {
             console.error('Export error:', error);
+            toast.error(error.message || 'Export failed');
+        } finally {
+            setIsExportLoading(false);
+        }
+    };
+
+    const handleExport = async (format: 'xlsx' | 'pdf' = 'xlsx', usePageFilters: boolean = false) => {
+        setIsExportLoading(true);
+        const toastId = toast.loading(`Preparing ${format === 'xlsx' ? 'Excel' : 'PDF'} report...`);
+        try {
+            let effectiveGroupBy = 'division';
+            if (drilldownLevel === 'division') {
+                effectiveGroupBy = 'department';
+            } else if (drilldownLevel === 'department' || drilldownLevel === 'employee') {
+                effectiveGroupBy = 'employee';
+            }
+
+            let start: string;
+            let end: string;
+
+            if (!usePageFilters) {
+                // Strictly use dates selected in Advanced Export Dialog
+                start = exportParams.startDate;
+                end = exportParams.endDate;
+            } else {
+                // Use active page filters
+                const range = getResolvedDateRange();
+                start = range.startDate;
+                end = range.endDate;
+            }
+
+            if (!start || !end) {
+                toast.error('Start date and End date are required', { id: toastId });
+                return;
+            }
+
+            const exportApiParams: any = {
+                startDate: start,
+                endDate: end,
+                groupBy: effectiveGroupBy,
+                search: searchQuery || undefined,
+            };
+
+            if (departmentIds.length > 0) exportApiParams.departmentId = departmentIds.join(',');
+            if (divisionIds.length > 0) exportApiParams.divisionId = divisionIds.join(',');
+            if (designationIds.length > 0) exportApiParams.designationId = designationIds.join(',');
+            if (employeeIds.length > 0) exportApiParams.employeeId = employeeIds.join(',');
+            if (employeeGroupIds.length > 0) exportApiParams.employeeGroupId = employeeGroupIds.join(',');
+
+            if (!usePageFilters && exportParams.strict) {
+                exportApiParams.strict = true;
+            }
+
+            if (format === 'xlsx') {
+                const blob = await api.exportAttendanceReport(exportApiParams);
+                const fileName = `attendance_report_${start}_to_${end}.xlsx`;
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+
+                toast.success('Excel attendance report with Summary, Details & Biometric Logs downloaded successfully!', { id: toastId });
+                setIsExportDialogOpen(false);
+                return;
+            }
+
+            if (format === 'pdf') {
+                try {
+                    const blob = await api.exportAttendanceReportPDF(exportApiParams);
+                    const fileName = `attendance_report_${start}_to_${end}.pdf`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    }, 100);
+
+                    toast.success('PDF attendance report downloaded successfully!', { id: toastId });
+                    setIsExportDialogOpen(false);
+                    return;
+                } catch (pdfErr) {
+                    console.warn('Backend PDF export failed, falling back to client exporter:', pdfErr);
+                    setIsExportDialogOpen(false);
+                    setExportFormat('pdf');
+                    setIsColumnModalOpen(true);
+                }
+            }
+        } catch (error: any) {
+            console.error('Export error:', error);
             toast.error(error.message || 'Export failed', { id: toastId });
+        } finally {
+            setIsExportLoading(false);
         }
     };
 
     const navigateTo = (level: 'all' | 'division' | 'department' | 'employee', id?: string) => {
+        setLoading(true);
+        setSummaries([]);
+        setRecords([]);
         if (level === 'employee') {
             setViewMode('detailed');
             if (id) setEmployeeIds([id]);
@@ -442,7 +867,7 @@ export default function AttendanceReportsTab() {
         setPage(1);
     };
 
-    const isFiltered = divisionIds.length > 0 || departmentIds.length > 0 || designationIds.length > 0 || employeeIds.length > 0;
+    const isFiltered = divisionIds.length > 0 || departmentIds.length > 0 || designationIds.length > 0 || employeeIds.length > 0 || employeeGroupIds.length > 0;
     const getBreadcrumbs = () => {
         const items = [{ label: 'Reports', level: 'all', id: 'all' }];
         if (divisionIds.length > 0) {
@@ -508,11 +933,13 @@ export default function AttendanceReportsTab() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {loading && summaries.length === 0 ? (
+                                {loading ? (
                                     <tr>
                                         <td colSpan={12} className="py-20 text-center">
                                             <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mx-auto" />
-                                            <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Aggregating Data...</p>
+                                            <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                Loading {drilldownLevel === 'all' ? 'Divisions' : drilldownLevel === 'division' ? 'Departments' : 'Employees'}...
+                                            </p>
                                         </td>
                                     </tr>
                                 ) : summaries.length === 0 ? (
@@ -770,6 +1197,7 @@ export default function AttendanceReportsTab() {
                             setDivisionIds([]);
                             setDepartmentIds([]);
                             setEmployeeIds([]);
+                            setEmployeeGroupIds([]);
                             setDesignationIds([]);
                             setDesignations(allDesignations);
                             setDrilldownLevel('all');
@@ -788,7 +1216,7 @@ export default function AttendanceReportsTab() {
                         Apply
                     </button>
                     <button
-                        onClick={() => setIsExportDialogOpen(true)}
+                        onClick={openAdvancedExportDialog}
                         className="h-10 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 flex items-center gap-2"
                         title="Advanced Export (Filters & Custom Range)"
                     >
@@ -797,10 +1225,11 @@ export default function AttendanceReportsTab() {
                     </button>
                     <button
                         onClick={() => handleExport('pdf', true)}
-                        className="h-10 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2"
+                        disabled={isExportLoading}
+                        className="h-10 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-200 dark:shadow-none active:scale-95 flex items-center gap-2 disabled:opacity-50"
                         title="Quick Download PDF (Current Filters)"
                     >
-                        <Download className="h-4 w-4" />
+                        {isExportLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                         Download PDF
                     </button>
                 </div>
@@ -844,6 +1273,13 @@ export default function AttendanceReportsTab() {
                             selectedIds={employeeIds}
                             onChange={setEmployeeIds}
                             disabled={departmentIds.length === 0}
+                        />
+                        <MultiSelect
+                            label="Group"
+                            options={employeeGroups.map(group => ({ id: group._id, name: group.name }))}
+                            selectedIds={employeeGroupIds}
+                            onChange={setEmployeeGroupIds}
+                            loading={fetchingFilters}
                         />
                     </div>
                 </div>
@@ -1097,13 +1533,46 @@ export default function AttendanceReportsTab() {
                             </div>
                         </div>
                         <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap gap-3">
-                            <button onClick={() => setIsExportDialogOpen(false)} className="flex-1 h-10 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={() => handleExport('xlsx')} className="flex-[2] min-w-[120px] h-10 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-colors shadow-sm">Export XLSX</button>
-                            <button onClick={() => handleExport('pdf')} className="flex-[2] min-w-[120px] h-10 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-rose-700 transition-colors shadow-sm">Export PDF</button>
+                            <button
+                                onClick={() => setIsExportDialogOpen(false)}
+                                disabled={isExportLoading}
+                                className="flex-1 h-10 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleExport('xlsx', false)}
+                                disabled={isExportLoading}
+                                className="flex-[2] min-w-[120px] h-10 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {isExportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                Export XLSX
+                            </button>
+                            <button
+                                onClick={() => handleExport('pdf', false)}
+                                disabled={isExportLoading}
+                                className="flex-[2] min-w-[120px] h-10 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-rose-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {isExportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                Export PDF
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="Attendance Report"
+                exportFormat={exportFormat}
+                columns={ATTENDANCE_COLUMNS}
+                thumbLogColumns={THUMB_COLUMNS}
+                enableThumbLogsOption={true}
+                defaultIncludeThumbLogs={true}
+                onConfirmExport={handleConfirmColumnExport}
+                loading={isExportLoading}
+            />
         </div>
     );
 }

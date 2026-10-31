@@ -10,6 +10,7 @@ type ContributingDateEntry = { date?: string; value?: number };
 
 export type MonthlySummaryLike = {
   totalPresentDays?: number;
+  totalPayableShifts?: number;
   totalPartialDays?: number;
   totalPartialPresentPayableOverlap?: number;
   contributingDates?: {
@@ -28,11 +29,14 @@ export type MonthlySummaryLike = {
   lateOrEarlyCount?: number;
   totalAttendanceDeductionDays?: number;
   attendanceDeductionBreakdown?: { daysDeducted?: number };
+  totalDaysInMonth?: number;
 } | null;
 
 export type PayRegisterAllRowOptions = {
   /** When `single_shift`, present matches pay register (present + partial − overlap). */
   processingMode?: 'single_shift' | 'multi_shift' | null;
+  /** When true (Security division/department only), counts extra payable shifts towards paidDays. */
+  isSecurity?: boolean;
 };
 
 function contributingDatesPartialPresentOverlap(s: NonNullable<MonthlySummaryLike>): number {
@@ -128,10 +132,19 @@ export function computePayRegisterAllRowFromMonthlySummary(
       paidDays: 0,
     };
   }
-  const useMerge = options?.processingMode === 'single_shift';
+  const isSingleShift = options?.processingMode === 'single_shift';
+  const isSecurity = Boolean(options?.isSecurity);
+  const useMerge = isSingleShift;
   const present = useMerge
     ? mergeSingleShiftPresentForPayRegisterLikeRow(s)
     : round2(Number(s.totalPresentDays) || 0);
+  const rawPayableShifts = Number(s.totalPayableShifts);
+  const usePayableShifts = Boolean(
+    (isSecurity || (!isSingleShift && rawPayableShifts > present)) &&
+    Number.isFinite(rawPayableShifts) &&
+    rawPayableShifts > present
+  );
+  const payableBase = usePayableShifts ? round2(rawPayableShifts) : present;
   const weekOffs = round2(Number(s.totalWeeklyOffs) || 0);
   const holidays = round2(Number(s.totalHolidays) || 0);
   const paidLeaves = round2(Number(s.totalPaidLeaves) || 0);
@@ -150,7 +163,20 @@ export function computePayRegisterAllRowFromMonthlySummary(
   const attRaw = s.totalAttendanceDeductionDays ?? s.attendanceDeductionBreakdown?.daysDeducted ?? 0;
   const attDed = Number.isFinite(Number(attRaw)) ? round2(Number(attRaw)) : 0;
   const totalDaysSummed = round2(present + weekOffs + holidays + totalLeaves + od + absent);
-  const paidDays = Math.max(0, round2(present + weekOffs + holidays + od + paidLeaves - attDed));
+  let paidDays = Math.max(
+    0,
+    round2(
+      usePayableShifts
+        ? payableBase + weekOffs + holidays + od + paidLeaves - attDed
+        : present + weekOffs + holidays + od + paidLeaves - attDed
+    )
+  );
+  if (isSingleShift && !isSecurity) {
+    const maxDays = Number((s as any)?.totalDaysInMonth) || totalDaysSummed || 31;
+    if (maxDays > 0) {
+      paidDays = Math.min(paidDays, maxDays);
+    }
+  }
   return {
     present,
     weekOffs,

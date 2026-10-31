@@ -41,16 +41,30 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [ssoVerifying, setSsoVerifying] = useState(false);
+  const [ssoVerifying, setSsoVerifying] = useState(() => Boolean(searchParams.get("token")));
   const ssoAttempted = useRef(false);
+
+  useEffect(() => {
+    const ssoToken = searchParams.get("token");
+    if (!ssoToken) return;
+
+    const SCRIPT_ID = "pydah-portal-switcher-cdn";
+    if (!document.getElementById(SCRIPT_ID)) {
+      const script = document.createElement("script");
+      script.id = SCRIPT_ID;
+      script.src = process.env.NEXT_PUBLIC_PORTAL_SWITCHER_URL || "https://crm.pydah.edu.in/portal-switcher.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const ssoToken = searchParams.get("token");
 
     if (ssoToken && !ssoAttempted.current) {
-      const currentToken = auth.getToken();
-      if (currentToken) {
-        void auth.logout();
+      auth.clearLocalSession();
+      if (typeof window !== "undefined") {
+        sessionStorage.clear();
       }
       setChecking(false);
       return;
@@ -85,6 +99,7 @@ function LoginContent() {
             response.data.refreshToken
           );
           auth.setUser(response.data.user);
+          auth.setLoginMethod('sso');
           if (response.data.user.role !== "super_admin") {
             setWorkspaceDataFromLogin({
               workspaces: response.data.workspaces || [],
@@ -120,6 +135,7 @@ function LoginContent() {
           response.data.refreshToken
         );
         auth.setUser(response.data.user);
+        auth.setLoginMethod('credentials');
 
         const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
         router.push(dashboardPath);
@@ -134,12 +150,12 @@ function LoginContent() {
     }
   };
 
-  if (checking) {
-    return <LoginLoading message="Authenticating..." />;
+  if (ssoVerifying) {
+    return <pydah-sso-loader />;
   }
 
-  if (ssoVerifying) {
-    return <LoginLoading message="Verifying SSO token..." />;
+  if (checking) {
+    return <LoginLoading message="Authenticating..." />;
   }
 
   return (

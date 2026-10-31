@@ -25,8 +25,13 @@ const AttendanceDeductionsSettings = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [rules, setRules] = useState({
+        evaluationMode: 'combined' as 'combined' | 'separate',
         freeAllowedPerMonth: null as number | null,
         combinedCountThreshold: null as number | null,
+        freeLateInsPerMonth: null as number | null,
+        lateCountThreshold: null as number | null,
+        freeEarlyOutsPerMonth: null as number | null,
+        earlyCountThreshold: null as number | null,
         deductionType: null as 'half_day' | 'full_day' | 'custom_days' | 'custom_amount' | null,
         deductionDays: null as number | null,
         deductionAmount: null as number | null,
@@ -59,7 +64,22 @@ const AttendanceDeductionsSettings = () => {
                 api.getAttendanceDeductionSettings(),
                 api.getEarlyOutSettings()
             ]);
-            if (resRules.success && resRules.data && resRules.data.deductionRules) setRules(resRules.data.deductionRules);
+            if (resRules.success && resRules.data && resRules.data.deductionRules) {
+                setRules({
+                    evaluationMode: resRules.data.deductionRules.evaluationMode || 'combined',
+                    freeAllowedPerMonth: resRules.data.deductionRules.freeAllowedPerMonth ?? null,
+                    combinedCountThreshold: resRules.data.deductionRules.combinedCountThreshold ?? null,
+                    freeLateInsPerMonth: resRules.data.deductionRules.freeLateInsPerMonth ?? null,
+                    lateCountThreshold: resRules.data.deductionRules.lateCountThreshold ?? null,
+                    freeEarlyOutsPerMonth: resRules.data.deductionRules.freeEarlyOutsPerMonth ?? null,
+                    earlyCountThreshold: resRules.data.deductionRules.earlyCountThreshold ?? null,
+                    deductionType: resRules.data.deductionRules.deductionType ?? null,
+                    deductionDays: resRules.data.deductionRules.deductionDays ?? null,
+                    deductionAmount: resRules.data.deductionRules.deductionAmount ?? null,
+                    minimumDuration: resRules.data.deductionRules.minimumDuration ?? null,
+                    calculationMode: resRules.data.deductionRules.calculationMode ?? null,
+                });
+            }
             if (resEarly.success && resEarly.data) setEarlyOut(resEarly.data);
         } catch (err) {
             console.error('Error loading deduction settings:', err);
@@ -120,8 +140,8 @@ const AttendanceDeductionsSettings = () => {
 
             <div className="grid grid-cols-1 gap-10 xl:grid-cols-2">
                 <SettingsSectionCard
-                    title="Combined Multi-Count Penalties"
-                    description="Late-In & Early-Out Aggregation"
+                    title="Multi-Count Attendance Penalties"
+                    description="Late-In & Early-Out Regularization"
                 >
                     <div className="mb-6 flex items-center gap-4">
                         <div
@@ -134,39 +154,159 @@ const AttendanceDeductionsSettings = () => {
 
                     <div className="space-y-8">
                         <SettingsField
-                            label="Free Allowed (Monthly)"
-                            help="First N late-ins + early-outs per month are free; only count above this is used for deduction."
+                            label="Evaluation Protocol"
+                            help="Choose whether Late-Ins and Early-Outs share a combined pool or evaluate separately."
                         >
-                            <div className="relative mx-auto max-w-[120px]">
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={rules.freeAllowedPerMonth ?? ''}
-                                    onChange={(e) => setRules({ ...rules, freeAllowedPerMonth: e.target.value !== '' ? Number(e.target.value) : null })}
-                                    className={`${settingsInputClass()} text-center text-2xl font-black`}
-                                    style={settingsInputStyle()}
-                                    placeholder="0"
-                                />
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    {
+                                        id: 'combined',
+                                        label: 'Combined Pool',
+                                        desc: 'Pools late-ins & early-outs together into 1 quota (legacy behavior)',
+                                    },
+                                    {
+                                        id: 'separate',
+                                        label: 'Separate Quotas',
+                                        desc: 'Independent free allowances & thresholds for late-ins and early-outs',
+                                    },
+                                ].map((m) => (
+                                    <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => setRules({ ...rules, evaluationMode: m.id as 'combined' | 'separate' })}
+                                        className={`flex flex-col rounded-xl border p-3.5 text-left transition-all ${
+                                            rules.evaluationMode === m.id
+                                                ? 'border-red-500 bg-red-50/50 text-red-700 shadow-sm dark:bg-red-950/20 dark:text-red-400'
+                                                : 'border-stone-200 text-stone-500 hover:border-stone-300 dark:border-stone-800 dark:text-stone-400'
+                                        }`}
+                                    >
+                                        <span className="text-[11px] font-black uppercase tracking-tight">{m.label}</span>
+                                        <span className="mt-1 text-[10px] leading-tight text-stone-400 dark:text-stone-500">{m.desc}</span>
+                                    </button>
+                                ))}
                             </div>
                         </SettingsField>
 
-                        <SettingsField
-                            label="Every N (Above Free) = 1 Unit"
-                            help="Deduction applies for every N occurrences above the free limit (e.g. every 3 = 1 unit)."
-                        >
-                            <div className="relative mx-auto max-w-[120px]">
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={rules.combinedCountThreshold ?? ''}
-                                    onChange={(e) => setRules({ ...rules, combinedCountThreshold: e.target.value ? Number(e.target.value) : null })}
-                                    className={`${settingsInputClass()} text-center text-2xl font-black`}
-                                    style={settingsInputStyle()}
-                                    placeholder="e.g. 3"
-                                />
-                                <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-red-500 text-[10px] font-black text-white dark:border-stone-950">#</div>
+                        {rules.evaluationMode === 'separate' ? (
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                {/* Late-In Protocol */}
+                                <div className="space-y-4 rounded-2xl border border-stone-200 bg-stone-50/50 p-4 dark:border-stone-800 dark:bg-stone-900/30">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-stone-700 dark:text-stone-300">
+                                        Late-In Rules
+                                    </span>
+                                    <SettingsField
+                                        label="Free Late-Ins (Monthly)"
+                                        help="First N late-ins are free per month."
+                                    >
+                                        <div className="relative mx-auto max-w-[120px]">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={rules.freeLateInsPerMonth ?? ''}
+                                                onChange={(e) => setRules({ ...rules, freeLateInsPerMonth: e.target.value !== '' ? Number(e.target.value) : null })}
+                                                className={`${settingsInputClass()} text-center text-xl font-black`}
+                                                style={settingsInputStyle()}
+                                                placeholder="3"
+                                            />
+                                        </div>
+                                    </SettingsField>
+
+                                    <SettingsField
+                                        label="Every N Late-Ins = 1 Unit"
+                                        help="Deduction applies for every N late-ins above free limit."
+                                    >
+                                        <div className="relative mx-auto max-w-[120px]">
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={rules.lateCountThreshold ?? ''}
+                                                onChange={(e) => setRules({ ...rules, lateCountThreshold: e.target.value ? Number(e.target.value) : null })}
+                                                className={`${settingsInputClass()} text-center text-xl font-black`}
+                                                style={settingsInputStyle()}
+                                                placeholder="e.g. 4"
+                                            />
+                                        </div>
+                                    </SettingsField>
+                                </div>
+
+                                {/* Early-Out Protocol */}
+                                <div className="space-y-4 rounded-2xl border border-stone-200 bg-stone-50/50 p-4 dark:border-stone-800 dark:bg-stone-900/30">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-stone-700 dark:text-stone-300">
+                                        Early-Out Rules
+                                    </span>
+                                    <SettingsField
+                                        label="Free Early-Outs (Monthly)"
+                                        help="First N early-outs are free per month."
+                                    >
+                                        <div className="relative mx-auto max-w-[120px]">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={rules.freeEarlyOutsPerMonth ?? ''}
+                                                onChange={(e) => setRules({ ...rules, freeEarlyOutsPerMonth: e.target.value !== '' ? Number(e.target.value) : null })}
+                                                className={`${settingsInputClass()} text-center text-xl font-black`}
+                                                style={settingsInputStyle()}
+                                                placeholder="3"
+                                            />
+                                        </div>
+                                    </SettingsField>
+
+                                    <SettingsField
+                                        label="Every N Early-Outs = 1 Unit"
+                                        help="Deduction applies for every N early-outs above free limit."
+                                    >
+                                        <div className="relative mx-auto max-w-[120px]">
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={rules.earlyCountThreshold ?? ''}
+                                                onChange={(e) => setRules({ ...rules, earlyCountThreshold: e.target.value ? Number(e.target.value) : null })}
+                                                className={`${settingsInputClass()} text-center text-xl font-black`}
+                                                style={settingsInputStyle()}
+                                                placeholder="e.g. 4"
+                                            />
+                                        </div>
+                                    </SettingsField>
+                                </div>
                             </div>
-                        </SettingsField>
+                        ) : (
+                            <>
+                                <SettingsField
+                                    label="Free Allowed (Monthly)"
+                                    help="First N late-ins + early-outs per month are free; only count above this is used for deduction."
+                                >
+                                    <div className="relative mx-auto max-w-[120px]">
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={rules.freeAllowedPerMonth ?? ''}
+                                            onChange={(e) => setRules({ ...rules, freeAllowedPerMonth: e.target.value !== '' ? Number(e.target.value) : null })}
+                                            className={`${settingsInputClass()} text-center text-2xl font-black`}
+                                            style={settingsInputStyle()}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                </SettingsField>
+
+                                <SettingsField
+                                    label="Every N (Above Free) = 1 Unit"
+                                    help="Deduction applies for every N occurrences above the free limit (e.g. every 3 = 1 unit)."
+                                >
+                                    <div className="relative mx-auto max-w-[120px]">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={rules.combinedCountThreshold ?? ''}
+                                            onChange={(e) => setRules({ ...rules, combinedCountThreshold: e.target.value ? Number(e.target.value) : null })}
+                                            className={`${settingsInputClass()} text-center text-2xl font-black`}
+                                            style={settingsInputStyle()}
+                                            placeholder="e.g. 3"
+                                        />
+                                        <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-red-500 text-[10px] font-black text-white dark:border-stone-950">#</div>
+                                    </div>
+                                </SettingsField>
+                            </>
+                        )}
 
                         <SettingsField label="Calculation Mode">
                             <div className="grid grid-cols-2 gap-2">
@@ -244,7 +384,7 @@ const AttendanceDeductionsSettings = () => {
                             )}
                         </SettingsField>
 
-                        <SettingsSaveBar onSave={handleSaveRules} saving={saving} label="Commit Combined Protocols" />
+                        <SettingsSaveBar onSave={handleSaveRules} saving={saving} label="Commit Deduction Protocols" />
                     </div>
                 </SettingsSectionCard>
 

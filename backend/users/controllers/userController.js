@@ -14,7 +14,7 @@ const { generateLegacyToken } = require('../../authentication/services/tokenServ
 // Generate JWT Token (legacy fallback — prefer session-based login tokens)
 const generateToken = (userId) => generateLegacyToken(userId);
 
-async function logUserHistory({ userId, event, reqUser, details, comments }) {
+async function logUserHistory({ userId, event, reqUser, targetUser, details, comments }) {
   try {
     await UserHistory.create({
       userId,
@@ -22,6 +22,10 @@ async function logUserHistory({ userId, event, reqUser, details, comments }) {
       performedBy: reqUser?._id || null,
       performedByName: reqUser?.name || null,
       performedByRole: reqUser?.role || null,
+      targetUserName: targetUser?.name || null,
+      targetUserEmail: targetUser?.email || null,
+      targetUserRole: targetUser?.role || null,
+      targetEmployeeId: targetUser?.employeeId || null,
       details: details || {},
       comments: comments || null,
     });
@@ -30,7 +34,45 @@ async function logUserHistory({ userId, event, reqUser, details, comments }) {
   }
 }
 
-
+async function formatDivisionMappingSummary(mappings) {
+  if (!Array.isArray(mappings) || mappings.length === 0) return [];
+  const result = [];
+  for (const m of mappings) {
+    if (!m) continue;
+    const divId = m.division?._id || m.division;
+    let divName = m.division?.name || m.division?.code;
+    if (!divName && divId) {
+      try {
+        const dDoc = await Division.findById(divId).select('name code').lean();
+        divName = dDoc?.name || dDoc?.code || String(divId);
+      } catch (e) {
+        divName = String(divId);
+      }
+    }
+    const deptIds = m.departments || [];
+    const deptNames = [];
+    for (const d of deptIds) {
+      if (!d) continue;
+      let dName = d?.name || d?.code;
+      const dId = d?._id || d;
+      if (!dName && dId) {
+        try {
+          const dpDoc = await Department.findById(dId).select('name code').lean();
+          dName = dpDoc?.name || dpDoc?.code || String(dId);
+        } catch (e) {
+          dName = String(dId);
+        }
+      }
+      if (dName) deptNames.push(dName);
+    }
+    result.push({
+      divisionId: String(divId || ''),
+      divisionName: divName || 'Unknown Division',
+      departments: deptNames,
+    });
+  }
+  return result;
+}
 
 // @desc    Register a new user
 // @route   POST /api/users/register
@@ -149,6 +191,7 @@ exports.registerUser = async (req, res) => {
       userId: user._id,
       event: 'user_created',
       reqUser: req.user,
+      targetUser: user,
       details: {
         role: user.role,
         roles: user.roles,
@@ -156,7 +199,7 @@ exports.registerUser = async (req, res) => {
         dataScope: user.dataScope,
         managedHolidayGroupIds: user.managedHolidayGroupIds || [],
       },
-      comments: 'User created',
+      comments: `User created with role ${user.role}`,
     });
 
     // HOD Sync: Update every department in divisionMapping with this user as HOD for the respective division
@@ -399,6 +442,7 @@ exports.createUserFromEmployee = async (req, res) => {
       userId: user._id,
       event: 'user_created_from_employee',
       reqUser: req.user,
+      targetUser: user,
       details: {
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
@@ -406,7 +450,7 @@ exports.createUserFromEmployee = async (req, res) => {
         roles: user.roles,
         managedHolidayGroupIds: user.managedHolidayGroupIds || [],
       },
-      comments: 'User created from employee',
+      comments: `User created from employee ${employee.emp_no} with role ${user.role}`,
     });
 
     // Employee history: user created / promoted (from employee to role)
@@ -646,6 +690,13 @@ exports.updateUser = async (req, res) => {
     const originalRole = user.role;
     const originalRoles = Array.isArray(user.roles) ? [...user.roles] : [];
     const originalIsActive = user.isActive;
+    const originalDataScope = user.dataScope;
+    const originalScope = user.scope;
+    const originalFeatureControl = Array.isArray(user.featureControl) ? [...user.featureControl] : [];
+    const originalName = user.name || '';
+    const originalPhone = user.phone_number || '';
+    const originalEmployeeId = user.employeeId || '';
+    const originalDivisionMapping = JSON.parse(JSON.stringify(user.divisionMapping || []));
 
     // Track if role changed for workspace update
     const roleChanged = role && role !== user.role;
@@ -687,13 +738,115 @@ exports.updateUser = async (req, res) => {
 
     await user.save();
 
+    // Compute diffs for audit trail
+    const diffs = {};
+    let isAccessChange = false;
+
+    if (role !== undefined && role !== originalRole) {
+      diffs.role = { from: originalRole, to: role };
+      isAccessChange = true;
+    }
+    if (isActive !== undefined && isActive !== originalIsActive) {
+      diffs.isActive = { from: originalIsActive, to: isActive };
+      isAccessChange = true;
+    }
+    if (dataScope !== undefined && dataScope !== originalDataScope) {
+      diffs.dataScope = { from: originalDataScope, to: dataScope };
+      isAccessChange = true;
+    }
+    if (scope !== undefined && scope !== originalScope) {
+      diffs.scope = { from: originalScope, to: scope };
+      isAccessChange = true;
+    }
+    if (featureControl !== undefined) {
+      const origSet = new Set(originalFeatureControl);
+      const newFC = user.featureControl || [];
+      const newSet = new Set(newFC);
+      const added = [...newSet].filter(fc => !origSet.has(fc));
+      const removed = [...origSet].filter(fc => !newSet.has(fc));
+      if (added.length > 0 || removed.length > 0) {
+        diffs.featureControl = { added, removed };
+        isAccessChange = true;
+      }
+    }
+    const newSummary = await formatDivisionMappingSummary(user.divisionMapping || []);
+    if (divisionMapping !== undefined || (division && department)) {
+      const oldSummary = await formatDivisionMappingSummary(originalDivisionMapping);
+      const oldKey = JSON.stringify(oldSummary);
+      const newKey = JSON.stringify(newSummary);
+      if (oldKey !== newKey) {
+        diffs.divisionMapping = {
+          from: oldSummary,
+          to: newSummary,
+        };
+        isAccessChange = true;
+      }
+    }
+    if (name !== undefined && name.trim() !== originalName.trim()) {
+      diffs.name = { from: originalName, to: name };
+    }
+    if (phone_number !== undefined && (phone_number || '').trim() !== originalPhone.trim()) {
+      diffs.phone_number = { from: originalPhone || '—', to: phone_number || '—' };
+    }
+    if (employeeId !== undefined && (employeeId || '').trim() !== originalEmployeeId.trim()) {
+      diffs.employeeId = { from: originalEmployeeId || '—', to: employeeId || '—' };
+    }
+
+    const commentParts = [];
+    if (diffs.name) {
+      commentParts.push(`Name changed: "${diffs.name.from}" → "${diffs.name.to}"`);
+    }
+    if (diffs.phone_number) {
+      commentParts.push(`Phone changed: "${diffs.phone_number.from}" → "${diffs.phone_number.to}"`);
+    }
+    if (diffs.employeeId) {
+      commentParts.push(`Emp ID changed: "${diffs.employeeId.from}" → "${diffs.employeeId.to}"`);
+    }
+    if (diffs.role) {
+      commentParts.push(`Role changed: ${diffs.role.from} → ${diffs.role.to}`);
+    }
+    if (diffs.isActive !== undefined) {
+      commentParts.push(diffs.isActive.to ? 'Account activated' : 'Account deactivated');
+    }
+    if (diffs.divisionMapping) {
+      const fromStr = (diffs.divisionMapping.from || []).map(m => `${m.divisionName} (${(m.departments || []).join(', ') || 'All'})`).join('; ') || 'None';
+      const toStr = (diffs.divisionMapping.to || []).map(m => `${m.divisionName} (${(m.departments || []).join(', ') || 'All'})`).join('; ') || 'None';
+      commentParts.push(`Division/Dept: [${fromStr}] → [${toStr}]`);
+    }
+    if (diffs.featureControl) {
+      const addCount = diffs.featureControl.added?.length || 0;
+      const remCount = diffs.featureControl.removed?.length || 0;
+      commentParts.push(`Permissions: (+${addCount}, -${remCount})`);
+    }
+    if (diffs.dataScope) {
+      commentParts.push(`Data Scope: ${diffs.dataScope.from} → ${diffs.dataScope.to}`);
+    }
+
+    const hasAnyFieldChange = Object.keys(diffs).length > 0;
+    const auditComment = hasAnyFieldChange 
+      ? commentParts.join(' • ') 
+      : 'Profile re-saved • All field values and permissions unchanged';
+
     await logUserHistory({
       userId: user._id,
-      event: 'user_updated',
+      event: isAccessChange ? 'access_updated' : (hasAnyFieldChange ? 'user_updated' : 'user_saved'),
       reqUser: req.user,
+      targetUser: user,
       details: {
+        diffs,
+        hasFieldChanges: hasAnyFieldChange,
+        hasAccessChanges: isAccessChange,
+        noChanges: !hasAnyFieldChange,
+        accessSnapshot: {
+          dataScope: user.dataScope || 'all',
+          divisionMapping: newSummary,
+          featureControl: user.featureControl || [],
+          role: user.role,
+          isActive: user.isActive !== false,
+        },
         changed: {
           name: name !== undefined,
+          phone_number: phone_number !== undefined,
           role: role !== undefined,
           isActive: isActive !== undefined,
           scope: scope !== undefined,
@@ -705,7 +858,7 @@ exports.updateUser = async (req, res) => {
         },
         managedHolidayGroupIds: user.managedHolidayGroupIds || [],
       },
-      comments: 'User updated',
+      comments: auditComment,
     });
 
     const newDeptIds = new Set();
@@ -950,6 +1103,15 @@ exports.resetPassword = async (req, res) => {
       console.error('Failed to log user password reset history:', err.message);
     }
 
+    await logUserHistory({
+      userId: user._id,
+      event: 'password_reset',
+      reqUser: req.user,
+      targetUser: user,
+      details: { autoGenerate: !!autoGenerate },
+      comments: 'User password reset by administrator',
+    });
+
     res.status(200).json(response);
   } catch (error) {
     console.error('Error resetting password:', error);
@@ -1014,6 +1176,20 @@ exports.toggleUserStatus = async (req, res) => {
       console.error('Failed to log user toggle-status history:', err.message);
     }
 
+    await logUserHistory({
+      userId: user._id,
+      event: user.isActive ? 'user_activated' : 'user_deactivated',
+      reqUser: req.user,
+      targetUser: user,
+      details: {
+        previousState: originalIsActive,
+        newState: user.isActive,
+      },
+      comments: user.isActive
+        ? 'User account activated (access restored)'
+        : 'User account deactivated (access revoked)',
+    });
+
     res.status(200).json({
       success: true,
       message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -1066,6 +1242,15 @@ exports.deleteUser = async (req, res) => {
         console.log(`[deleteUser] Rejected application ${application._id} for employee ${empNo} (user deleted)`);
       }
     }
+
+    await logUserHistory({
+      userId: user._id,
+      event: 'user_deleted',
+      reqUser: req.user,
+      targetUser: user,
+      details: { role: user.role, email: user.email, employeeId: user.employeeId },
+      comments: `User account deleted (${user.name || user.email})`,
+    });
 
     await user.deleteOne();
 
@@ -1282,15 +1467,181 @@ exports.getUserActivity = async (req, res) => {
     const userId = req.params.id;
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const rows = await UserHistory.find({ userId })
+      .populate({
+        path: 'userId',
+        select: 'name email role employeeId isActive dataScope divisionMapping featureControl',
+        populate: [
+          { path: 'divisionMapping.division', select: 'name code' },
+          { path: 'divisionMapping.departments', select: 'name code' },
+        ],
+      })
       .populate('performedBy', 'name email role')
       .sort({ timestamp: -1 })
       .limit(limit)
       .lean();
-    res.status(200).json({ success: true, data: rows });
+
+    const normalizedRows = rows.map((r) => {
+      const target = r.userId && typeof r.userId === 'object' ? r.userId : null;
+      const targetAccessProfile = r.details?.accessSnapshot || (target ? {
+        dataScope: target.dataScope || 'all',
+        divisionMapping: (target.divisionMapping || []).map(m => ({
+          divisionName: m.division?.name || m.division?.code || String(m.division || 'Unknown'),
+          departments: (m.departments || []).map(d => d?.name || d?.code || String(d || '')).filter(Boolean)
+        })),
+        featureControl: target.featureControl || [],
+        role: target.role,
+        isActive: target.isActive !== false,
+      } : null);
+
+      return {
+        ...r,
+        targetUserName: r.targetUserName || target?.name || '—',
+        targetUserEmail: r.targetUserEmail || target?.email || '—',
+        targetUserRole: r.targetUserRole || target?.role || '—',
+        targetEmployeeId: r.targetEmployeeId || target?.employeeId || '—',
+        targetAccessProfile,
+      };
+    });
+
+    res.status(200).json({ success: true, data: normalizedRows });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Error fetching user activity',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get all user audit / access change history logs
+// @route   GET /api/users/audits
+// @access  Private (Super Admin only)
+exports.getAllUserAudits = async (req, res) => {
+  try {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. User audits are restricted to Super Admin only.',
+      });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 25), 100);
+    const skip = (page - 1) * limit;
+
+    const { search, event, userId, performedBy, startDate, endDate } = req.query;
+
+    const query = {};
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (performedBy) {
+      query.performedBy = performedBy;
+    }
+
+    if (event && event !== 'all') {
+      if (event === 'access_changes') {
+        query.event = { $in: ['access_updated', 'user_promoted', 'user_demoted', 'user_activated', 'user_deactivated'] };
+      } else {
+        query.event = event;
+      }
+    }
+
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.timestamp.$lte = end;
+      }
+    }
+
+    if (search && search.trim()) {
+      const s = search.trim();
+      const escaped = s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      query.$or = [
+        { performedByName: regex },
+        { performedByRole: regex },
+        { targetUserName: regex },
+        { targetUserEmail: regex },
+        { targetEmployeeId: regex },
+        { comments: regex },
+        { event: regex },
+      ];
+    }
+
+    const [total, rows, totalAccessChanges, totalEventsToday] = await Promise.all([
+      UserHistory.countDocuments(query),
+      UserHistory.find(query)
+        .populate({
+          path: 'userId',
+          select: 'name email role employeeId isActive dataScope divisionMapping featureControl',
+          populate: [
+            { path: 'divisionMapping.division', select: 'name code' },
+            { path: 'divisionMapping.departments', select: 'name code' },
+          ],
+        })
+        .populate('performedBy', 'name email role')
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      UserHistory.countDocuments({
+        event: { $in: ['access_updated', 'user_updated', 'user_saved', 'user_activated', 'user_deactivated'] }
+      }),
+      UserHistory.countDocuments({
+        timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      })
+    ]);
+
+    // Normalize rows to provide reliable target user details and active access profile
+    const normalizedRows = rows.map((r) => {
+      const target = r.userId && typeof r.userId === 'object' ? r.userId : null;
+      const targetAccessProfile = r.details?.accessSnapshot || (target ? {
+        dataScope: target.dataScope || 'all',
+        divisionMapping: (target.divisionMapping || []).map(m => ({
+          divisionName: m.division?.name || m.division?.code || String(m.division || 'Unknown'),
+          departments: (m.departments || []).map(d => d?.name || d?.code || String(d || '')).filter(Boolean)
+        })),
+        featureControl: target.featureControl || [],
+        role: target.role,
+        isActive: target.isActive !== false,
+      } : null);
+
+      return {
+        ...r,
+        targetUserName: r.targetUserName || target?.name || '—',
+        targetUserEmail: r.targetUserEmail || target?.email || '—',
+        targetUserRole: r.targetUserRole || target?.role || '—',
+        targetEmployeeId: r.targetEmployeeId || target?.employeeId || '—',
+        targetAccessProfile,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: normalizedRows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      stats: {
+        totalAudits: total,
+        totalAccessChanges,
+        eventsToday: totalEventsToday,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching user audits:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user audit history',
       error: error.message,
     });
   }

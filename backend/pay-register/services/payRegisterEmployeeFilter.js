@@ -35,10 +35,11 @@ function parseQueryIdList(raw) {
 async function buildPayRegisterEmployeeFilter(
   rangeStart,
   rangeEnd,
-  { departmentId, divisionId, employeeGroupId, search, scopeFilter } = {}
+  { departmentId, divisionId, designationId, employeeGroupId, search, scopeFilter } = {}
 ) {
   const departmentIds = parseQueryIdList(departmentId);
   const divisionIds = parseQueryIdList(divisionId);
+  const designationIds = parseQueryIdList(designationId);
 
   const conditions = [
     buildPayrollPeriodEmployeeQuery(null, null, rangeStart, rangeEnd, scopeFilter),
@@ -49,6 +50,9 @@ async function buildPayRegisterEmployeeFilter(
   }
   if (departmentIds.length) {
     conditions.push({ department_id: { $in: departmentIds } });
+  }
+  if (designationIds.length) {
+    conditions.push({ designation_id: { $in: designationIds } });
   }
 
   const groupOid = toObjectIdIfValid(employeeGroupId);

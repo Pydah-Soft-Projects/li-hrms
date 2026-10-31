@@ -274,6 +274,23 @@ async function generateNextCycleRoster({ refDateStr, systemUserId }) {
   console.log(
     `${TAG} Done — employees=${result.employees} created=${result.created} skipped=${result.skipped} errors=${result.errors.length}`
   );
+
+  // Sync generated week-offs to AttendanceDaily
+  try {
+    const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+    const woEntries = toInsert.filter((e) => e.status === 'WO').map((e) => ({
+      employeeNumber: e.employeeNumber,
+      date: e.date,
+      status: e.status,
+      notes: e.notes || 'Week Off',
+    }));
+    if (woEntries.length > 0) {
+      await syncRosterEntriesToAttendance(woEntries);
+    }
+  } catch (syncErr) {
+    console.warn(`${TAG} Non-blocking error syncing to attendance:`, syncErr.message);
+  }
+
   return result;
 }
 

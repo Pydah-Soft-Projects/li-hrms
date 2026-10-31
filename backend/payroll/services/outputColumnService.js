@@ -440,10 +440,11 @@ function isStatutoryCumulativeColumn(col) {
  * allAllowanceNames, allDeductionNames, allStatutoryCodes are arrays or Sets of strings (names/codes).
  * Returns new array with order 0,1,2,... so formulas that reference earlier columns still work.
  */
-function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [], allDeductionNames = [], allStatutoryCodes = []) {
+function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [], allDeductionNames = [], allStatutoryCodes = [], options = {}) {
   if (!Array.isArray(outputColumns) || outputColumns.length === 0) {
     return [];
   }
+  const { omitStatutoryCumulative = false, includeSignature = false } = options || {};
   const allowances = [...(Array.isArray(allAllowanceNames) ? allAllowanceNames : Array.from(allAllowanceNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
   const deductions = [...(Array.isArray(allDeductionNames) ? allDeductionNames : Array.from(allDeductionNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
   const statutoryRaw = Array.isArray(allStatutoryCodes) ? allStatutoryCodes : Array.from(allStatutoryCodes || []);
@@ -509,11 +510,25 @@ function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [],
           order: nextOrder++,
         });
       });
+      if (omitStatutoryCumulative) {
+        continue;
+      }
     }
     const order = nextOrder++;
     expanded.push({
       ...col,
       header: uniqueHeader(col.header, order),
+      order,
+    });
+  }
+
+  if (includeSignature) {
+    const order = nextOrder++;
+    expanded.push({
+      header: uniqueHeader('Signature', order),
+      source: 'field',
+      field: '',
+      formula: '',
       order,
     });
   }

@@ -9,6 +9,7 @@ const {
   getSystemGateTime,
   getVerifiedStatus,
   toTimeString,
+  isShiftAlreadyPresentWithoutPermission,
 } = require('../services/autoEdgePermissionCreationService');
 
 const istTime = (value) => new Intl.DateTimeFormat('en-GB', {
@@ -185,6 +186,7 @@ describe('autoEdgePermissionCreationService helpers', () => {
       shifts: [
         {
           inTime: new Date('2026-05-06T09:00:53+05:30'),
+          outTime: new Date('2026-05-06T18:00:00+05:30'),
           shiftStartTime: '09:00',
           shiftEndTime: '18:00',
           expectedHours: 9,
@@ -209,6 +211,7 @@ describe('autoEdgePermissionCreationService helpers', () => {
       shifts: [
         {
           inTime: new Date('2026-05-06T09:00:53+05:30'),
+          outTime: new Date('2026-05-06T18:00:00+05:30'),
           shiftStartTime: '09:00',
           shiftEndTime: '18:00',
           expectedHours: 9,
@@ -233,6 +236,7 @@ describe('autoEdgePermissionCreationService helpers', () => {
       shifts: [
         {
           inTime: new Date('2026-05-06T09:20:00+05:30'),
+          outTime: new Date('2026-05-06T18:00:00+05:30'),
           shiftStartTime: '09:00',
           shiftEndTime: '18:00',
           expectedHours: 9,
@@ -242,5 +246,81 @@ describe('autoEdgePermissionCreationService helpers', () => {
     };
 
     expect(buildEligibleEdges(attendanceDaily, settings)).toHaveLength(0);
+  });
+
+  test('buildEligibleEdges excludes edges when outTime is missing (single punch in)', () => {
+    const settings = {
+      isEnabled: true,
+      applyFor: 'late_in',
+      lateInRules: {
+        shiftDurationRanges: [{ minShiftHours: 8, maxShiftHours: 12, allowedMinutes: 60 }],
+      },
+      earlyOutRules: { shiftDurationRanges: [] },
+    };
+    const attendanceDaily = {
+      shifts: [
+        {
+          inTime: new Date('2026-05-06T10:00:00+05:30'),
+          outTime: null,
+          shiftStartTime: '09:00',
+          shiftEndTime: '21:00',
+          expectedHours: 12,
+          lateInMinutes: 60,
+        },
+      ],
+    };
+
+    expect(buildEligibleEdges(attendanceDaily, settings)).toHaveLength(0);
+  });
+
+  test('buildEligibleEdges excludes edges when inTime is missing (single punch out)', () => {
+    const settings = {
+      isEnabled: true,
+      applyFor: 'early_out',
+      lateInRules: { shiftDurationRanges: [] },
+      earlyOutRules: {
+        shiftDurationRanges: [{ minShiftHours: 8, maxShiftHours: 12, allowedMinutes: 60 }],
+      },
+    };
+    const attendanceDaily = {
+      shifts: [
+        {
+          inTime: null,
+          outTime: new Date('2026-05-06T20:30:00+05:30'),
+          shiftStartTime: '09:00',
+          shiftEndTime: '21:00',
+          expectedHours: 12,
+          earlyOutMinutes: 30,
+        },
+      ],
+    };
+
+    expect(buildEligibleEdges(attendanceDaily, settings)).toHaveLength(0);
+  });
+
+  test('isShiftAlreadyPresentWithoutPermission flags shifts with >= 75% punch hours', () => {
+    const shiftAlreadyPresent = {
+      inTime: new Date('2026-09-16T09:53:00+05:30'),
+      outTime: new Date('2026-09-16T20:54:00+05:30'),
+      shiftStartTime: '09:00',
+      shiftEndTime: '21:00',
+      expectedHours: 12,
+      punchHours: 11.01,
+      status: 'PRESENT',
+      lateInMinutes: 38,
+    };
+    expect(isShiftAlreadyPresentWithoutPermission(shiftAlreadyPresent)).toBe(true);
+
+    const shiftNeedingPermission = {
+      inTime: new Date('2026-09-21T09:50:00+05:30'),
+      outTime: new Date('2026-09-21T18:28:00+05:30'),
+      shiftStartTime: '09:00',
+      shiftEndTime: '21:00',
+      expectedHours: 12,
+      punchHours: 8.62,
+      status: 'HALF_DAY',
+      lateInMinutes: 35,
+    };
+    expect(isShiftAlreadyPresentWithoutPermission(shiftNeedingPermission)).toBe(false);
   });
 });

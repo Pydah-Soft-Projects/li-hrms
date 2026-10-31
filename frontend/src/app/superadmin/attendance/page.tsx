@@ -1605,6 +1605,11 @@ export default function AttendancePage() {
 
       // If we have the record with leave/OD info, use it directly
       const detail = await loadAttendanceDetailWithPermissions(employee.emp_no, date);
+      if (detail) {
+        setMonthlyData((prev) =>
+          patchMonthlyDayFromDetail(prev, employee.emp_no, date, detail as Record<string, unknown>)
+        );
+      }
       if (dayRecord && detail) {
         console.log('Day record from monthly data:', dayRecord);
         console.log('Leave info:', dayRecord.leaveInfo);
@@ -2116,9 +2121,25 @@ export default function AttendancePage() {
   };
 
   const handleSyncShifts = async () => {
+    const hasFilters = Boolean(
+      (debouncedSearch && debouncedSearch.trim()) ||
+      (selectedDivision && selectedDivision !== 'all') ||
+      (selectedDepartment && selectedDepartment !== 'all') ||
+      (selectedDesignation && selectedDesignation !== 'all') ||
+      selectedEmployee
+    );
+
+    const targetDesc = selectedEmployee
+      ? `employee ${selectedEmployee.employee_name || selectedEmployee.emp_no}`
+      : (debouncedSearch && debouncedSearch.trim())
+      ? `search "${debouncedSearch.trim()}"`
+      : hasFilters
+      ? 'the selected filters'
+      : 'all records in the current period';
+
     const result = await alertConfirm(
-      'Sync Shifts?',
-      'This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes.',
+      'Sync Attendance & Shifts?',
+      `This will sync attendance and shifts for ${targetDesc}${cycleDates.startDate && cycleDates.endDate ? ` (${cycleDates.startDate} to ${cycleDates.endDate})` : ''}. Continue?`,
       'Yes, Sync Now'
     );
     if (!result.isConfirmed) return;
@@ -2127,10 +2148,22 @@ export default function AttendancePage() {
       setSyncingShifts(true);
       setError('');
       setSuccess('');
-      const response = await api.syncShifts();
+
+      const targetEmp = selectedEmployee?.emp_no || (debouncedSearch && /^\d+$/.test(debouncedSearch.trim()) ? debouncedSearch.trim() : undefined);
+
+      const response = await api.syncShifts({
+        startDate: cycleDates.startDate || undefined,
+        endDate: cycleDates.endDate || undefined,
+        employeeNumber: targetEmp,
+        search: debouncedSearch && debouncedSearch.trim() ? debouncedSearch.trim() : undefined,
+        divisionId: selectedDivision && selectedDivision !== 'all' ? selectedDivision : undefined,
+        departmentId: selectedDepartment && selectedDepartment !== 'all' ? selectedDepartment : undefined,
+        designationId: selectedDesignation && selectedDesignation !== 'all' ? selectedDesignation : undefined,
+      });
+
       if (response.success) {
-        alertSuccess('Success', response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
-        loadMonthlyAttendance();
+        alertSuccess('Success', response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned`);
+        loadMonthlyAttendance(true);
       } else {
         alertError('Failed', response.message || 'Failed to sync shifts');
       }
@@ -3257,7 +3290,8 @@ export default function AttendancePage() {
 
                   const presentFromSummary = getMergedPresentDaysForSummary(
                     item.summary,
-                    attendanceProcessingMode
+                    attendanceProcessingMode,
+                    dailyAttendance
                   );
                   const daysPresent = presentFromSummary != null
                     ? presentFromSummary
@@ -3272,9 +3306,24 @@ export default function AttendancePage() {
                       }, 0);
 
                   const payableShifts = Number(
-                    item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
+                    item.summary?.totalPayableShifts ??
+                    item.payableShifts ??
+                    dailyValues.reduce((sum, r: any) => {
+                      if (!r) return sum;
+                      const shifts = Array.isArray(r.shifts) ? r.shifts : [];
+                      if (attendanceProcessingMode === 'multi_shift' && shifts.length > 0) {
+                        return sum + shifts.reduce((sSum: number, s: any) => sSum + (Number(s?.payableShift) || 0), 0);
+                      }
+                      if (attendanceProcessingMode === 'multi_shift' && Number(r.payableShifts) > 0) {
+                        return sum + Number(r.payableShifts);
+                      }
+                      if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+                      if (r?.status === 'HALF_DAY') return sum + 0.5;
+                      return sum;
+                    }, 0)
                   );
                   const monthPresent = dailyValues.reduce((sum, r: any) => {
+                    if (!r) return sum;
                     if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
                     if (r?.status === 'HALF_DAY') return sum + 0.5;
                     return sum;
@@ -3312,8 +3361,24 @@ export default function AttendancePage() {
                             totalLopLeaves: lopLeaveCol,
                             totalODs,
                             totalAbsentDays: monthAbsent,
+                            totalDaysInMonth: daysArray.length,
                           } as any),
-                        { processingMode: 'single_shift' }
+                        {
+                          processingMode: 'single_shift',
+                          isSecurity: Boolean(
+                            /security/i.test(
+                              String(
+                                item.employee?.department?.name ||
+                                item.employee?.division?.name ||
+                                item.employee?.designation?.name ||
+                                item.employee?.department ||
+                                item.employee?.division ||
+                                item.employee?.designation ||
+                                ''
+                              )
+                            )
+                          ),
+                        }
                       )
                     : null;
 
@@ -4494,6 +4559,18 @@ export default function AttendancePage() {
                       <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
                         {formatHours(attendanceDetail.totalWorkingHours ?? attendanceDetail.totalHours ?? 0)} hrs
                       </div>
+                      {(() => {
+                        const edgeHours = (attendanceDetail.shifts || []).reduce((acc: number, s: any) => acc + (Number(s.edgePermissionHours) || 0), 0);
+                        const punchHours = (attendanceDetail.shifts || []).reduce((acc: number, s: any) => acc + (Number(s.punchHours) || 0), 0);
+                        if (edgeHours > 0) {
+                          return (
+                            <div className="mt-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                              Punch: {formatHours(punchHours)} + Perm: {formatHours(edgeHours)}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
@@ -4642,8 +4719,13 @@ export default function AttendancePage() {
                               </span>
                               <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
                             </div>
-                            <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
-                              {formatHours(shift.workingHours)} hrs
+                            <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                              <span>{formatHours(shift.workingHours)} hrs</span>
+                              {Number(shift.edgePermissionHours) > 0 && (
+                                <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400">
+                                  (Punch: {formatHours(shift.punchHours || 0)} + Perm: {formatHours(shift.edgePermissionHours)})
+                                </span>
+                              )}
                             </div>
                           </div>
 

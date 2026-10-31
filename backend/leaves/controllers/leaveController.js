@@ -98,7 +98,7 @@ const getWorkflowSettings = async (divisionId) => resolveLeaveTypeWorkflowSettin
 // @access  Private
 exports.getLeaves = async (req, res) => {
   try {
-    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20, leaveType } = req.query;
+    const { status, employeeId, department, division, designation, group, fromDate, toDate, search, page = 1, limit = 20, leaveType } = req.query;
 
     // Jurisdiction (stamped org OR current employee scope) + visibility (workflow OR same).
     // Stamped-org visibility keeps previous-org open leaves listable after transfer.
@@ -133,6 +133,20 @@ exports.getLeaves = async (req, res) => {
     if (designation && designation !== 'all') {
       const ids = String(designation).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (group && group !== 'all') {
+      const ids = String(group).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const matchedEmps = await Employee.find({ employee_group_id: ids.length > 1 ? { $in: ids } : ids[0] }).select('_id').lean();
+        const empIds = matchedEmps.map(e => String(e._id));
+        if (filter.employeeId) {
+          const existing = Array.isArray(filter.employeeId.$in) ? filter.employeeId.$in.map(String) : [String(filter.employeeId)];
+          const intersected = empIds.filter(id => existing.includes(id));
+          filter.employeeId = { $in: intersected };
+        } else {
+          filter.employeeId = { $in: empIds };
+        }
+      }
     }
     applyLeaveOdDateRangeOverlap(filter, fromDate, toDate);
 
@@ -2361,7 +2375,7 @@ exports.getLeaveStats = async (req, res) => {
 // Query: search, division, department, designation, fromDate, toDate. When absent = global counts; when present = filtered counts.
 exports.getDashboardStats = async (req, res) => {
   try {
-    const { search, division, department, designation, fromDate, toDate, leaveStatus, odStatus, status } = req.query;
+    const { search, division, department, designation, group, employeeId, leaveType, fromDate, toDate, leaveStatus, odStatus, status } = req.query;
 
     const scopeFilter = req.scopeFilter || { isActive: true };
     const { jurisdictionFilter, visibilityFilter } = await buildLeaveOdListScopeFilters(
@@ -2385,50 +2399,100 @@ exports.getDashboardStats = async (req, res) => {
       return validIds.length > 0 ? (validIds.length > 1 ? { $in: validIds } : validIds[0]) : null;
     };
 
-    if (department && department !== 'all') {
-      const ids = String(department).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.department = val;
-        odFilter.department = val;
-      }
-    }
-    if (division && division !== 'all') {
-      const ids = String(division).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.division_id = val;
-        odFilter.division_id = val;
-      }
-    }
-    if (designation && designation !== 'all') {
-      const ids = String(designation).split(',').filter(id => id && id !== 'all');
-      const val = convertToObjectId(ids);
-      if (val) {
-        leaveFilter.designation = val;
-        odFilter.designation = val;
+    const empQuery = { is_active: { $ne: false } };
+    let hasEmpFilter = false;
+
+    if (employeeId && employeeId !== 'all') {
+      const ids = String(employeeId).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const val = convertToObjectId(ids);
+        if (val) {
+          empQuery._id = val;
+          hasEmpFilter = true;
+        }
       }
     }
 
-    applyLeaveOdDateRangeOverlap(leaveFilter, fromDate, toDate);
-    applyLeaveOdDateRangeOverlap(odFilter, fromDate, toDate);
+    if (department && department !== 'all') {
+      const ids = String(department).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const val = convertToObjectId(ids);
+        if (val) {
+          empQuery.department_id = val;
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (division && division !== 'all') {
+      const ids = String(division).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const divObjIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+        if (divObjIds.length > 0) {
+          const divisions = await Division.find({ _id: { $in: divObjIds } }).select('departments').lean();
+          let divisionLinkedDeptIds = [];
+          divisions.forEach(div => {
+            if (div.departments) divisionLinkedDeptIds = [...divisionLinkedDeptIds, ...div.departments];
+          });
+          const depts = await Department.find({
+            $or: [{ divisions: { $in: divObjIds } }, { _id: { $in: divisionLinkedDeptIds } }]
+          }).select('_id');
+          const deptIds = depts.map(d => d._id);
+
+          empQuery.$or = [
+            { division_id: { $in: divObjIds } },
+            { department_id: { $in: deptIds } }
+          ];
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (designation && designation !== 'all') {
+      const ids = String(designation).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        const val = convertToObjectId(ids);
+        if (val) {
+          empQuery.designation_id = val;
+          hasEmpFilter = true;
+        }
+      }
+    }
+
+    if (group && group !== 'all') {
+      const ids = String(group).split(',').filter(id => id && id !== 'all');
+      if (ids.length > 0) {
+        empQuery.employee_group_id = ids.length > 1 ? { $in: ids } : ids[0];
+        hasEmpFilter = true;
+      }
+    }
 
     if (search && String(search).trim()) {
       const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(searchStr, 'i');
-      const matchedEmployees = await Employee.find({
-        $or: [
-          { emp_no: regex },
-          { employee_name: regex },
-          { first_name: regex },
-          { last_name: regex }
-        ]
-      }).select('_id').lean();
-      const ids = matchedEmployees.map(e => e._id);
-      const idFilter = ids.length > 0 ? { $in: ids } : { $in: [] };
-      leaveFilter.employeeId = idFilter;
-      odFilter.employeeId = idFilter;
+      empQuery.$or = [
+        { emp_no: regex },
+        { employee_name: regex },
+        { first_name: regex },
+        { last_name: regex }
+      ];
+      hasEmpFilter = true;
     }
+
+    if (hasEmpFilter) {
+      const matchedEmps = await Employee.find(empQuery).select('_id').lean();
+      const empIds = matchedEmps.map(e => e._id);
+      const val = convertToObjectId(empIds.map(String));
+      leaveFilter.employeeId = val || { $in: [] };
+      odFilter.employeeId = val || { $in: [] };
+    }
+
+    if (leaveType) {
+      leaveFilter.leaveType = leaveType;
+    }
+
+    applyLeaveOdDateRangeOverlap(leaveFilter, fromDate, toDate);
+    applyLeaveOdDateRangeOverlap(odFilter, fromDate, toDate);
 
     const legacyStatus = status && String(status).trim() ? String(status).trim() : null;
     const leaveStatusVal = leaveStatus != null && String(leaveStatus).trim() !== '' ? String(leaveStatus).trim() : null;
@@ -3644,11 +3708,11 @@ async function buildActionRequiredExportScope(user) {
 
 const resolveHeaderOrgName = async (divisionQuery, ods = [], leaves = []) => {
   if (divisionQuery && divisionQuery !== 'all') {
-    const divIds = String(divisionQuery).split(',').filter(id => id && id !== 'all');
+    const divIds = String(divisionQuery).split(',').filter((id) => id && id !== 'all');
     if (divIds.length > 0) {
       const foundDivs = await Division.find({ _id: { $in: divIds } }).select('name').lean();
       if (foundDivs.length > 0) {
-        const names = foundDivs.map(d => d.name).filter(Boolean);
+        const names = foundDivs.map((d) => d.name).filter(Boolean);
         if (names.length > 0) {
           return names.join(', ').toUpperCase();
         }
@@ -3657,18 +3721,47 @@ const resolveHeaderOrgName = async (divisionQuery, ods = [], leaves = []) => {
   }
 
   const divNames = new Set();
-  [...(ods || []), ...(leaves || [])].forEach(item => {
-    const emp = item.employeeId;
+  [...(ods || []), ...(leaves || [])].forEach((item) => {
+    const emp = item?.employeeId;
     const name = emp?.division?.name || emp?.division_id?.name;
     if (name) divNames.add(name);
   });
-
   if (divNames.size === 1) {
     return Array.from(divNames)[0].toUpperCase();
   }
-
-  return "PYDAH COLLEGE OF ENGINEERING & TECHNOLOGY";
+  return 'ORGANIZATION';
 };
+
+async function buildFilterSummaryString(query = {}) {
+  const parts = [];
+  const from = query.fromDate || 'Any';
+  const to = query.toDate || 'Any';
+  parts.push(`Period: ${from} to ${to}`);
+
+  const isActionRequired = String(query.status || '') === ACTION_REQUIRED_STATUS;
+  parts.push(`Status: ${isActionRequired ? 'Action Required' : (query.status || 'All')}`);
+
+  if (query.leaveType) parts.push(`Leave Type: ${query.leaveType}`);
+  if (query.odType) parts.push(`OD Type: ${query.odType}`);
+
+  if (query.department && query.department !== 'all') {
+    try {
+      const ids = String(query.department).split(',').filter((id) => id && id !== 'all');
+      const depts = await Department.find({ _id: { $in: ids } }).select('name').lean();
+      if (depts.length) parts.push(`Dept: ${depts.map((d) => d.name).join(', ')}`);
+    } catch {}
+  }
+  if (query.division && query.division !== 'all') {
+    try {
+      const ids = String(query.division).split(',').filter((id) => id && id !== 'all');
+      const divs = await Division.find({ _id: { $in: ids } }).select('name').lean();
+      if (divs.length) parts.push(`Div: ${divs.map((d) => d.name).join(', ')}`);
+    } catch {}
+  }
+  if (query.search) parts.push(`Search: "${query.search}"`);
+
+  return parts.join(' | ');
+}
 
 // @desc    Export Leaves and ODs as PDF
 // @route   GET /api/leaves/export/pdf
@@ -3676,7 +3769,7 @@ const resolveHeaderOrgName = async (divisionQuery, ods = [], leaves = []) => {
 exports.exportReportPDF = async (req, res) => {
   try {
     const { 
-      status, fromDate, toDate, leaveType, odType, department, division, designation, group, employeeGroup, search, employeeId,
+      status, fromDate, toDate, leaveType, odType, department, division, designation, search, employeeId,
       includeLeaves = 'true', includeODs = 'true', includeSummary = 'true' 
     } = req.query;
 
@@ -3721,11 +3814,9 @@ exports.exportReportPDF = async (req, res) => {
       const ids = String(designation).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) empQueryFilters.designation_id = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    const groupVal = group || employeeGroup;
-    if (groupVal && groupVal !== 'all') {
-      const ids = String(groupVal).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) empQueryFilters.employee_group_id = ids.length > 1 ? { $in: ids } : ids[0];
-    }
+    applyLeaveOdDateRangeOverlap(baseFilter, fromDate, toDate);
+
+    // Search logic (resolve employee IDs)
     if (search && String(search).trim()) {
       const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(searchStr, 'i');
@@ -3755,20 +3846,25 @@ exports.exportReportPDF = async (req, res) => {
     if (resolvedOdType) odFilter.odType = resolvedOdType;
     if (isActionRequired) odFilter.status = ACTION_REQUIRED_OD_STATUS;
 
-    const pdfEmployeePopulate = {
-      path: 'employeeId',
-      select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id employee_group_id department',
-      populate: [
-        { path: 'department', select: 'name code' },
-        { path: 'division', select: 'name code' },
-        { path: 'designation', select: 'name code' },
-        { path: 'employee_group_id', select: 'name code' },
-      ]
-    };
-
     const [leaves, ods] = await Promise.all([
-      includeLeaves === 'true' ? Leave.find(leaveFilter).populate(pdfEmployeePopulate).lean() : [],
-      includeODs === 'true' ? OD.find(odFilter).populate(pdfEmployeePopulate).lean() : []
+      includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
+          path: 'employeeId',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
+          populate: [
+            { path: 'department', select: 'name code' },
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
+          ]
+        }).lean() : [],
+      includeODs === 'true' ? OD.find(odFilter).populate({
+          path: 'employeeId',
+          select: 'employee_name emp_no profilePhoto first_name last_name department_id division_id designation_id department',
+          populate: [
+            { path: 'department', select: 'name code' },
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
+          ]
+        }).lean() : []
     ]);
 
     // Setup PDF - LANDSCAPE
@@ -3786,17 +3882,16 @@ exports.exportReportPDF = async (req, res) => {
     const headerOrgName = await resolveHeaderOrgName(division, ods, leaves);
 
     // --- Header ---
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#00008B')
+    doc.font('Helvetica-Bold').fontSize(16).fillColor('#00008B')
        .text(headerOrgName, { align: 'center' });
     doc.moveDown(0.2);
     doc.fontSize(14).fillColor('#000000')
-       .text(isOdOnlyReport ? "REPORT ON OD" : "Leave & OD Request Report", { align: 'center' });
+       .text(isOdOnlyReport ? "REPORT ON OD" : "REPORT ON LEAVE", { align: 'center' });
     doc.moveDown(0.3);
     
-    if (!isOdOnlyReport) {
-      const statusLabelPdf = isActionRequired ? 'Action Required' : (status || 'All');
-      doc.fontSize(8.5).font('Helvetica').fillColor('#333333').text(`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${statusLabelPdf}`, { align: 'left' });
-    }
+    // Filter summary
+    const filterSummaryPdf = await buildFilterSummaryString(req.query);
+    doc.fontSize(8.5).font('Helvetica').fillColor('#333333').text(filterSummaryPdf, { align: 'left' });
     doc.moveTo(margin, doc.y + 5).lineTo(pageWidth - margin, doc.y + 5).strokeColor('#CCCCCC').stroke();
     doc.moveDown(1.5);
 
@@ -3891,8 +3986,8 @@ exports.exportReportPDF = async (req, res) => {
           summaryMap[empKey] = { 
             empNo: emp?.emp_no || '-',
             name: getCleanEmpName(emp),
-            division: emp?.division?.name || '-',
-            department: emp?.department?.name || '-',
+            division: emp?.division_id?.name || emp?.division?.name || '-',
+            department: emp?.department_id?.name || emp?.department?.name || '-',
             CL: 0, 
             OTHER: 0, 
             OD: 0 
@@ -3963,15 +4058,13 @@ exports.exportReportPDF = async (req, res) => {
   }
 };
 
-
-
 // @desc    Export Excel report (same filters, columns, and summary as PDF export)
 // @route   GET /api/leaves/export/xlsx
 // @access  Private
 exports.exportReportXLSX = async (req, res) => {
   try {
     const {
-      status, fromDate, toDate, leaveType, odType, department, division, designation, group, employeeGroup, search, employeeId,
+      status, fromDate, toDate, leaveType, odType, department, division, designation, search, employeeId,
       includeLeaves = 'true', includeODs = 'true', includeSummary = 'true',
     } = req.query;
 
@@ -4015,11 +4108,8 @@ exports.exportReportXLSX = async (req, res) => {
       const ids = String(designation).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) empQueryFilters.designation_id = ids.length > 1 ? { $in: ids } : ids[0];
     }
-    const groupVal = group || employeeGroup;
-    if (groupVal && groupVal !== 'all') {
-      const ids = String(groupVal).split(',').filter(id => id && id !== 'all');
-      if (ids.length > 0) empQueryFilters.employee_group_id = ids.length > 1 ? { $in: ids } : ids[0];
-    }
+    applyLeaveOdDateRangeOverlap(baseFilter, fromDate, toDate);
+
     if (search && String(search).trim()) {
       const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(searchStr, 'i');
@@ -4079,8 +4169,10 @@ exports.exportReportXLSX = async (req, res) => {
     };
 
     const isOdOnlyReport = includeODs === 'true' && includeLeaves !== 'true';
-    const periodLine = isOdOnlyReport ? null : `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${isActionRequired ? 'Action Required' : (status || 'All')}`;
     const headerOrgName = await resolveHeaderOrgName(division, ods, leaves);
+    const periodLine = isOdOnlyReport
+      ? null
+      : `Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${isActionRequired ? 'Action Required' : (status || 'All')}`;
     const wb = XLSX.utils.book_new();
 
     if (includeLeaves === 'true' && leaves.length > 0) {
@@ -4092,9 +4184,11 @@ exports.exportReportXLSX = async (req, res) => {
         formatDate,
         getCleanEmpName,
       }));
-      const { aoa, merges } = buildExcelSheetAoA('LEAVE APPLICATIONS', periodLine, leaveRows, stageCount, stageLabels, false, headerOrgName);
+      const { aoa, merges, cols, rows } = buildExcelSheetAoA('LEAVE APPLICATIONS', periodLine, leaveRows, stageCount, stageLabels, false, headerOrgName);
       const wsLeaves = XLSX.utils.aoa_to_sheet(aoa);
-      wsLeaves['!merges'] = merges;
+      if (merges?.length) wsLeaves['!merges'] = merges;
+      if (cols?.length) wsLeaves['!cols'] = cols;
+      if (rows?.length) wsLeaves['!rows'] = rows;
       XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leave Applications');
     }
 
@@ -4115,10 +4209,11 @@ exports.exportReportXLSX = async (req, res) => {
         emptyRow[1] = 'No OD records found for selected filters';
         odRows = [emptyRow];
       }
-
-      const { aoa, merges } = buildExcelSheetAoA('REPORT ON OD', null, odRows, stageCount, stageLabels, true, headerOrgName);
+      const { aoa, merges, cols, rows } = buildExcelSheetAoA('ON DUTY (OD) APPLICATIONS', periodLine, odRows, stageCount, stageLabels, true, headerOrgName);
       const wsODs = XLSX.utils.aoa_to_sheet(aoa);
-      wsODs['!merges'] = merges;
+      if (merges?.length) wsODs['!merges'] = merges;
+      if (cols?.length) wsODs['!cols'] = cols;
+      if (rows?.length) wsODs['!rows'] = rows;
       XLSX.utils.book_append_sheet(wb, wsODs, 'On Duty Applications');
     }
 
@@ -4171,13 +4266,28 @@ exports.exportReportXLSX = async (req, res) => {
       const summaryAoA = [
         [headerOrgName],
         [isActionRequired ? 'SUMMARY (ACTION REQUIRED)' : 'SUMMARY (APPROVED)'],
-        [`Period: ${fromDate || 'Any'} to ${toDate || 'Any'}`],
+        [periodLine],
+        [],
         summaryHeaders,
         ...(summaryRows.length > 0
           ? summaryRows
           : [[`No ${isActionRequired ? 'action required' : 'approved'} requests found for summary.`]]),
       ];
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+      const summaryCols = summaryHeaders.map((h, i) => {
+        let maxLen = h.length;
+        summaryRows.forEach((r) => {
+          const val = String(r[i] ?? '');
+          if (val.length > maxLen) maxLen = val.length;
+        });
+        return { wch: Math.max(maxLen + 4, 14) };
+      });
+      wsSummary['!cols'] = summaryCols;
+      wsSummary['!rows'] = [{ hpt: 26 }, { hpt: 20 }, { hpt: 10 }, { hpt: 22 }];
+      wsSummary['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: summaryHeaders.length - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: summaryHeaders.length - 1 } },
+      ];
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
     }
 

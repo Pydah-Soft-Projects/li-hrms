@@ -200,8 +200,24 @@ function buildPrAllRowForExport(item: any) {
         totalLopLeaves: lopLeaveCol,
         totalODs,
         totalAbsentDays: monthAbsentUnits,
+        totalDaysInMonth: dailyVals.length,
       } as any),
-    { processingMode: 'single_shift' }
+    {
+      processingMode: 'single_shift',
+      isSecurity: Boolean(
+        /security/i.test(
+          String(
+            item.department ||
+            item.division ||
+            item.designation ||
+            item.employee?.department?.name ||
+            item.employee?.division?.name ||
+            item.employee?.designation?.name ||
+            ''
+          )
+        )
+      ),
+    }
   );
 }
 

@@ -16,8 +16,13 @@ exports.getSettings = async (req, res) => {
     if (!settings) {
       settings = {
         deductionRules: {
+          evaluationMode: 'combined',
           freeAllowedPerMonth: null,
           combinedCountThreshold: null,
+          freeLateInsPerMonth: null,
+          lateCountThreshold: null,
+          freeEarlyOutsPerMonth: null,
+          earlyCountThreshold: null,
           deductionType: null,
           deductionDays: null,
           deductionAmount: null,
@@ -60,11 +65,26 @@ exports.saveSettings = async (req, res) => {
 
     // Update deduction rules
     if (deductionRules) {
+      if (deductionRules.evaluationMode !== undefined) {
+        settings.deductionRules.evaluationMode = deductionRules.evaluationMode;
+      }
       if (deductionRules.freeAllowedPerMonth !== undefined) {
         settings.deductionRules.freeAllowedPerMonth = deductionRules.freeAllowedPerMonth;
       }
       if (deductionRules.combinedCountThreshold !== undefined) {
         settings.deductionRules.combinedCountThreshold = deductionRules.combinedCountThreshold;
+      }
+      if (deductionRules.freeLateInsPerMonth !== undefined) {
+        settings.deductionRules.freeLateInsPerMonth = deductionRules.freeLateInsPerMonth;
+      }
+      if (deductionRules.lateCountThreshold !== undefined) {
+        settings.deductionRules.lateCountThreshold = deductionRules.lateCountThreshold;
+      }
+      if (deductionRules.freeEarlyOutsPerMonth !== undefined) {
+        settings.deductionRules.freeEarlyOutsPerMonth = deductionRules.freeEarlyOutsPerMonth;
+      }
+      if (deductionRules.earlyCountThreshold !== undefined) {
+        settings.deductionRules.earlyCountThreshold = deductionRules.earlyCountThreshold;
       }
       if (deductionRules.deductionType !== undefined) {
         settings.deductionRules.deductionType = deductionRules.deductionType;

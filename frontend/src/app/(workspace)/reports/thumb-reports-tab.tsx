@@ -14,6 +14,8 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
 dayjs.extend(relativeTime);
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface ThumbLog {
     _id: string;
@@ -80,10 +82,29 @@ export default function ThumbReportsTab() {
         lastPunch: logs.length > 0 ? dayjs(logs[0].timestamp).format('hh:mm A') : 'N/A'
     };
 
-    const handleExport = async () => {
-        const toastId = toast.loading('Preparing CSV export...');
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+    const [exporting, setExporting] = useState(false);
+
+    const THUMB_COLUMNS: ColumnOption[] = [
+        { key: 'timestamp', label: 'Timestamp', defaultChecked: true, isNecessary: true, getValue: (row: any) => dayjs(row.timestamp).format('YYYY-MM-DD HH:mm:ss') },
+        { key: 'employeeId', label: 'Employee ID / Code', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.emp_no : null) || (typeof row.employeeId === 'string' && row.employeeId.length !== 24 ? row.employeeId : null) || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : null) || '—' },
+        { key: 'employeeName', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => (typeof row.employeeId === 'object' ? row.employeeId?.employee_name : null) || row.employeeName || row.employee_name || '—' },
+        { key: 'logType', label: 'Log Type (IN/OUT)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.logType || '—' },
+        { key: 'attendanceStatus', label: 'Day Status', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.attendanceStatus || '—' },
+        { key: 'deviceName', label: 'Device Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.deviceName || '—' },
+        { key: 'receivedAt', label: 'Received At', defaultChecked: false, isNecessary: false, getValue: (row: any) => row.receivedAt ? dayjs(row.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '—' },
+    ];
+
+    const openExportModal = (fmt: 'excel' | 'pdf') => {
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
+    };
+
+    const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        setExporting(true);
         try {
-            const exportLimit = totalCount > 0 ? totalCount : 0;
+            const exportLimit = totalCount > 0 ? totalCount : 50;
             const response = await api.getThumbReports({
                 startDate: dayjs(startDate).startOf('day').toISOString(),
                 endDate: dayjs(endDate).endOf('day').toISOString(),
@@ -91,58 +112,23 @@ export default function ThumbReportsTab() {
                 page: 1,
                 limit: exportLimit
             });
-
-            if (!response.success) {
-                throw new Error(response.message || 'Failed to load biometric logs for export');
-            }
-
-            const exportLogs: ThumbLog[] = response.data || [];
-            const headers = ['Timestamp', 'Employee ID', 'Name', 'Log Type', 'Day Status', 'Device Name', 'Received At'];
-            const rows = exportLogs.map((l: ThumbLog) => [
-                dayjs(l.timestamp).format('YYYY-MM-DD HH:mm:ss'),
-                l.employeeId,
-                l.employeeName || 'Unknown',
-                l.logType,
-                l.attendanceStatus || '-',
-                l.deviceName,
-                l.receivedAt ? dayjs(l.receivedAt).format('YYYY-MM-DD HH:mm:ss') : '-'
-            ]);
-
-            const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `thumb_logs_${startDate}.csv`);
-            link.click();
-            toast.success('CSV export ready', { id: toastId });
+            const exportLogs = response?.data || logs;
+            exportReportWithColumns({
+                title: 'Biometric Logs Report',
+                subtitle: `Period: ${startDate} to ${endDate}`,
+                data: exportLogs,
+                columns: THUMB_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `Biometric_Logs_${startDate}_to_${endDate}`,
+            });
+            toast.success(`${format.toUpperCase()} report downloaded successfully!`);
+            setIsColumnModalOpen(false);
         } catch (error: any) {
             console.error('Error exporting thumb logs:', error);
-            toast.error(error.message || 'Export failed', { id: toastId });
-        }
-    };
-
-    const handlePairedExport = async () => {
-        const toastId = toast.loading('Preparing paired report (36h window)...');
-        try {
-            const blob = await api.exportAttendanceReport({
-                startDate,
-                endDate,
-                search: searchQuery || undefined,
-                strict: false // Use biometric logs without requiring HRMS employee match if needed
-            });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `paired_biometric_report_${startDate}_to_${endDate}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-            toast.success('Report downloaded successfully', { id: toastId });
-        } catch (error: any) {
-            console.error('Export error:', error);
-            toast.error(error.message || 'Export failed', { id: toastId });
+            toast.error(error.message || 'Export failed');
+        } finally {
+            setExporting(false);
         }
     };
 
@@ -227,19 +213,19 @@ export default function ThumbReportsTab() {
                         <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-700" />
                         <button
                             className="h-8 flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
-                            onClick={handleExport}
-                            title="Download Raw CSV"
+                            onClick={() => openExportModal('excel')}
+                            title="Export Excel"
                         >
                             <Download className="h-3 w-3" />
-                            CSV
+                            Excel
                         </button>
                         <button
                             className="h-8 flex items-center gap-1.5 rounded bg-emerald-600 px-2 text-[10px] font-bold text-white hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
-                            onClick={handlePairedExport}
-                            title="Paired IN/OUT Excel"
+                            onClick={() => openExportModal('pdf')}
+                            title="Export PDF"
                         >
                             <Download className="h-3 w-3" />
-                            Paired XLSX
+                            PDF
                         </button>
                     </div>
                 </div>
@@ -350,6 +336,16 @@ export default function ThumbReportsTab() {
                     </div>
                 </div>
             </div>
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="Biometric Logs Report"
+                exportFormat={exportFormat}
+                columns={THUMB_COLUMNS}
+                onConfirmExport={handleConfirmExport}
+                loading={exporting}
+            />
         </div>
     );
 }

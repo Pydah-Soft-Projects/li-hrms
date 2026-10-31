@@ -8,6 +8,7 @@ import "react-toastify/dist/ReactToastify.css";
 import InstallPrompt from "@/components/InstallPrompt";
 import PushNotificationRegistrar from "@/components/PushNotificationRegistrar";
 import PushNotificationPrompt from "@/components/PushNotificationPrompt";
+import PortalSwitcher from "@/components/PortalSwitcher";
 
 export const metadata: Metadata = {
   title: "HRMS Application",
@@ -49,6 +50,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
+          <PortalSwitcher />
           <PushNotificationRegistrar />
           <PushNotificationPrompt />
           <WorkspaceProvider>

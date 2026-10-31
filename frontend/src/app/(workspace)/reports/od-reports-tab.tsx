@@ -28,6 +28,8 @@ import {
   type LeaveOdTypeOption,
   type LeaveODReportExportFilters,
 } from '@/lib/leaveOdReportExport';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 export default function ODReportsTab() {
     const [loading, setLoading] = useState(false);
@@ -230,16 +232,18 @@ export default function ODReportsTab() {
 
     const fetchStats = async () => {
         try {
-            const query = new URLSearchParams({
+            const queryParams: Record<string, string> = {
                 fromDate: effectiveDates.start,
                 toDate: effectiveDates.end,
-                ...(searchQuery ? { search: searchQuery } : {}),
-                division: divisionIds.join(','),
-                department: departmentIds.join(','),
-                designation: designationIds.join(','),
-                ...(groupIds.length ? { group: groupIds.join(',') } : {}),
-                employeeId: employeeIds.join(',')
-            }).toString();
+            };
+            if (searchQuery) queryParams.search = searchQuery;
+            if (divisionIds.length) queryParams.division = divisionIds.join(',');
+            if (departmentIds.length) queryParams.department = departmentIds.join(',');
+            if (designationIds.length) queryParams.designation = designationIds.join(',');
+            if (groupIds.length) queryParams.group = groupIds.join(',');
+            if (employeeIds.length) queryParams.employeeId = employeeIds.join(',');
+
+            const query = new URLSearchParams(queryParams).toString();
 
             const res = await api.get(`/leaves/dashboard-stats?${query}`);
             if (res.success && res.data) {
@@ -263,43 +267,68 @@ export default function ODReportsTab() {
         setPage(1);
     }, [divisionIds, departmentIds, designationIds, groupIds, employeeIds, dateMode, selectedMonth, selectedYear, startDate, endDate, searchQuery, statusFilter, odTypeFilter]);
 
-    const handleExport = async () => {
-        const toastId = toast.loading('Generating PDF report...');
-        setLoading(true);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
 
-        try {
-            await downloadLeaveODReportPdf(
-                exportFilters,
-                { includeLeaves: false, includeODs: true, includeSummary: true },
-                `OD_Report_${effectiveDates.start}_to_${effectiveDates.end}.pdf`
-            );
-            toast.success('PDF downloaded successfully!', { id: toastId });
-        } catch (error: unknown) {
-            console.error('PDF export error:', error);
-            const msg = error instanceof Error ? error.message : 'Failed to export PDF';
-            toast.error(msg, { id: toastId });
-        } finally {
-            setLoading(false);
-        }
+    const OD_COLUMNS: ColumnOption[] = [
+        { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+        { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row.employee_name || row.employeeName || '—' },
+        { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const dept = emp.department_id || emp.department;
+                if (dept && typeof dept === 'object' && dept.name) return dept.name;
+                if (typeof dept === 'string' && dept.length !== 24) return dept;
+            }
+            const raw = row.department_id || row.department || row.departmentName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => {
+            const emp = row.employeeId || row.employee_id || row.employee;
+            if (emp && typeof emp === 'object') {
+                const div = emp.division_id || emp.division;
+                if (div && typeof div === 'object' && div.name) return div.name;
+                if (typeof div === 'string' && div.length !== 24) return div;
+            }
+            const raw = row.division_id || row.division || row.divisionName;
+            if (raw && typeof raw === 'object' && raw.name) return raw.name;
+            if (typeof raw === 'string' && raw.length !== 24) return raw;
+            return '—';
+        }},
+        { key: 'odType', label: 'OD Type', defaultChecked: true, isNecessary: true, getValue: (row) => row.odType?.name || row.odType?.code || row.odType || '—' },
+        { key: 'fromDate', label: 'From Date', defaultChecked: true, isNecessary: true, getValue: (row) => row.fromDate ? dayjs(row.fromDate).format('YYYY-MM-DD') : '—' },
+        { key: 'toDate', label: 'To Date', defaultChecked: true, isNecessary: true, getValue: (row) => row.toDate ? dayjs(row.toDate).format('YYYY-MM-DD') : '—' },
+        { key: 'duration', label: 'Duration', defaultChecked: true, isNecessary: true, getValue: (row) => row.totalHours ? `${row.totalHours} hrs` : row.totalDays ? `${row.totalDays} days` : '—' },
+        { key: 'reason', label: 'Reason', defaultChecked: true, isNecessary: false, getValue: (row) => row.reason || '—' },
+        { key: 'status', label: 'Status', defaultChecked: true, isNecessary: true, getValue: (row) => row.status || '—' },
+        { key: 'createdAt', label: 'Applied On', defaultChecked: false, isNecessary: false, getValue: (row) => row.createdAt ? dayjs(row.createdAt).format('YYYY-MM-DD') : '—' },
+    ];
+
+    const openExportModal = (fmt: 'excel' | 'pdf') => {
+        setExportFormat(fmt);
+        setIsColumnModalOpen(true);
     };
 
-    const handleExportXLSX = async () => {
-        const toastId = toast.loading('Generating Excel report...');
-        setLoadingXlsx(true);
-
+    const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+        setLoading(true);
         try {
-            await downloadLeaveODReportXlsx(
-                exportFilters,
-                { includeLeaves: false, includeODs: true, includeSummary: true },
-                `OD_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`
-            );
-            toast.success('Excel downloaded successfully!', { id: toastId });
-        } catch (error: unknown) {
-            console.error('Export error:', error);
-            const msg = error instanceof Error ? error.message : 'Failed to generate Excel';
-            toast.error(msg, { id: toastId });
+            exportReportWithColumns({
+                title: 'On-Duty (OD) Report',
+                subtitle: `Period: ${effectiveDates.start} to ${effectiveDates.end}`,
+                data: reportData,
+                columns: OD_COLUMNS,
+                selectedKeys,
+                format,
+                fileName: `OD_Report_${effectiveDates.start}_to_${effectiveDates.end}`,
+            });
+            toast.success(`${format.toUpperCase()} downloaded successfully!`);
+            setIsColumnModalOpen(false);
+        } catch (error: any) {
+            toast.error(error.message || 'Export failed');
         } finally {
-            setLoadingXlsx(false);
+            setLoading(false);
         }
     };
 
@@ -315,28 +344,28 @@ export default function ODReportsTab() {
                         <div>
                             <h3 className="text-sm font-black text-emerald-900 dark:text-emerald-100 uppercase tracking-wider">On-Duty (OD) Report</h3>
                             <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1 font-medium">
-                                Same PDF &amp; Excel export as the OD page — filtered by your selections below.
+                                Export filtered OD applications data to PDF or Excel.
                             </p>
                         </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={handleExport}
-                            disabled={loading || loadingXlsx}
+                            onClick={() => openExportModal('pdf')}
+                            disabled={loading}
                             className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 active:scale-95 disabled:opacity-50"
                         >
                             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                            {loading ? 'Generating...' : 'Export PDF'}
+                            Export PDF
                         </button>
 
                         <button
-                            onClick={handleExportXLSX}
-                            disabled={loading || loadingXlsx}
+                            onClick={() => openExportModal('excel')}
+                            disabled={loading}
                             className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50"
                         >
-                            {loadingXlsx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                            {loadingXlsx ? 'Generating...' : 'Export XLSX'}
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                            Export XLSX
                         </button>
                     </div>
                 </div>
@@ -715,6 +744,16 @@ export default function ODReportsTab() {
                     </table>
                 </div>
             </div>
+
+            <ExportColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                reportName="On-Duty (OD) Report"
+                exportFormat={exportFormat}
+                columns={OD_COLUMNS}
+                onConfirmExport={handleConfirmExport}
+                loading={loading}
+            />
         </div>
     );
 }

@@ -15,6 +15,9 @@ router.use(protect);
 // Get user statistics
 router.get('/stats', authorize('super_admin', 'sub_admin'), userController.getUserStats);
 
+// Get all user audit / access logs (super admin only)
+router.get('/audits', authorize('super_admin'), userController.getAllUserAudits);
+
 // Get employees without user accounts
 router.get(
   '/employees-without-account',

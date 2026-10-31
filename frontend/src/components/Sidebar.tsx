@@ -59,18 +59,18 @@ export default function Sidebar() {
     return SUPERADMIN_NAV_CATEGORIES.map((category) => ({
       ...category,
       items: category.items.filter((item) => {
+        if (item.code === 'USER_AUDITS' && user?.role !== 'super_admin') return false;
         if (item.feature === 'second_salary' && isAdmin && !secondSalaryNavEnabled) return false;
         if (isAdmin) return true;
         return isModuleEnabled(getSidebarPermissionCode(item.code), featureControl);
       }),
     })).filter((category) => category.items.length > 0);
-  }, [isAdmin, secondSalaryNavEnabled, featureControl]);
+  }, [isAdmin, user?.role, secondSalaryNavEnabled, featureControl]);
 
   if (!mounted) return null;
 
   const handleLogout = async () => {
-    if (!(await auth.logoutWithConfirmation())) return;
-    router.push('/login');
+    await auth.logoutWithConfirmation();
   };
 
   const getRoleLabel = (role: string) => {

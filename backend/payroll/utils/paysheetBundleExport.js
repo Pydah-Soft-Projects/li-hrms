@@ -270,7 +270,8 @@ function buildOutputColumnRows(payslipsReg, payslipsSecOrNull, outputColumnsNorm
     outputColumnsNormalized,
     allAllowanceNames,
     allDeductionNames,
-    statutoryMerged
+    statutoryMerged,
+    { omitStatutoryCumulative: true, includeSignature: true }
   );
   const regularRows = payslipsReg.map((payslip, index) => {
     const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
@@ -791,6 +792,19 @@ function coerceExportCellValue(header, value, row) {
   return value;
 }
 
+function getColumnWidth(header) {
+  const h = String(header || '').trim();
+  const norm = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (h === 'S.No') return { wch: 6 };
+  if (norm === 'signature') return { wch: 25 };
+  if (norm.includes('employeenumber') || norm.includes('employeecode') || norm === 'empno' || norm === 'eno' || norm === 'employeeno') return { wch: 20 };
+  if (norm.includes('totaldeductions') || norm.includes('deductionscumulative') || norm.includes('totaldeduction')) return { wch: 20 };
+  if (norm === 'name' || norm === 'employeename') return { wch: 28 };
+  if (norm === 'department' || norm === 'division' || norm === 'designation') return { wch: 20 };
+  if (norm.includes('netsalary') || norm.includes('grosssalary') || norm.includes('basicpay')) return { wch: 18 };
+  return { wch: Math.max(16, Math.min(30, h.length + 5)) };
+}
+
 function objectRowsToTable(rows, options = {}) {
   const hideOrgColumns = options.hideOrgColumns === true;
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -804,7 +818,11 @@ function objectRowsToTable(rows, options = {}) {
       keySet.add(k);
     })
   );
-  const rest = [...keySet].filter((k) => k !== 'S.No');
+  let rest = [...keySet].filter((k) => k !== 'S.No');
+  if (rest.includes('Signature')) {
+    rest = rest.filter((k) => k !== 'Signature');
+    rest.push('Signature');
+  }
   const headers = keySet.has('S.No') ? ['S.No', ...rest] : [...rest];
   const dataRows = rows.map((r) =>
     headers.map((h) => {
@@ -924,8 +942,7 @@ function buildCombinedSheetAoa(rows, meta, salaryKindLabel, salaryPendingEmploye
     merges.push({ s: { r, c: 0 }, e: { r, c: lastCol } });
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const colWidths = [{ wch: 6 }];
-  for (let c = 1; c < headers.length; c += 1) colWidths.push({ wch: 14 });
+  const colWidths = headers.map(getColumnWidth);
   const headerRowIndex = titleBlock.length;
   finalizeWorksheet(ws, merges, colWidths);
   applyPaysheetWorksheetStyles(ws, {
@@ -1033,8 +1050,11 @@ function buildByDepartmentSheetAoa(rows, meta, salaryKindLabel, salaryPendingEmp
   for (const m of merges) {
     if (m.e.c > lastCol) m.e.c = lastCol;
   }
-  const colWidths = [{ wch: 6 }];
-  for (let c = 1; c < colCount; c += 1) colWidths.push({ wch: 14 });
+  const sampleHeaders = sample.headers && sample.headers.length ? sample.headers : ['S.No'];
+  const colWidths = sampleHeaders.map(getColumnWidth);
+  while (colWidths.length < colCount) {
+    colWidths.push({ wch: 16 });
+  }
   finalizeWorksheet(ws, merges, colWidths);
   applyPaysheetWorksheetStyles(ws, {
     colCount,
@@ -1363,7 +1383,8 @@ function buildSecondSalaryPaysheetFromOutputColumns(records, outputColumnsNormal
     outputColumnsNormalized,
     allAllowanceNames,
     allDeductionNames,
-    statutoryMerged
+    statutoryMerged,
+    { omitStatutoryCumulative: true, includeSignature: true }
   );
   let rows = payslips.map((payslip, index) => {
     const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);

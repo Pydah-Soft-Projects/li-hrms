@@ -29,6 +29,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_CRM_URL: ${{ secrets.NEXT_PUBLIC_CRM_URL }}
+          NEXT_PUBLIC_CRM_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_CRM_BACKEND_URL || 'https://crm.pydah.edu.in' }}
         run: |
           npm ci
           npm run build

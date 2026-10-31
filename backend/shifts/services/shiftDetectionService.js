@@ -127,9 +127,10 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
  * @param {String} employeeGender - Employee's gender (Male/Female/Other)
  * @param {String|null} employeeGroupId - Employee's custom group ObjectId
  * @param {Boolean} groupingEnabled - Whether custom grouping feature is enabled
+ * @param {Object} [options] - Optional settings ({ forManualAssignment: boolean })
  * @returns {Array} - Array of Shift IDs
  */
-const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employeeGroupId, groupingEnabled = false) => {
+const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employeeGroupId, groupingEnabled = false, options = {}) => {
   if (!shiftConfigs || !Array.isArray(shiftConfigs) || shiftConfigs.length === 0) {
     return [];
   }
@@ -144,6 +145,25 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
 
   // Align with assign APIs: expand employee_group_ids[] to one row per group before filtering
   const configs = flattenShiftConfigsWithGroups(shiftConfigs);
+
+  // If forManualAssignment, return all shifts in this tier matching gender (so HR can select any shift configured for the department/designation)
+  if (options && options.forManualAssignment) {
+    const validConfigs = configs.filter(config => {
+      if (!config || !config.shiftId) return false;
+      if (!config.gender || config.gender === 'All') return true;
+      return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+    });
+    const seen = new Set();
+    const result = [];
+    for (const c of validConfigs) {
+      const idStr = c.shiftId.toString();
+      if (!seen.has(idStr)) {
+        seen.add(idStr);
+        result.push(c.shiftId);
+      }
+    }
+    return result;
+  }
 
   // If grouping is enabled and employee has a group, try to find shifts matching this group first
   if (groupingEnabled && employeeGroupId) {
@@ -167,8 +187,8 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
     }
   }
 
-  // Fallback: Filter configurations that do not specify any employee group (default or ALL)
-  return configs
+  // Fallback 1: Filter configurations that do not specify any employee group (default or ALL)
+  const defaultMatches = configs
     .filter(config => {
       if (!config || !config.shiftId) return false;
 
@@ -184,6 +204,32 @@ const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employee
       return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
     })
     .map(config => config.shiftId);
+
+  if (defaultMatches.length > 0) {
+    return defaultMatches;
+  }
+
+  // Fallback 2: If grouping is enabled, but NONE of the configs matched the employee's group AND
+  // no default/group-agnostic configs exist in this tier (e.g. department has shifts configured,
+  // but all are tagged with other groups and employee's group is not among them or employee has no group):
+  // We fall back to all shifts in this tier (filtered by gender).
+  // Why? An employee assigned to a department (e.g. Office) should ALWAYS receive their department's
+  // shifts rather than abandoning the department and falling back to Division/Global baseline factory shifts!
+  if (groupingEnabled && configs.length > 0) {
+    const genderMatches = configs
+      .filter(config => {
+        if (!config || !config.shiftId) return false;
+        if (!config.gender || config.gender === 'All') return true;
+        return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+      })
+      .map(config => config.shiftId);
+
+    if (genderMatches.length > 0) {
+      return Array.from(new Set(genderMatches.map(id => id.toString())));
+    }
+  }
+
+  return [];
 };
 
 /**
@@ -245,7 +291,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       date: date,
     }).populate('shiftId').populate('actualShiftId');
 
-    const effectiveRosteredShift = preScheduled?.actualShiftId || preScheduled?.shiftId;
+    const effectiveRosteredShift = preScheduled?.shiftId || preScheduled?.actualShiftId;
 
     if (preScheduled && effectiveRosteredShift) {
       rosteredShift = effectiveRosteredShift;
@@ -265,79 +311,97 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     }
 
     // 2. Designation shifts (Context-Specific & Division Defaults)
-    if (designation_id && employee.designation_id) {
-      let shiftIds = [];
-      const desig = employee.designation_id;
-
-      // Tier 2: (Division + Department) Specific Override
-      if (division_id && department_id && desig.departmentShifts) {
-        const contextOverride = desig.departmentShifts.find(
-          ds => ds.division?.toString() === division_id.toString() &&
-            ds.department?.toString() === department_id.toString()
-        );
-        if (contextOverride && contextOverride.shifts?.length > 0) {
-          shiftIds = filterShiftsByEmployeeAttributes(contextOverride.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
+    if (designation_id) {
+      let desig = employee.designation_id;
+      if (!desig || (typeof desig === 'object' && !desig.departmentShifts && !desig.divisionDefaults && !desig.shifts)) {
+        desig = await Designation.findById(designation_id);
       }
 
-      // Tier 3: Division-Global Designation Default
-      if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
-        const divisionDefault = desig.divisionDefaults.find(
-          dd => dd.division?.toString() === division_id.toString()
-        );
-        if (divisionDefault && divisionDefault.shifts?.length > 0) {
-          shiftIds = filterShiftsByEmployeeAttributes(divisionDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
-      }
+      if (desig) {
+        let shiftIds = [];
 
-      // Tier 4: Backward Compatibility Fallback (Global designation shifts)
-      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
-        shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, employeeGroupId, groupingEnabled);
-      }
-
-      if (shiftIds.length > 0) {
-        const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
-        designationShifts.forEach(s => {
-          s.sourcePriority = 2; // Designation Priority
-          allCandidateShifts.set(s._id.toString(), s);
-        });
-      }
-    }
-
-    // 3. Department shifts (Tier 3)
-    if (department_id && employee.department_id) {
-      let deptShiftIds = [];
-      const dept = employee.department_id;
-
-      if (division_id && dept.divisionDefaults) {
-        const divDeptDefault = dept.divisionDefaults.find(
-          dd => dd.division?.toString() === division_id.toString()
-        );
-        if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
-          deptShiftIds = filterShiftsByEmployeeAttributes(divDeptDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
-        }
-      }
-
-      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
-        deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, employeeGroupId, groupingEnabled);
-      }
-
-      if (deptShiftIds.length > 0) {
-        const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
-        departmentShifts.forEach(s => {
-          if (!allCandidateShifts.has(s._id.toString())) {
-            s.sourcePriority = 3; // Department Priority
-            allCandidateShifts.set(s._id.toString(), s);
+        // Tier 2: (Division + Department) Specific Override
+        if (division_id && department_id && desig.departmentShifts) {
+          const contextOverride = desig.departmentShifts.find(
+            ds => ds.division?.toString() === division_id.toString() &&
+              ds.department?.toString() === department_id.toString()
+          );
+          if (contextOverride && contextOverride.shifts?.length > 0) {
+            shiftIds = filterShiftsByEmployeeAttributes(contextOverride.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
           }
-        });
+        }
+
+        // Tier 3: Division-Global Designation Default
+        if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
+          const divisionDefault = desig.divisionDefaults.find(
+            dd => dd.division?.toString() === division_id.toString()
+          );
+          if (divisionDefault && divisionDefault.shifts?.length > 0) {
+            shiftIds = filterShiftsByEmployeeAttributes(divisionDefault.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+          }
+        }
+
+        // Tier 4: Global designation shifts (fallback when division defaults not found or empty)
+        if (shiftIds.length === 0 && desig.shifts?.length > 0) {
+          shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+        }
+
+        if (shiftIds.length > 0) {
+          const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
+          designationShifts.forEach(s => {
+            s.sourcePriority = 2; // Designation Priority
+            allCandidateShifts.set(s._id.toString(), s);
+          });
+        }
       }
     }
 
-    // 4. Division Baseline Shifts (Tier 4)
-    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
-      const division = employee.division_id;
-      if (division.shifts && division.shifts.length > 0) {
-        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(division.shifts, employeeGender, employeeGroupId, groupingEnabled);
+    // 3. Department shifts (Tier 3 - Department Specific)
+    if (department_id) {
+      let dept = employee.department_id;
+      if (!dept || (typeof dept === 'object' && !dept.divisionDefaults && !dept.shifts)) {
+        dept = await Department.findById(department_id);
+      }
+
+      if (dept) {
+        let deptShiftIds = [];
+
+        // 3a. Division-specific department defaults
+        if (division_id && dept.divisionDefaults) {
+          const divDeptDefault = dept.divisionDefaults.find(
+            dd => dd.division?.toString() === division_id.toString()
+          );
+          if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
+            deptShiftIds = filterShiftsByEmployeeAttributes(divDeptDefault.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+          }
+        }
+
+        // 3b. Direct department shifts (fallback when division defaults not found or empty)
+        if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
+          deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
+        }
+
+        if (deptShiftIds.length > 0) {
+          const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
+          departmentShifts.forEach(s => {
+            if (!allCandidateShifts.has(s._id.toString())) {
+              s.sourcePriority = 3; // Department Priority
+              allCandidateShifts.set(s._id.toString(), s);
+            }
+          });
+        }
+      }
+    }
+
+    // 4. Division Baseline Shifts (Tier 4 - Division Specific, ONLY if no Designation/Department shifts)
+    if (allCandidateShifts.size === 0 && division_id) {
+      let division = employee.division_id;
+      if (!division || (typeof division === 'object' && !division.shifts)) {
+        division = await Division.findById(division_id);
+      }
+
+      if (division && division.shifts && division.shifts.length > 0) {
+        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(division.shifts, employeeGender, employeeGroupId, groupingEnabled, options);
         const divisionShifts = await Shift.find({ _id: { $in: filteredDivisionShifts }, isActive: true });
         divisionShifts.forEach(s => {
           s.sourcePriority = 4; // Division Priority
@@ -346,7 +410,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       }
     }
 
-    // 5. Global Fallback (Tier 5)
+    // 5. Global Fallback (Tier 5 - ONLY if no Designation, Department, or Division shifts)
     if (allCandidateShifts.size === 0) {
       const generalShifts = await Shift.find({ isActive: true });
       generalShifts.forEach(s => {
@@ -355,9 +419,22 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       });
     }
 
+    let determinedSource = 'none';
+    if (rosteredShift) {
+      determinedSource = 'pre_scheduled';
+    } else if (allCandidateShifts.size > 0) {
+      const priorities = Array.from(allCandidateShifts.values()).map(s => s.sourcePriority);
+      if (priorities.includes(2)) determinedSource = 'designation';
+      else if (priorities.includes(3)) determinedSource = 'department';
+      else if (priorities.includes(4)) determinedSource = 'division';
+      else if (priorities.includes(5)) determinedSource = 'global';
+      else determinedSource = 'organizational';
+    }
+
     return {
       shifts: Array.from(allCandidateShifts.values()),
       source: rosteredShift ? 'pre_scheduled' : 'organizational',
+      tier: determinedSource,
       rosteredShiftId: rosteredShift?._id || null,
       rosterRecordId: rosterRecordId,
     };
@@ -443,7 +520,7 @@ const getOrganizationalShiftsForContext = async ({
         }
       }
 
-      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
+      if (shiftIds.length === 0 && desig.shifts?.length > 0) {
         shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, groupId, groupingEnabled);
       }
 
@@ -474,7 +551,7 @@ const getOrganizationalShiftsForContext = async ({
         }
       }
 
-      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
+      if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
         deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, groupId, groupingEnabled);
       }
 
@@ -534,7 +611,7 @@ const getOrganizationalShiftsForContext = async ({
  * @param {String} date - Date string (YYYY-MM-DD) - the attendance date
  * @param {Number} toleranceHours - Maximum hours difference to consider (default 3 hours)
  */
-const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
+const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3, rosterStrictWhenPresent = true) => {
   const candidates = [];
   const toleranceMinutes = toleranceHours * 60;
   const preferredMaxDifference = 35;
@@ -575,9 +652,11 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
   }
 
   return candidates.sort((a, b) => {
-    // 1. HARD PRIORITY: Rostered Shift (Priority 1) always wins if it's a candidate
-    if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
-    if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
+    // 1. HARD PRIORITY: Rostered Shift (Priority 1) only hard-wins if rosterStrictWhenPresent is true
+    if (rosterStrictWhenPresent) {
+      if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
+      if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
+    }
 
     // 2. Standard proximity sorting for organizational/fallback shifts
     if (a.isPreferred && !b.isPreferred) return -1;
@@ -645,7 +724,7 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
 /**
  * Use out-time to disambiguate between candidate shifts
  */
-const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleranceMinutes = 60) => {
+const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleranceMinutes = 60, rosterStrictWhenPresent = true) => {
   if (!outTime || candidateShifts.length === 0) return null;
   if (candidateShifts.length === 1) return candidateShifts[0];
 
@@ -664,9 +743,9 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
     const outTimeDiffMs = Math.abs(outTime.getTime() - shiftEndDate.getTime());
     const outTimeScore = outTimeDiffMs / (1000 * 60);
 
-    // PRIORITY BOOST: If this is a rostered shift (Priority 1), reduce its score significantly.
+    // PRIORITY BOOST: If this is a rostered shift (Priority 1) and rosterStrict is enabled, reduce its score significantly.
     // This acts as a strong tie-breaker.
-    const priorityMultiplier = (candidate.sourcePriority === 1) ? 0.3 : 1.0;
+    const priorityMultiplier = (candidate.sourcePriority === 1 && rosterStrictWhenPresent) ? 0.3 : 1.0;
 
     const rawCombinedScore = (inTimeScore * 0.6) + (outTimeScore * 0.4);
     const combinedScore = rawCombinedScore * priorityMultiplier;
@@ -681,8 +760,8 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
     const second = scoredCandidates[1];
 
     // RULE 1: If the top match is a Rostered Shift (Priority 1) and the second is not,
-    // we take the roster match unless the second one is a "perfect" out-time match while the roster is way off.
-    if (top.sourcePriority === 1 && second.sourcePriority !== 1) {
+    // we take the roster match unless rosterStrict is false or the second one is much closer.
+    if (rosterStrictWhenPresent && top.sourcePriority === 1 && second.sourcePriority !== 1) {
       // Only stay confused if the second one is much closer to out-time (by 60+ mins)
       if (second.outTimeScore < top.outTimeScore - 60) return null;
       return top;
@@ -1024,7 +1103,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     };
 
     // Step 1: Find candidate shifts by proximity (within 3 hours tolerance)
-    const candidateShifts = findCandidateShifts(inTime, shifts, date, 3);
+    const candidateShifts = findCandidateShifts(inTime, shifts, date, 3, shiftOptions.rosterStrictWhenPresent);
 
     // Step 2: If no candidates found, still try to match to nearest shift (fallback)
     if (candidateShifts.length === 0) {
@@ -1190,7 +1269,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
           // PRE-STEP: If exactly one candidate is Rostered (Priority 1), check if it's "reasonable"
           // If the rostered shift out-time match is within tolerance, prioritize it over stay confused.
-          const rosteredCandidate = candidateShifts.find(c => c.sourcePriority === 1);
+          const rosteredCandidate = shiftOptions.rosterStrictWhenPresent !== false ? candidateShifts.find(c => c.sourcePriority === 1) : null;
           if (rosteredCandidate) {
             const shiftEndDate = createDateWithOffset(date, rosteredCandidate.endTime);
             const shiftStartMinutes = timeToMinutes(rosteredCandidate.startTime);
@@ -1226,7 +1305,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             }
           }
 
-          const bestMatch = disambiguateWithOutTime(inTime, outTime, candidateShifts, date);
+          const bestMatch = disambiguateWithOutTime(inTime, outTime, candidateShifts, date, 60, shiftOptions.rosterStrictWhenPresent);
 
           if (bestMatch) {
             const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
@@ -1252,6 +1331,76 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                 rosterRecordId: rosterRecordId,
               }, shift, employeeCtx);
             }
+          }
+
+          let fallbackShift = null;
+          let fallbackMatchMethod = 'outtime_disambiguated';
+
+          if (outTime && candidateShifts.length > 0) {
+            try {
+              const candidateShiftIds = candidateShifts.map(c => c.shiftId.toString());
+              const recentDaily = await AttendanceDaily.find({
+                employeeNumber: employeeNumber.toUpperCase(),
+                'shifts.shiftId': { $in: candidateShiftIds }
+              })
+                .sort({ date: -1 })
+                .limit(15)
+                .select('shifts.shiftId')
+                .lean();
+
+              if (recentDaily && recentDaily.length > 0) {
+                const shiftCounts = {};
+                for (const rd of recentDaily) {
+                  for (const s of rd.shifts || []) {
+                    const sid = s.shiftId ? s.shiftId.toString() : null;
+                    if (sid && candidateShiftIds.includes(sid)) {
+                      shiftCounts[sid] = (shiftCounts[sid] || 0) + 1;
+                    }
+                  }
+                }
+                const sortedByFreq = Object.keys(shiftCounts).sort((a, b) => shiftCounts[b] - shiftCounts[a]);
+                if (sortedByFreq.length > 0) {
+                  fallbackShift = shifts.find(s => s._id.toString() === sortedByFreq[0]);
+                  if (fallbackShift) fallbackMatchMethod = 'historical_regular_shift';
+                }
+              }
+
+              if (!fallbackShift) {
+                const defaultCandidate = candidateShifts.find(c => {
+                  const s = shifts.find(sh => sh._id.toString() === c.shiftId.toString());
+                  return s && s.isDefault;
+                });
+                const chosenCandidate = defaultCandidate || candidateShifts[0];
+                fallbackShift = shifts.find(s => s._id.toString() === chosenCandidate.shiftId.toString());
+                if (fallbackShift) fallbackMatchMethod = 'same_start_time_default_priority';
+              }
+            } catch (err) {
+              console.warn('[ShiftDetection] Historical shift resolution error:', err.message);
+            }
+          }
+
+          if (fallbackShift) {
+            const shift = fallbackShift;
+            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod, date, globalLateInGrace);
+            const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace, shift.gracePeriod);
+
+            await updateRosterTracking(shift._id);
+
+            return await enrichResultWithSegmentData({
+              success: true,
+              assignedShift: shift._id,
+              shiftName: shift.name,
+              shiftStartTime: shift.startTime,
+              shiftEndTime: shift.endTime,
+              source: `${source}_${fallbackMatchMethod}`,
+              lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+              earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+              isLateIn: lateInMinutes > 0,
+              isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+              expectedHours: shift.duration,
+              matchMethod: fallbackMatchMethod,
+              rosterRecordId: rosterRecordId,
+            }, shift, employeeCtx);
           }
 
           // Still ambiguous even with out-time - create ConfusedShift
@@ -1528,96 +1677,243 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
  * @param {String} endDate - End date (optional)
  * @returns {Object} - Sync statistics
  */
-const syncShiftsForExistingRecords = async (startDate = null, endDate = null) => {
+const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate = null, employeeNumber = null) => {
+  let opts = {};
+  if (typeof startDateOrOptions === 'object' && startDateOrOptions !== null) {
+    opts = startDateOrOptions;
+  } else {
+    opts = { startDate: startDateOrOptions, endDate, employeeNumber };
+  }
+
+  const {
+    startDate,
+    endDate: endD,
+    employeeNumber: empNo,
+    search,
+    divisionId,
+    departmentId,
+    designationId
+  } = opts;
+
   const stats = {
     success: false,
     processed: 0,
     assigned: 0,
     confused: 0,
+    reprocessed: 0,
     errors: [],
     message: '',
   };
 
   try {
-    // Build query for records without shiftId
-    const query = { shiftId: { $exists: false } };
+    const query = {};
 
-    if (startDate && endDate) {
-      query.date = { $gte: startDate, $lte: endDate };
+    if (startDate && endD) {
+      query.date = { $gte: startDate, $lte: endD };
+    } else if (startDate) {
+      query.date = { $gte: startDate };
+    } else if (endD) {
+      query.date = { $lte: endD };
     }
 
-    // Get all attendance records without shifts
-    const records = await AttendanceDaily.find(query).sort({ date: -1 });
+    // Determine target employees based on employeeNumber, search, division, department, designation
+    let targetEmployeeNumbers = null;
 
-    // Fetch global general settings
-    const generalConfig = await Settings.getSettingsByCategory('general');
+    if (empNo) {
+      targetEmployeeNumbers = [String(empNo).trim().toUpperCase()];
+    } else if (search || divisionId || departmentId || designationId) {
+      const empQuery = {};
 
-    stats.processed = records.length;
+      if (divisionId && divisionId !== 'all') {
+        const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+        empQuery.division_id = divIds.length > 1 ? { $in: divIds } : divIds[0];
+      }
+
+      if (departmentId && departmentId !== 'all') {
+        const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+        empQuery.department_id = deptIds.length > 1 ? { $in: deptIds } : deptIds[0];
+      }
+
+      if (designationId && designationId !== 'all') {
+        const desigIds = String(designationId).split(',').filter(id => id && id !== 'all');
+        empQuery.designation_id = desigIds.length > 1 ? { $in: desigIds } : desigIds[0];
+      }
+
+      if (search && String(search).trim()) {
+        const s = String(search).trim();
+        empQuery.$or = [
+          { employee_name: { $regex: s, $options: 'i' } },
+          { emp_no: { $regex: s, $options: 'i' } }
+        ];
+      }
+
+      const matchingEmployees = await Employee.find(empQuery).select('emp_no').lean();
+      targetEmployeeNumbers = matchingEmployees.map(e => String(e.emp_no).toUpperCase());
+    }
+
+    if (targetEmployeeNumbers !== null) {
+      if (targetEmployeeNumbers.length === 0) {
+        stats.success = true;
+        stats.message = 'No matching employees found for the selected search/filters.';
+        return stats;
+      }
+    }
+
+    // Check for Security Division or Security Department employees to run the dedicated Security Attendance Engine
+    const { getSecurityDivisionEmployees, runSecurityDivisionAttendanceEngine, isSecurityEmployeeNumber } = require('../../attendance/services/securityDivisionAttendanceService');
+    const Division = require('../../departments/model/Division');
+
+    const secContext = await getSecurityDivisionEmployees();
+    const allSecEmpNos = new Set(
+      secContext.employees.map(e => String(e.emp_no || e.employeeNumber || e.customId).trim().toUpperCase()).filter(Boolean)
+    );
+
+    let isSecurityDivisionSync = false;
+    if (divisionId && divisionId !== 'all') {
+      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+      for (const dId of divIds) {
+        const secDiv = await Division.findById(dId).lean();
+        if (secDiv && /security/i.test(secDiv.name || '')) {
+          isSecurityDivisionSync = true;
+          break;
+        }
+      }
+    }
+
+    let securityEmpNumbers = [];
+    let generalEmpNumbers = [];
+
+    if (isSecurityDivisionSync) {
+      securityEmpNumbers = Array.from(allSecEmpNos);
+      if (targetEmployeeNumbers !== null) {
+        const filteredSec = targetEmployeeNumbers.filter(num => allSecEmpNos.has(num));
+        if (filteredSec.length > 0) {
+          securityEmpNumbers = filteredSec;
+        }
+      }
+    } else if (targetEmployeeNumbers !== null) {
+      for (const num of targetEmployeeNumbers) {
+        if (allSecEmpNos.has(num) || (await isSecurityEmployeeNumber(num))) {
+          securityEmpNumbers.push(num);
+        } else {
+          generalEmpNumbers.push(num);
+        }
+      }
+    } else {
+      securityEmpNumbers = Array.from(allSecEmpNos);
+    }
+
+    if (securityEmpNumbers.length > 0) {
+      const secResult = await runSecurityDivisionAttendanceEngine({
+        startDate,
+        endDate: endD,
+        empNos: securityEmpNumbers,
+        overrideWithThumbs: true,
+        recalculateMonthlySummary: true,
+      });
+
+      stats.processed += secResult.dailyRecordsUpserted || 0;
+      stats.reprocessed += secResult.dailyRecordsUpserted || 0;
+      stats.assigned += secResult.dailyRecordsUpserted || 0;
+
+      // If ONLY security employees were targeted, return immediately with clean summary
+      if (isSecurityDivisionSync || (targetEmployeeNumbers !== null && generalEmpNumbers.length === 0)) {
+        stats.success = true;
+        stats.message = `Successfully synced ${stats.reprocessed} Security record(s) for ${securityEmpNumbers.length} employee(s).`;
+        return stats;
+      }
+
+      // Otherwise, restrict targetEmployeeNumbers to generalEmpNumbers for general processing below
+      if (targetEmployeeNumbers !== null) {
+        targetEmployeeNumbers = generalEmpNumbers;
+      }
+    }
+
+    if (targetEmployeeNumbers !== null) {
+      if (targetEmployeeNumbers.length === 1) {
+        query.employeeNumber = targetEmployeeNumbers[0];
+      } else {
+        query.employeeNumber = { $in: targetEmployeeNumbers };
+      }
+    } else {
+      if (securityEmpNumbers.length > 0) {
+        query.employeeNumber = { $nin: securityEmpNumbers };
+      }
+      query.$or = [
+        { shiftId: { $exists: false }, inTime: { $ne: null } },
+        { status: 'PRESENT', totalWorkingHours: { $gt: 0, $lt: 6 } },
+        { 'shifts.status': 'complete' }
+      ];
+    }
+
+    // Get attendance records to sync
+    let records = await AttendanceDaily.find(query).select('employeeNumber date').lean();
+
+    // If specific employee(s) are targeted, also ensure all dates that have raw logs exist in records
+    if (targetEmployeeNumbers !== null && targetEmployeeNumbers.length <= 100 && startDate && endD) {
+      const AttendanceRawLog = require('../../attendance/model/AttendanceRawLog');
+      const existingKeys = new Set(records.map(r => `${r.employeeNumber}::${r.date}`));
+      const rawLogs = await AttendanceRawLog.find({
+        employeeNumber: targetEmployeeNumbers.length === 1 ? targetEmployeeNumbers[0] : { $in: targetEmployeeNumbers },
+        date: { $gte: startDate, $lte: endD }
+      }).select('employeeNumber date').lean();
+
+      for (const log of rawLogs) {
+        const key = `${log.employeeNumber}::${log.date}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          records.push({ employeeNumber: log.employeeNumber, date: log.date });
+        }
+      }
+    }
+
+    const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
+
+    records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    stats.processed += records.length;
 
     for (const record of records) {
       try {
-        if (!record.inTime) {
-          // No in-time, skip
-          continue;
-        }
-
-        // Detect and assign shift
-        const result = await detectAndAssignShift(
-          record.employeeNumber,
-          record.date,
-          record.inTime,
-          record.outTime || null,
-          generalConfig
-        );
-
-        if (result.success && result.assignedShift) {
-          // Update record with shift assignment
-          // Update record with shift assignment - USE SHIFTS ARRAY
-          if (!record.shifts) record.shifts = [];
-
-          let targetShift;
-          if (record.shifts.length > 0) {
-            targetShift = record.shifts[0];
-          } else {
-            targetShift = {
-              shiftNumber: 1,
-              inTime: record.inTime, // Legacy root inTime
-              outTime: record.outTime, // Legacy root outTime
-              // We should ideally ensure inTime/outTime are set on shift
-            };
-            record.shifts.push(targetShift);
+        const result = await reprocessAttendanceForEmployeeDate(record.employeeNumber, record.date);
+        if (result && result.success) {
+          stats.reprocessed++;
+          if (result.dailyRecord?.shifts?.some(s => s.shiftId)) {
+            stats.assigned++;
           }
-
-          targetShift.shiftId = result.assignedShift;
-          targetShift.shiftName = result.shiftName;
-          targetShift.shiftStartTime = result.shiftStartTime;
-          targetShift.shiftEndTime = result.shiftEndTime;
-          targetShift.lateInMinutes = result.lateInMinutes || 0;
-          targetShift.earlyOutMinutes = result.earlyOutMinutes || 0;
-          targetShift.isLateIn = result.isLateIn || false;
-          targetShift.isEarlyOut = result.isEarlyOut || false;
-          targetShift.expectedHours = result.expectedHours;
-          targetShift.status = record.outTime ? 'complete' : 'incomplete';
-
-          // Clean up root fields if migration didn't catch them?
-          // Maybe unsafe to unset here without explicit migration logic, but we are "syncing shifts".
-          // Let's just save.
-
-          await record.save();
-          stats.assigned++;
-        } else if (result.confused) {
-          // Confused shift record already created by detectAndAssignShift
-          stats.confused++;
         }
-
       } catch (error) {
         stats.errors.push(`Error processing ${record.employeeNumber} on ${record.date}: ${error.message}`);
-        console.error(`Error processing record ${record._id}:`, error);
+        console.error(`Error processing record ${record._id || record.employeeNumber}:`, error);
+      }
+    }
+
+    // Recalculate monthly summary for affected employees and months so grid and summaries stay 100% in sync
+    const affectedEmpMonths = new Set();
+    for (const record of records) {
+      if (record.employeeNumber && record.date) {
+        const yyyyMm = String(record.date).slice(0, 7);
+        affectedEmpMonths.add(`${record.employeeNumber}::${yyyyMm}`);
+      }
+    }
+
+    if (affectedEmpMonths.size > 0) {
+      const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
+      for (const pair of affectedEmpMonths) {
+        const [empNumber, yyyyMm] = pair.split('::');
+        try {
+          const empDoc = await Employee.findOne({ emp_no: empNumber }).select('_id emp_no').lean();
+          if (empDoc) {
+            const [y, m] = yyyyMm.split('-');
+            await calculateMonthlySummary(empDoc._id, empDoc.emp_no, parseInt(y, 10), parseInt(m, 10), true);
+          }
+        } catch (sumErr) {
+          console.error(`[ShiftSync] Error updating monthly summary for ${empNumber} on ${yyyyMm}:`, sumErr.message);
+        }
       }
     }
 
     stats.success = true;
-    stats.message = `Processed ${stats.processed} records: ${stats.assigned} assigned, ${stats.confused} flagged for review`;
+    stats.message = `Processed ${stats.processed} record(s): ${stats.reprocessed} recalculated, ${stats.assigned} shift(s) confirmed`;
 
   } catch (error) {
     console.error('Error in syncShiftsForExistingRecords:', error);

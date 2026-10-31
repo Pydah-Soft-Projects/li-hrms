@@ -64,6 +64,27 @@ async function syncOneRosterEntryToAttendance(entry) {
       return 'reprocessed';
     }
 
+    if (dailyRecord && dailyRecord.status === 'LEAVE') {
+      try {
+        const Leave = require('../../leaves/model/Leave');
+        const { createISTDate } = require('../../shared/utils/dateUtils');
+        const dayStart = createISTDate(entry.date, '00:00');
+        const dayEnd = createISTDate(entry.date, '23:59');
+        const approvedLeave = await Leave.findOne({
+          $or: [{ emp_no: empNo }, { employeeNumber: empNo }],
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
+          status: 'approved',
+          isActive: { $ne: false },
+        }).lean();
+        if (approvedLeave) {
+          return 'skipped';
+        }
+      } catch (leaveErr) {
+        // fallback
+      }
+    }
+
     const updateFields = {
       status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
       shifts: [],
@@ -84,6 +105,12 @@ async function syncOneRosterEntryToAttendance(entry) {
       });
     } else {
       Object.assign(dailyRecord, updateFields);
+      if (dailyRecord.policyMeta?.sandwichRule) {
+        dailyRecord.policyMeta.sandwichRule.applied = false;
+        dailyRecord.policyMeta.sandwichRule.ruleCode = null;
+        dailyRecord.policyMeta.sandwichRule.effect = null;
+        dailyRecord.policyMeta.sandwichRule.note = null;
+      }
       appendSource(dailyRecord);
     }
 
@@ -159,6 +186,12 @@ async function syncOneRosterEntryToAttendance(entry) {
           source: ['roster-sync'],
         });
         Object.assign(dailyRecord, updateFields);
+        if (dailyRecord.policyMeta?.sandwichRule) {
+          dailyRecord.policyMeta.sandwichRule.applied = false;
+          dailyRecord.policyMeta.sandwichRule.ruleCode = null;
+          dailyRecord.policyMeta.sandwichRule.effect = null;
+          dailyRecord.policyMeta.sandwichRule.note = null;
+        }
         appendSource(dailyRecord);
         await dailyRecord.save();
         return 'synced';

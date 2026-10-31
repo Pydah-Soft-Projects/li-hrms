@@ -241,10 +241,23 @@ export interface PayrollBatch {
 
 /** Attendance deduction breakdown (late-in/early-out) */
 export interface AttendanceDeductionBreakdown {
+  evaluationMode?: string;
   lateInsCount?: number;
   earlyOutsCount?: number;
   combinedCount?: number;
+  freeAllowedPerMonth?: number;
+  freeLateInsPerMonth?: number | null;
+  freeEarlyOutsPerMonth?: number | null;
+  effectiveCount?: number;
+  effectiveLateCount?: number;
+  effectiveEarlyCount?: number;
+  lateDaysDeducted?: number;
+  earlyDaysDeducted?: number;
   daysDeducted?: number;
+  lateEarlyDaysDeducted?: number;
+  absentExtraDays?: number;
+  absentDays?: number;
+  lopDaysPerAbsent?: number | null;
   deductionType?: string | null;
   calculationMode?: string | null;
 }
@@ -1135,9 +1148,37 @@ export interface UserHistoryRow {
   performedBy?: string | User | null;
   performedByName?: string | null;
   performedByRole?: string | null;
+  targetUserName?: string | null;
+  targetUserEmail?: string | null;
+  targetUserRole?: string | null;
+  targetEmployeeId?: string | null;
+  targetAccessProfile?: {
+    dataScope: string;
+    divisionMapping: { divisionName: string; departments: string[] }[];
+    featureControl: string[];
+    role?: string;
+    isActive?: boolean;
+  } | null;
   details?: any;
   comments?: string | null;
   timestamp: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UserAuditsResponse {
+  data: UserHistoryRow[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats?: {
+    totalAudits: number;
+    totalAccessChanges: number;
+    eventsToday: number;
+  };
 }
 export interface Role {
   _id: string;
@@ -1946,6 +1987,29 @@ export const api = {
     return apiRequest<UserHistoryRow[]>(`/users/${id}/activity?${q.toString()}`, { method: 'GET' });
   },
 
+  getUserAudits: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    event?: string;
+    userId?: string;
+    performedBy?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.search) q.append('search', params.search);
+    if (params?.event) q.append('event', params.event);
+    if (params?.userId) q.append('userId', params.userId);
+    if (params?.performedBy) q.append('performedBy', params.performedBy);
+    if (params?.startDate) q.append('startDate', params.startDate);
+    if (params?.endDate) q.append('endDate', params.endDate);
+    const queryStr = q.toString() ? `?${q.toString()}` : '';
+    return apiRequest<UserHistoryRow[]>(`/users/audits${queryStr}`, { method: 'GET' });
+  },
+
   resetUserPassword: async (id: string, data: { newPassword?: string; autoGenerate?: boolean }) => {
     return apiRequest<any>(`/users/${id}/reset-password`, {
       method: 'PUT',
@@ -2401,6 +2465,36 @@ export const api = {
     });
   },
 
+  // Public API Keys Management
+  getPublicApiKeys: async () => {
+    return apiRequest<any>('/settings/api-keys', { method: 'GET' });
+  },
+
+  getPublicApiKeyFields: async () => {
+    return apiRequest<any>('/settings/api-keys/fields', { method: 'GET' });
+  },
+
+  createPublicApiKey: async (data: { clientName: string; allowedFields?: string[]; description?: string }) => {
+    return apiRequest<any>('/settings/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updatePublicApiKey: async (id: string, data: { clientName?: string; allowedFields?: string[]; isActive?: boolean; description?: string }) => {
+    return apiRequest<any>(`/settings/api-keys/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deletePublicApiKey: async (id: string) => {
+    return apiRequest<any>(`/settings/api-keys/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+
   getLoginMetrics: async () => {
     return apiRequest('/auth/login-metrics', { method: 'GET' });
   },
@@ -2527,9 +2621,8 @@ export const api = {
     return apiRequest<any>('/employee-applications/form-settings', { method: 'GET' });
   },
 
-  exportEmployees: async (fields: string[], filters?: any, empNo?: string) => {
-    auth.recordActivity();
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  exportEmployees: async (fields: string[], filters?: any, empNo?: string, format: 'csv' | 'xlsx' = 'csv') => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -2540,7 +2633,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/employees/export`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ fields, filters, empNo }),
+      body: JSON.stringify({ fields, filters, empNo, format }),
     });
 
     if (!response.ok) {
@@ -2568,6 +2661,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
       view?: 'full' | 'summary' | 'list';
@@ -2588,6 +2683,8 @@ export const api = {
     if (filters?.search) params.append('search', filters.search);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.doj_start) params.append('doj_start', filters.doj_start);
+    if (filters?.doj_end) params.append('doj_end', filters.doj_end);
     if (filters?.page) params.append('page', String(filters.page));
     if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     if (filters?.view) params.append('view', filters.view);
@@ -2611,6 +2708,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
       sortBy?: string;
@@ -2634,6 +2733,8 @@ export const api = {
       search?: string;
       startDate?: string;
       endDate?: string;
+      doj_start?: string;
+      doj_end?: string;
       page?: number;
       limit?: number;
     },
@@ -3577,6 +3678,18 @@ export const api = {
     apiRequest<{ filled: number; holidaysRespected: number; previousRange: { startDate: string; endDate: string }; nextRange: { startDate: string; endDate: string } }>('/shifts/roster/auto-fill-next-cycle', {
       method: 'POST',
       body: JSON.stringify(params || {}),
+    }),
+
+  syncRosterToAttendance: (data?: {
+    month?: string;
+    date?: string;
+    startDate?: string;
+    endDate?: string;
+    employeeNumbers?: string[];
+  }) =>
+    apiRequest<{ synced: number; reprocessed: number; skipped: number; totalEntries: number }>('/shifts/roster/sync-attendance', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
     }),
 
   // ==========================================
@@ -4704,10 +4817,28 @@ export const api = {
   },
 
   // Shift Sync
-  syncShifts: async (startDate?: string, endDate?: string) => {
+  syncShifts: async (
+    optionsOrStartDate?: {
+      startDate?: string;
+      endDate?: string;
+      employeeNumber?: string;
+      search?: string;
+      divisionId?: string;
+      departmentId?: string;
+      designationId?: string;
+    } | string,
+    endDate?: string,
+    employeeNumber?: string
+  ) => {
+    let bodyData: any = {};
+    if (typeof optionsOrStartDate === 'object' && optionsOrStartDate !== null) {
+      bodyData = optionsOrStartDate;
+    } else {
+      bodyData = { startDate: optionsOrStartDate, endDate, employeeNumber };
+    }
     return apiRequest<any>('/shifts/sync', {
       method: 'POST',
-      body: JSON.stringify({ startDate, endDate }),
+      body: JSON.stringify(bodyData),
     });
   },
 
@@ -5818,6 +5949,7 @@ export const api = {
     month: string;
     departmentIds?: string[];
     divisionIds?: string[];
+    designationId?: string;
     search?: string;
     employeeGroupId?: string;
   }) => {
@@ -5839,7 +5971,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register summary');
+      let errorMsg = text || 'Failed to export pay register summary';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     const blob = await response.blob();
@@ -5850,6 +5987,7 @@ export const api = {
     month: string;
     departmentIds?: string[];
     divisionIds?: string[];
+    designationId?: string;
     search?: string;
     employeeGroupId?: string;
   }) => {
@@ -5871,7 +6009,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register summary PDF');
+      let errorMsg = text || 'Failed to export pay register summary PDF';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();
@@ -5901,7 +6044,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register modifications');
+      let errorMsg = text || 'Failed to export pay register modifications';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();
@@ -5931,7 +6079,12 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'Failed to export pay register modifications PDF');
+      let errorMsg = text || 'Failed to export pay register modifications PDF';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error || parsed.message) errorMsg = parsed.error || parsed.message;
+      } catch {}
+      throw new Error(errorMsg);
     }
 
     return response.blob();
@@ -6807,6 +6960,7 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
     departmentId?: string | string[];
     divisionId?: string | string[];
     designationId?: string | string[];
@@ -6821,6 +6975,7 @@ export const api = {
     if (params.startDate) query.append('startDate', params.startDate);
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
     if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
     if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);
     if (params.designationId) query.append('designationId', Array.isArray(params.designationId) ? params.designationId.join(',') : params.designationId);
@@ -6838,6 +6993,12 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
+    departmentId?: string | string[];
+    divisionId?: string | string[];
+    designationId?: string | string[];
+    month?: string;
+    year?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -6846,6 +7007,12 @@ export const api = {
     if (params.startDate) query.append('startDate', params.startDate);
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
+    if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
+    if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);
+    if (params.designationId) query.append('designationId', Array.isArray(params.designationId) ? params.designationId.join(',') : params.designationId);
+    if (params.month) query.append('month', params.month);
+    if (params.year) query.append('year', params.year);
     if (params.search) query.append('search', params.search);
     if (params.page) query.append('page', params.page.toString());
     if (params.limit) query.append('limit', params.limit.toString());
@@ -6857,6 +7024,7 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string | string[];
+    employeeGroupId?: string | string[];
     search?: string;
     departmentId?: string | string[];
     divisionId?: string | string[];
@@ -6872,6 +7040,7 @@ export const api = {
     if (params.month) query.append('month', params.month);
     if (params.year) query.append('year', params.year);
     if (params.employeeId) query.append('employeeId', Array.isArray(params.employeeId) ? params.employeeId.join(',') : params.employeeId);
+    if (params.employeeGroupId) query.append('employeeGroupId', Array.isArray(params.employeeGroupId) ? params.employeeGroupId.join(',') : params.employeeGroupId);
     if (params.search) query.append('search', params.search);
     if (params.departmentId) query.append('departmentId', Array.isArray(params.departmentId) ? params.departmentId.join(',') : params.departmentId);
     if (params.divisionId) query.append('divisionId', Array.isArray(params.divisionId) ? params.divisionId.join(',') : params.divisionId);
@@ -7130,5 +7299,76 @@ export const api = {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+  },
+
+  getTransportReports: async (params?: {
+    search?: string;
+    status?: string;
+    academicYear?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.academicYear) query.append('academicYear', params.academicYear);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+
+    return apiRequest<any>(`/transport/reports?${query.toString()}`, { method: 'GET' });
+  },
+
+  exportTransportReports: async (params?: {
+    search?: string;
+    status?: string;
+    academicYear?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.academicYear) query.append('academicYear', params.academicYear);
+
+    const token = auth.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/transport/reports/export?${query.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to export Transport report');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `Employee_Transport_Requests_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  },
+
+  getBusWiseReports: async (params?: {
+    date?: string;
+    search?: string;
+    onlyLate?: boolean;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.date) query.append('date', params.date);
+    if (params?.search) query.append('search', params.search);
+    if (params?.onlyLate !== undefined) query.append('onlyLate', params.onlyLate.toString());
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+
+    return apiRequest<any>(`/transport/bus-reports?${query.toString()}`, { method: 'GET' });
   }
 };
+
+export const reportsApi = api;
+
+

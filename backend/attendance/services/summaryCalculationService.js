@@ -20,11 +20,18 @@ const { resolveDayLateEarlyWaiver } = require('../../shared/utils/hoursOdOverlap
 
 function defaultAttendancePolicyDeductionBreakdown() {
   return {
+    evaluationMode: 'combined',
     lateInsCount: 0,
     earlyOutsCount: 0,
     combinedCount: 0,
     freeAllowedPerMonth: 0,
+    freeLateInsPerMonth: null,
+    freeEarlyOutsPerMonth: null,
     effectiveCount: 0,
+    effectiveLateCount: 0,
+    effectiveEarlyCount: 0,
+    lateDaysDeducted: 0,
+    earlyDaysDeducted: 0,
     daysDeducted: 0,
     lateEarlyDaysDeducted: 0,
     absentExtraDays: 0,
@@ -593,9 +600,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       const day = dailyStatsMap.get(dStr);
       if (!day) continue;
       day.leaves.push({
-        // Keep the minimal shape used below (isHalfDay + leaveType).
-        isHalfDay: split.isHalfDay,
-        numberOfDays: split.numberOfDays,
+        leaveId: split.leaveId || split._id,
+        isHalfDay: Boolean(split.isHalfDay),
+        halfDayType: split.halfDayType || null,
+        fromIsHalfDay: Boolean(split.isHalfDay),
+        fromHalfDayType: split.halfDayType || null,
+        toIsHalfDay: Boolean(split.isHalfDay),
+        toHalfDayType: split.halfDayType || null,
+        numberOfDays: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
+        segmentDaysOnDate: Number(split.numberOfDays) || (split.isHalfDay ? 0.5 : 1),
         leaveType: split.leaveType,
         leaveNature: split.leaveNature,
       });
@@ -981,8 +994,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           // Half-day OD while daily status is OD: credit the office half toward present (same intent as HD/OD in UI).
           const halfOd = day.ods.find(
             (o) =>
-              o.isHalfDay &&
-              o.odType_extended === 'half_day' &&
+              (o.isHalfDay || String(o.odType_extended) === 'half_day') &&
               (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
           );
           if (halfOd) {
@@ -1007,8 +1019,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
                 attFirst = 0.5;
                 attSecond = 0.5;
               } else if (hourPay >= 0.45) {
-                attFirst = 0.5;
-                attSecond = 0;
+                const isSecondHalf =
+                  hourOd.halfDayType === 'second_half' ||
+                  approvedLeaveCovFirst > 0 ||
+                  (hourOd.odStartTime && hourOd.odStartTime >= '12:00');
+                if (isSecondHalf) {
+                  attSecond = 0.5;
+                  attFirst = 0;
+                } else {
+                  attFirst = 0.5;
+                  attSecond = 0;
+                }
               }
             }
           }
@@ -1020,11 +1041,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       let hasFullDayOdCoverage = false;
       if (day.ods.length > 0 && !day.isWO && !day.isHOL) {
         for (const od of day.ods) {
-          // Hour-based OD credits attendance gaps only — not counted as OD days in summary totals.
-          if (String(od.odType_extended || '') === 'hours') continue;
+          const isHoursOd = String(od.odType_extended || '') === 'hours';
+          const isExplicitHalfOd =
+            od.isHalfDay ||
+            String(od.odType_extended || '') === 'half_day' ||
+            (isHoursOd && (od.halfDayType === 'first_half' || od.halfDayType === 'second_half'));
+
+          // Hour-based OD credits attendance gaps only when punches exist covering the shift.
+          // BUT when it's an explicit half-day OD (or on a day without full presence / with leave),
+          // it must be counted in OD totals so the employee gets proper OD credit.
+          if (isHoursOd && !isExplicitHalfOd) continue;
+
           const odDays = Number(od.numberOfDays) || 0;
           const isFullDayOd =
-            (!od.isHalfDay && String(od.odType_extended || '') !== 'hours') ||
+            (!od.isHalfDay && !isHoursOd) ||
             od.odType_extended === 'full_day' ||
             odDays >= 1 - 1e-6;
           if (isFullDayOd) {
@@ -1038,6 +1068,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           } else if (od.halfDayType === 'second_half') {
             odSecond = 0.5;
             day.earlyOutWaved = true;
+          } else if (approvedLeaveCovFirst > 0) {
+            odSecond = 0.5;
+            day.earlyOutWaved = true;
+          } else if (approvedLeaveCovSecond > 0) {
+            odFirst = 0.5;
+            day.lateInWaved = true;
           } else {
             odFirst = 0.5; // Default half-day OD to first half
             day.lateInWaved = true;
@@ -1111,14 +1147,32 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       if (approvedLeaveCovFirst > 0) attFirst = Math.max(0, attFirst - approvedLeaveCovFirst);
       if (approvedLeaveCovSecond > 0) attSecond = Math.max(0, attSecond - approvedLeaveCovSecond);
 
-      // dayPresent: punch half-credits minus OD; PARTIAL caps at 0.5 (never both halves from confused IN+OUT)
-      let dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
+      // dayPresent: punch half-credits minus OD; supports multi-shift doubles when in multi_shift mode
+      let dayPresent = Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond);
+      if (!processingModeIsMultiShift) {
+        dayPresent = Math.min(dayPresent, 1.0);
+      } else if (day.attendance && !day.isWO && !day.isHOL) {
+        const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
+        const presentShifts = shifts.filter((s) => {
+          const st = String(s?.status || '').toUpperCase();
+          return st === 'PRESENT' || (Number(s?.payableShift) || 0) > 0;
+        });
+        const shiftPresentCount = presentShifts.reduce((sum, s) => sum + (Number(s?.payableShift) || 1), 0);
+        if (shiftPresentCount > 0) {
+          dayPresent = Math.max(dayPresent, shiftPresentCount);
+        } else if (Number(day.attendance.payableShifts) > 0) {
+          dayPresent = Math.max(dayPresent, Number(day.attendance.payableShifts));
+        }
+      }
       if (
         processingModeIsSingleShift &&
         day.attendance &&
         String(day.attendance.status || '').toUpperCase() === 'PARTIAL'
       ) {
         dayPresent = Math.min(dayPresent, 0.5);
+      }
+      if (hasFullDayEsiLeave) {
+        dayPresent = 0;
       }
 
       const dayFirst = Math.max(attFirst, odFirst);
@@ -1257,8 +1311,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
 
       // 1. Handle Present Counts (Physical presence NOT on-duty)
+      // totalPresentDays is date-wise physical days (26), while contributingDates.present keeps multi-shift values (e.g. 2) for click highlights
       if (dayPresent > 0) {
-        totalPresentDays += dayPresent;
+        totalPresentDays += Math.min(dayPresent, 1.0);
         if (!contributingDates.present.some(cd => cd.date === dStr)) {
           contributingDates.present.push({ date: dStr, value: dayPresent, label: 'P' });
         }
@@ -1658,11 +1713,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         policyDedDays = Number(b.daysDeducted) || 0;
         policyBreakdown = {
           ...defaultAttendancePolicyDeductionBreakdown(),
+          evaluationMode: b.evaluationMode != null ? String(b.evaluationMode) : 'combined',
           lateInsCount: Number(b.lateInsCount) || 0,
           earlyOutsCount: Number(b.earlyOutsCount) || 0,
           combinedCount: Number(b.combinedCount) || 0,
           freeAllowedPerMonth: Number(b.freeAllowedPerMonth) || 0,
+          freeLateInsPerMonth: b.freeLateInsPerMonth != null ? Number(b.freeLateInsPerMonth) : null,
+          freeEarlyOutsPerMonth: b.freeEarlyOutsPerMonth != null ? Number(b.freeEarlyOutsPerMonth) : null,
           effectiveCount: Number(b.effectiveCount) || 0,
+          effectiveLateCount: Number(b.effectiveLateCount) || 0,
+          effectiveEarlyCount: Number(b.effectiveEarlyCount) || 0,
+          lateDaysDeducted: Number(b.lateDaysDeducted) || 0,
+          earlyDaysDeducted: Number(b.earlyDaysDeducted) || 0,
           daysDeducted: Number(b.daysDeducted) || 0,
           lateEarlyDaysDeducted: Number(b.lateEarlyDaysDeducted) || 0,
           absentExtraDays: Number(b.absentExtraDays) || 0,

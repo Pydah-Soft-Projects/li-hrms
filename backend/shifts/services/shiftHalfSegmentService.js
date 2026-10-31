@@ -222,24 +222,27 @@ const evaluateHalfPresenceWithBreakCredit = ({
   workedThroughBreak,
   fullBreakMinutes,
   overflowMinutes = 0,
+  effectiveGrace = 0,
 }) => {
   if (minMinutes <= 0) {
     return { present: rawMinutes > 0, credit: rawMinutes };
   }
 
-  if (rawMinutes >= minMinutes) return { present: true, credit: rawMinutes };
+  const effectiveMin = Math.max(0, minMinutes - (effectiveGrace || 0));
+
+  if (rawMinutes >= effectiveMin) return { present: true, credit: rawMinutes };
 
   if (!workedThroughBreak) {
     return { present: false, credit: rawMinutes };
   }
 
   let credit = rawMinutes + fullBreakMinutes;
-  if (credit < minMinutes && overflowMinutes > 0) {
-    const needed = minMinutes - credit;
+  if (credit < effectiveMin && overflowMinutes > 0) {
+    const needed = effectiveMin - credit;
     credit += Math.min(overflowMinutes, needed);
   }
 
-  return { present: credit >= minMinutes, credit };
+  return { present: credit >= effectiveMin, credit };
 };
 
 /**
@@ -298,12 +301,16 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
     );
   }
 
+  const firstHalfEffectiveGrace = typeof firstHalf.gracePeriod === 'number' ? firstHalf.gracePeriod : 15;
+  const secondHalfEffectiveGrace = typeof secondHalf.gracePeriod === 'number' ? secondHalf.gracePeriod : 15;
+
   const firstHalfEval = evaluateHalfPresenceWithBreakCredit({
     rawMinutes: firstHalfRawMinutes,
     minMinutes: firstHalfMinMinutes,
     workedThroughBreak,
     fullBreakMinutes,
     overflowMinutes: firstHalfOverflowMinutes,
+    effectiveGrace: firstHalfEffectiveGrace,
   });
 
   const secondHalfEval = evaluateHalfPresenceWithBreakCredit({
@@ -311,6 +318,7 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
     minMinutes: secondHalfMinMinutes,
     workedThroughBreak,
     fullBreakMinutes,
+    effectiveGrace: secondHalfEffectiveGrace,
   });
 
   let firstHalfPresent = firstHalfEval.present;
@@ -322,8 +330,9 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
   if (!firstHalfPresent && !secondHalfPresent) {
     const dominantCredit = totalWorkMinutes + (workedThroughBreak ? fullBreakMinutes : 0);
     const dominantMin = firstHalfIsDominant ? firstHalfMinMinutes : secondHalfMinMinutes;
+    const dominantGrace = firstHalfIsDominant ? firstHalfEffectiveGrace : secondHalfEffectiveGrace;
 
-    if (dominantCredit >= dominantMin) {
+    if (dominantCredit >= Math.max(0, dominantMin - dominantGrace)) {
       if (firstHalfIsDominant) {
         firstHalfPresent = true;
         firstHalfCredit = dominantCredit;

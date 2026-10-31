@@ -37,6 +37,7 @@ import {
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
 import ModulePermissionBadges, { moduleShouldShowInPermissionView } from '@/components/users/ModulePermissionBadges';
+import Link from 'next/link';
 import { expandLegacyPromotionTransferPermissions } from '@/lib/userFeaturePermissions';
 import Spinner from '@/components/Spinner';
 import {
@@ -1487,6 +1488,16 @@ export default function UsersPage() {
               <RotateCw className={`h-4 w-4 transition-transform group-hover:rotate-180 ${loading ? 'animate-spin' : ''}`} />
               Sync Data
             </button>
+            {currentUser?.role === 'super_admin' && (
+              <Link
+                href="/superadmin/user-audits"
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                title="View user audit history"
+              >
+                <ShieldCheck className="h-4 w-4 text-indigo-500" />
+                User Audits
+              </Link>
+            )}
             {currentUser && canCreateUser(currentUser as any) && (
               <>
                 <button

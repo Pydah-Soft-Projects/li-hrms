@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Loader2, Calendar, Download, AlertCircle, TrendingUp, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 interface MobileSessionRow {
   date: string;
@@ -165,50 +167,44 @@ export default function MobileAnalyticsTab() {
   const paginatedRows = sortedRows.slice((page - 1) * limit, page * limit);
   const totalPages = Math.ceil(totalCount / limit);
 
-  // Export to CSV
-  const handleExport = () => {
-    if (rows.length === 0) {
-      toast.error('No data to export');
-      return;
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const MOBILE_COLUMNS: ColumnOption[] = [
+    { key: 'date', label: 'Date', defaultChecked: true, isNecessary: true, getValue: (row) => row.date ? dayjs(row.date).format('YYYY-MM-DD') : '—' },
+    { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row) => row.emp_no || '—' },
+    { key: 'userName', label: 'User Name', defaultChecked: true, isNecessary: true, getValue: (row) => row.userName || '—' },
+    { key: 'mobileLogins', label: 'Mobile Logins', defaultChecked: true, isNecessary: true, getValue: (row) => row.mobileLogins ?? 0 },
+    { key: 'totalSessions', label: 'Total Sessions', defaultChecked: true, isNecessary: true, getValue: (row) => row.totalSessions ?? 0 },
+    { key: 'totalDurationFormatted', label: 'Total Duration', defaultChecked: true, isNecessary: true, getValue: (row) => row.totalDurationFormatted || '—' },
+    { key: 'dailyActiveUsers', label: 'Daily Active Users', defaultChecked: false, isNecessary: false, getValue: (row) => row.dailyActiveUsers ?? 0 },
+  ];
+
+  const openExportModal = (fmt: 'excel' | 'pdf') => {
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    try {
+      exportReportWithColumns({
+        title: 'Mobile App Usage Analytics Report',
+        subtitle: `Period: ${fromDate} to ${toDate}`,
+        data: rows,
+        columns: MOBILE_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Mobile_App_Usage_${fromDate}_to_${toDate}`,
+      });
+      toast.success(`${format.toUpperCase()} report downloaded successfully!`);
+      setIsColumnModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Export failed');
     }
+  };
 
-    const headers = ['Date', 'Employee', 'Name', 'Mobile Logins', 'Sessions', 'Total Time'];
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((r) =>
-        [
-          r.date,
-          r.emp_no,
-          r.userName,
-          r.mobileLogins,
-          r.totalSessions,
-          r.totalDurationFormatted,
-        ]
-          .map((field) => {
-            // Escape quotes and wrap in quotes if contains comma
-            const str = String(field || '');
-            return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
-          })
-          .join(',')
-      ),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-
-    link.setAttribute('href', url);
-    link.setAttribute(
-      'download',
-      `mobile-app-usage-${fromDate}_to_${toDate}_${new Date().getTime()}.csv`
-    );
-    link.style.visibility = 'hidden';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    toast.success('Report exported successfully');
+  const handleExport = () => {
+    openExportModal('excel');
   };
 
   return (
@@ -261,15 +257,23 @@ export default function MobileAnalyticsTab() {
             </button>
           </div>
 
-          {/* Export Button */}
-          <div className="flex justify-end">
+          {/* Export Buttons */}
+          <div className="flex justify-end gap-2">
             <button
-              onClick={handleExport}
+              onClick={() => openExportModal('excel')}
               disabled={rows.length === 0 || loading}
               className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors disabled:bg-emerald-400 flex items-center gap-2"
             >
               <Download className="h-4 w-4" />
-              Export to CSV
+              Export Excel
+            </button>
+            <button
+              onClick={() => openExportModal('pdf')}
+              disabled={rows.length === 0 || loading}
+              className="px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export PDF
             </button>
           </div>
         </div>
@@ -469,6 +473,16 @@ export default function MobileAnalyticsTab() {
           </div>
         )}
       </div>
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Mobile Analytics Report"
+        exportFormat={exportFormat}
+        columns={MOBILE_COLUMNS}
+        onConfirmExport={handleConfirmExport}
+        loading={loading}
+      />
     </div>
   );
 }

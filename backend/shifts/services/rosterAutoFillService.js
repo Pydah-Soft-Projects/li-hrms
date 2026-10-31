@@ -294,6 +294,18 @@ async function autoFillNextCycleFromPrevious(options = {}) {
     }
   }
 
+  if (saved > 0) {
+    try {
+      const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+      const woEntries = bulk.filter((e) => e.status === 'WO');
+      if (woEntries.length > 0) {
+        await syncRosterEntriesToAttendance(woEntries);
+      }
+    } catch (syncErr) {
+      console.warn('[RosterAutoFill] Non-blocking error syncing to attendance:', syncErr.message);
+    }
+  }
+
   return {
     filled: saved,
     holidaysRespected: 0,

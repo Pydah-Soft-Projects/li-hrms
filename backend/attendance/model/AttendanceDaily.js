@@ -68,6 +68,10 @@ const attendanceDailySchema = new mongoose.Schema(
         ref: 'Shift',
         default: null,
       },
+      isManualShift: {
+        type: Boolean,
+        default: false,
+      },
       shiftName: {
         type: String,
         default: null,
@@ -165,7 +169,7 @@ const attendanceDailySchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF', 'OD'],
+      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF', 'OD', 'LEAVE'],
       default: 'ABSENT',
     },
     rosterFirstHalfNonWorking: {
@@ -208,7 +212,17 @@ const attendanceDailySchema = new mongoose.Schema(
     }],
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'roster-sync'],
+      enum: [
+        'mssql',
+        'excel',
+        'manual',
+        'biometric-realtime',
+        'roster-sync',
+        'dynamic-roster-import',
+        'summary-sandwich',
+        'manual-paper-sheet',
+        'auto-generated',
+      ],
       default: [],
     },
     lastSyncedAt: {
@@ -653,7 +667,7 @@ attendanceDailySchema.pre('save', async function () {
     // 2. Status Determination (includes OD contribution: cumulative punch + OD)
     // Half-day OD: if day already had HALF_DAY from punches (0.5), adding half-day OD (0.5) -> total 1.0 -> PRESENT.
     // If day had no half-day from punches, half-day OD alone -> 0.5 payable -> HALF_DAY. Monthly summary is updated in post-save.
-    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT');
+    const hasPresentShift = this.shifts.some(s => s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 0.95));
     const hasHalfDayShift = this.shifts.some(s => s.status === 'HALF_DAY');
     const totalPayableFromShifts = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
     // When OD was applied at shift level, hour-based payable is already in shift.payableShift; add only half/full-day OD
@@ -823,6 +837,9 @@ attendanceDailySchema.post('findOneAndUpdate', async function (result) {
     const isShiftsUpdate = update.$set?.shifts || update.shifts;
     const isStatusUpdate = update.$set?.status || update.status;
     const isManualOverride = update.$set?.isEdited || update.isEdited;
+    const options = this.getOptions ? this.getOptions() : {};
+    if (options.skipSummaryRecalc || options.skipHooks) return;
+
     if (!isShiftsUpdate && !isStatusUpdate && !isManualOverride) return;
 
     const employeeNumber = (result && result.employeeNumber) || query.employeeNumber;

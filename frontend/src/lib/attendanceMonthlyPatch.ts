@@ -15,6 +15,9 @@ function normalizeDayForGrid(detail: MonthlyDayPatch, prev?: MonthlyDayPatch | n
     prev?.totalHours ??
     null;
 
+  const lateMins = Number(detail.lateInMinutes ?? detail.totalLateInMinutes ?? 0);
+  const earlyMins = Number(detail.earlyOutMinutes ?? detail.totalEarlyOutMinutes ?? 0);
+
   return {
     ...detail,
     shifts,
@@ -25,11 +28,9 @@ function normalizeDayForGrid(detail: MonthlyDayPatch, prev?: MonthlyDayPatch | n
     earlyOutMinutes:
       detail.earlyOutMinutes ?? detail.totalEarlyOutMinutes ?? prev?.earlyOutMinutes ?? 0,
     isLateIn:
-      Number(detail.lateInMinutes ?? detail.totalLateInMinutes ?? 0) > 0 ||
-      Boolean(prev?.isLateIn),
+      detail.isLateIn !== undefined ? Boolean(detail.isLateIn) : lateMins > 0,
     isEarlyOut:
-      Number(detail.earlyOutMinutes ?? detail.totalEarlyOutMinutes ?? 0) > 0 ||
-      Boolean(prev?.isEarlyOut),
+      detail.isEarlyOut !== undefined ? Boolean(detail.isEarlyOut) : earlyMins > 0,
   };
 }
 
@@ -50,12 +51,12 @@ export function patchMonthlyDayFromDetail<
       ...(prev || {}),
       ...normalized,
       date,
-      hasLeave: preserve?.hasLeave ?? prev?.hasLeave ?? normalized.hasLeave,
-      leaveInfo: preserve?.leaveInfo ?? prev?.leaveInfo ?? normalized.leaveInfo,
-      hasOD: preserve?.hasOD ?? prev?.hasOD ?? normalized.hasOD,
-      odInfo: preserve?.odInfo ?? prev?.odInfo ?? normalized.odInfo,
-      isConflict: preserve?.isConflict ?? prev?.isConflict ?? normalized.isConflict,
-      isEdited: preserve?.isEdited ?? prev?.isEdited ?? normalized.isEdited ?? true,
+      hasLeave: preserve?.hasLeave ?? normalized.hasLeave ?? prev?.hasLeave,
+      leaveInfo: preserve?.leaveInfo ?? normalized.leaveInfo ?? prev?.leaveInfo,
+      hasOD: preserve?.hasOD ?? normalized.hasOD ?? prev?.hasOD,
+      odInfo: preserve?.odInfo ?? normalized.odInfo ?? prev?.odInfo,
+      isConflict: preserve?.isConflict ?? normalized.isConflict ?? prev?.isConflict,
+      isEdited: preserve?.isEdited ?? normalized.isEdited ?? prev?.isEdited ?? false,
       editHistory: normalized.editHistory ?? prev?.editHistory,
       source: normalized.source ?? prev?.source,
     };

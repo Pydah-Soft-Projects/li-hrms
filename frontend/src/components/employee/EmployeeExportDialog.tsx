@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import { Calendar } from 'lucide-react';
 
 interface EmployeeExportDialogProps {
   isOpen: boolean;
@@ -23,12 +24,16 @@ export default function EmployeeExportDialog({
   const [exporting, setExporting] = useState(false);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
+  const [dojStartDate, setDojStartDate] = useState<string>('');
+  const [dojEndDate, setDojEndDate] = useState<string>('');
 
   useEffect(() => {
     if (isOpen) {
+      setDojStartDate(filters?.doj_start || '');
+      setDojEndDate(filters?.doj_end || '');
       loadSettings();
     }
-  }, [isOpen]);
+  }, [isOpen, filters]);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -82,7 +87,7 @@ export default function EmployeeExportDialog({
     setSelectedFields([]);
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: 'xlsx' | 'csv' = 'xlsx') => {
     if (selectedFields.length === 0) {
       alert('Please select at least one field to export');
       return;
@@ -90,11 +95,17 @@ export default function EmployeeExportDialog({
 
     setExporting(true);
     try {
-      const blob = await api.exportEmployees(selectedFields, filters, empNo);
+      const activeFilters = {
+        ...filters,
+        doj_start: dojStartDate || undefined,
+        doj_end: dojEndDate || undefined,
+      };
+      const blob = await api.exportEmployees(selectedFields, activeFilters, empNo, format);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = empNo ? `employee_${empNo}_export.csv` : `employees_export_${new Date().toISOString().split('T')[0]}.csv`;
+      const ext = format === 'xlsx' ? 'xlsx' : 'csv';
+      a.download = empNo ? `employee_${empNo}_export.${ext}` : `employees_export_${new Date().toISOString().split('T')[0]}.${ext}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -116,13 +127,13 @@ export default function EmployeeExportDialog({
       <div className="relative z-[70] flex h-full max-h-[85vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-6 pb-4">
+        <div className="flex items-center justify-between p-6 pb-3">
           <div>
             <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
               {empNo ? `Download Data: ${employeeName || empNo}` : 'Download Employee Data'}
             </h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Select the fields you want to include in the CSV export.
+              Select the fields you want to include in the Excel / CSV export.
             </p>
           </div>
           <button
@@ -134,6 +145,130 @@ export default function EmployeeExportDialog({
             </svg>
           </button>
         </div>
+
+        {/* DOJ Period Filter Section */}
+        {!empNo && (
+          <div className="mx-6 mb-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3.5 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-950 dark:text-indigo-200">
+                  Select DOJ (Date of Joining) Period
+                </span>
+                {(dojStartDate || dojEndDate) && (
+                  <span className="ml-1 inline-flex items-center rounded-md bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black uppercase text-white tracking-widest">
+                    Filtered
+                  </span>
+                )}
+              </div>
+              {(dojStartDate || dojEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDojStartDate('');
+                    setDojEndDate('');
+                  }}
+                  className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-400 transition"
+                >
+                  Clear Period
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                  DOJ From (Start Date)
+                </label>
+                <input
+                  type="date"
+                  value={dojStartDate}
+                  onChange={(e) => setDojStartDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                  DOJ To (End Date)
+                </label>
+                <input
+                  type="date"
+                  value={dojEndDate}
+                  onChange={(e) => setDojEndDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="text-slate-400 text-[10px] font-medium mr-0.5">Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const y = now.getFullYear();
+                  setDojStartDate(`${y}-01-01`);
+                  setDojEndDate(`${y}-12-31`);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                This Year
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const y = new Date().getFullYear() - 1;
+                  setDojStartDate(`${y}-01-01`);
+                  setDojEndDate(`${y}-12-31`);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Last Year
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const m = String(now.getMonth() + 1).padStart(2, '0');
+                  const y = now.getFullYear();
+                  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+                  setDojStartDate(`${y}-${m}-01`);
+                  setDojEndDate(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const d = new Date();
+                  d.setDate(d.getDate() - 30);
+                  setDojStartDate(d.toISOString().slice(0, 10));
+                  setDojEndDate(now.toISOString().slice(0, 10));
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Last 30 Days
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const d = new Date();
+                  d.setDate(d.getDate() - 90);
+                  setDojStartDate(d.toISOString().slice(0, 10));
+                  setDojEndDate(now.toISOString().slice(0, 10));
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Last 90 Days
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="flex gap-4 px-6 pb-4">
@@ -237,21 +372,30 @@ export default function EmployeeExportDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 border-t border-slate-100 p-6 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 p-6 dark:border-slate-800">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
           >
             Cancel
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting || loading || selectedFields.length === 0}
-            className="flex-[2] rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 dark:shadow-none"
-          >
-            {exporting ? 'Exporting...' : 'Download CSV'}
-          </button>
+          <div className="flex-1 flex gap-2 justify-end">
+            <button
+              onClick={() => handleExport('csv')}
+              disabled={exporting || loading || selectedFields.length === 0}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            >
+              {exporting ? 'Exporting...' : 'Download CSV'}
+            </button>
+            <button
+              onClick={() => handleExport('xlsx')}
+              disabled={exporting || loading || selectedFields.length === 0}
+              className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 dark:shadow-none"
+            >
+              {exporting ? 'Exporting...' : 'Download Excel (.xlsx)'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

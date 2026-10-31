@@ -14,9 +14,10 @@ import MobileAnalyticsTab from '../../(workspace)/reports/mobile-analytics-tab';
 import ResignationReportsTab from '../../(workspace)/reports/resignation-reports-tab';
 import ComplaintsReportsTab from '../../(workspace)/reports/complaints-reports-tab';
 import HolidaysReportsTab from '../../(workspace)/reports/holidays-reports-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone, TrendingDown, GraduationCap, LogOut, AlertTriangle, Calendar } from 'lucide-react';
+import TransportReportsTab from '../../(workspace)/reports/transport-reports-tab';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote, Smartphone, TrendingDown, GraduationCap, LogOut, AlertTriangle, Calendar, Bus } from 'lucide-react';
 
-type TabType = 'payroll' | 'deductions' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app' | 'certifications' | 'resignations' | 'complaints' | 'holidays';
+type TabType = 'payroll' | 'deductions' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance' | 'mobile_app' | 'certifications' | 'resignations' | 'complaints' | 'transport' | 'holidays';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
@@ -31,10 +32,11 @@ const TAB_CONFIG = {
   certifications: { label: 'Certifications', icon: GraduationCap, activeBg: 'bg-violet-600' },
   resignations: { label: 'Resignations', icon: LogOut, activeBg: 'bg-slate-800' },
   complaints: { label: 'Complaints', icon: AlertTriangle, activeBg: 'bg-orange-600' },
+  transport: { label: 'Transport', icon: Bus, activeBg: 'bg-violet-600' },
   holidays: { label: 'Holidays', icon: Calendar, activeBg: 'bg-emerald-600' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'deductions', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'certifications', 'resignations', 'mobile_app', 'complaints', 'holidays'];
+const ALL_TABS: TabType[] = ['payroll', 'deductions', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance', 'certifications', 'resignations', 'mobile_app', 'complaints', 'transport', 'holidays'];
 
 export default function ReportsPage() {
   const searchParams = useSearchParams();
@@ -58,7 +60,7 @@ export default function ReportsPage() {
       <div className="px-0 py-4 bg-transparent">
         <div>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Reports & Analytics</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Attendance, payroll, and biometric data consolidated</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Attendance, payroll, biometric, and transport data consolidated</p>
         </div>
 
         {/* Tab Navigation */}
@@ -96,6 +98,7 @@ export default function ReportsPage() {
         {activeTab === 'resignations' && <ResignationReportsTab />}
         {activeTab === 'mobile_app' && <MobileAnalyticsTab />}
         {activeTab === 'complaints' && <ComplaintsReportsTab />}
+        {activeTab === 'transport' && <TransportReportsTab />}
         {activeTab === 'holidays' && <HolidaysReportsTab />}
       </div>
     </div>

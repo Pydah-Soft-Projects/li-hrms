@@ -12,9 +12,27 @@ const { syncShiftsForExistingRecords } = require('../services/shiftDetectionServ
  */
 exports.syncShifts = async (req, res) => {
   try {
-    const { startDate, endDate } = req.body;
+    if (req.setTimeout) req.setTimeout(300000);
+    if (res.setTimeout) res.setTimeout(300000);
+    const {
+      startDate,
+      endDate,
+      employeeNumber,
+      search,
+      divisionId,
+      departmentId,
+      designationId
+    } = req.body;
 
-    const stats = await syncShiftsForExistingRecords(startDate, endDate);
+    const stats = await syncShiftsForExistingRecords({
+      startDate,
+      endDate,
+      employeeNumber,
+      search,
+      divisionId,
+      departmentId,
+      designationId
+    });
 
     if (stats.success) {
       res.status(200).json({

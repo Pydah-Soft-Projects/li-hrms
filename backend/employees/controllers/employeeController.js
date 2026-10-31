@@ -11,6 +11,7 @@ const Division = require('../../departments/model/Division');
 const Settings = require('../../settings/model/Settings');
 const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
 const User = require('../../users/model/User');
+const EmployeeGroup = require('../model/EmployeeGroup');
 const {
   validateFormData,
 } = require('../../employee-applications/services/formValidationService');
@@ -39,6 +40,7 @@ const {
   stripEmployeeGroupIfDisabled,
   validateEmployeeGroupIfEnabled,
 } = require('../../shared/utils/customEmployeeGrouping');
+const XLSX = require('xlsx');
 const streamingExportService = require('../../shared/services/streamingExportService');
 const {
   normalizeEmployeeSalariesPayload,
@@ -395,6 +397,29 @@ const buildActiveEmployeeFilters = (reqQuery, scopeFilter) => {
       { phone_number: searchRegex },
       { email: searchRegex },
     ];
+  }
+
+  const dojStart = reqQuery.doj_start || reqQuery.dojStart || reqQuery.dojFrom;
+  const dojEnd = reqQuery.doj_end || reqQuery.dojEnd || reqQuery.dojTo;
+  if (dojStart || dojEnd) {
+    const dojFilter = {};
+    if (dojStart) {
+      const dStart = new Date(dojStart);
+      if (!Number.isNaN(dStart.getTime())) {
+        dStart.setUTCHours(0, 0, 0, 0);
+        dojFilter.$gte = dStart;
+      }
+    }
+    if (dojEnd) {
+      const dEnd = new Date(dojEnd);
+      if (!Number.isNaN(dEnd.getTime())) {
+        dEnd.setUTCHours(23, 59, 59, 999);
+        dojFilter.$lte = dEnd;
+      }
+    }
+    if (Object.keys(dojFilter).length > 0) {
+      filters.doj = dojFilter;
+    }
   }
 
   const isIncludeLeft = includeLeft === true || includeLeft === 'true';
@@ -2631,7 +2656,7 @@ exports.bulkResendCredentials = async (req, res) => {
  */
 exports.exportEmployees = async (req, res) => {
   try {
-    const { fields, filters: queryFilters, empNo } = req.body;
+    const { fields, filters: queryFilters, empNo, format = 'csv' } = req.body;
     const { scopeFilter } = req;
 
     if (!fields || !Array.isArray(fields) || fields.length === 0) {
@@ -2648,6 +2673,29 @@ exports.exportEmployees = async (req, res) => {
       applyIdFilter(filters, 'department_id', queryFilters.department_id);
       if (queryFilters.designation_id) filters.designation_id = queryFilters.designation_id;
       if (queryFilters.employee_group_id) filters.employee_group_id = queryFilters.employee_group_id;
+
+      const dojStart = queryFilters.doj_start || queryFilters.dojStart || queryFilters.dojFrom;
+      const dojEnd = queryFilters.doj_end || queryFilters.dojEnd || queryFilters.dojTo;
+      if (dojStart || dojEnd) {
+        const dojFilter = {};
+        if (dojStart) {
+          const dStart = new Date(dojStart);
+          if (!Number.isNaN(dStart.getTime())) {
+            dStart.setUTCHours(0, 0, 0, 0);
+            dojFilter.$gte = dStart;
+          }
+        }
+        if (dojEnd) {
+          const dEnd = new Date(dojEnd);
+          if (!Number.isNaN(dEnd.getTime())) {
+            dEnd.setUTCHours(23, 59, 59, 999);
+            dojFilter.$lte = dEnd;
+          }
+        }
+        if (Object.keys(dojFilter).length > 0) {
+          filters.doj = dojFilter;
+        }
+      }
 
       if (queryFilters.search) {
         const searchRegex = new RegExp(queryFilters.search, 'i');
@@ -2721,6 +2769,9 @@ exports.exportEmployees = async (req, res) => {
       leftDate: ['left_date'],
       left_reason: ['leftReason'],
       leftReason: ['left_reason'],
+      doj: ['date_of_joining', 'joining_date', 'joiningDate'],
+      date_of_joining: ['doj', 'joining_date', 'joiningDate'],
+      joining_date: ['doj', 'date_of_joining', 'joiningDate'],
     };
 
     const isEmptyExportValue = (val) => val === undefined || val === null || val === '';
@@ -2728,7 +2779,7 @@ exports.exportEmployees = async (req, res) => {
     const readExportKeys = (obj, keys) => {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
       for (const key of keys) {
-        if (!isEmptyExportValue(obj[key]) && typeof obj[key] !== 'object') return obj[key];
+        if (!isEmptyExportValue(obj[key]) && (typeof obj[key] !== 'object' || obj[key] instanceof Date)) return obj[key];
       }
       return undefined;
     };
@@ -2765,8 +2816,10 @@ exports.exportEmployees = async (req, res) => {
         }
       }
 
-      // Fallback for non-scalar root values (populated refs, arrays) after scalar miss
-      if (!isEmptyExportValue(row[fId])) return row[fId];
+      // Fallback for direct properties/aliases on root (populated refs, arrays, Dates)
+      for (const key of keys) {
+        if (!isEmptyExportValue(row[key])) return row[key];
+      }
       return undefined;
     };
 
@@ -2774,10 +2827,16 @@ exports.exportEmployees = async (req, res) => {
       if (fId === 'proposedSalary') {
         return fieldMap.gross_salary || 'Gross Salary';
       }
+      if (fId === 'doj' || fId === 'date_of_joining' || fId === 'joining_date') {
+        return fieldMap.doj || 'Date of Joining';
+      }
+      if (fId === 'is_active' || fId === 'status') {
+        return 'Status';
+      }
       return fieldMap[fId] || fId;
     };
 
-    // Preparation for CSV headers/extraction
+    // Preparation for headers/extraction
     const csvFields = fields.map(fId => ({
       label: getExportColumnLabel(fId),
       value: (row) => {
@@ -2798,6 +2857,13 @@ exports.exportEmployees = async (req, res) => {
           fId === 'designation_id' || fId === 'designation' ||
           fId === 'employee_group_id' || fId === 'employee_group'
         ) {
+          if (val && typeof val === 'object' && val.name) return val.name;
+          if (typeof val === 'string' && val.startsWith('{') && val.includes('"name"')) {
+            try {
+              const parsed = JSON.parse(val);
+              if (parsed?.name) return parsed.name;
+            } catch (e) {}
+          }
           return val?.name || val || '';
         }
         if (Array.isArray(val)) {
@@ -2818,6 +2884,24 @@ exports.exportEmployees = async (req, res) => {
       .populate('designation_id', 'name')
       .populate('employee_group_id', 'name')
       .cursor();
+
+    if (format === 'xlsx') {
+      const rows = [];
+      for await (const doc of cursor) {
+        const row = {};
+        for (const f of csvFields) {
+          row[f.label] = f.value(doc);
+        }
+        rows.push(row);
+      }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=employees_export_${Date.now()}.xlsx`);
+      return res.send(buffer);
+    }
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=employees_export_${Date.now()}.csv`);

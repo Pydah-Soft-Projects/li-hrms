@@ -144,8 +144,13 @@ async function getResolvedAttendanceSettings(departmentId, divisionId = null) {
     // Merge: Department settings override global
     const resolved = {
       deductionRules: {
+        evaluationMode: deptSettings?.attendance?.deductionRules?.evaluationMode ?? globalSettings?.deductionRules?.evaluationMode ?? 'combined',
         freeAllowedPerMonth: deptSettings?.attendance?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
         combinedCountThreshold: deptSettings?.attendance?.deductionRules?.combinedCountThreshold ?? globalSettings?.deductionRules?.combinedCountThreshold ?? null,
+        freeLateInsPerMonth: deptSettings?.attendance?.deductionRules?.freeLateInsPerMonth ?? globalSettings?.deductionRules?.freeLateInsPerMonth ?? null,
+        lateCountThreshold: deptSettings?.attendance?.deductionRules?.lateCountThreshold ?? globalSettings?.deductionRules?.lateCountThreshold ?? null,
+        freeEarlyOutsPerMonth: deptSettings?.attendance?.deductionRules?.freeEarlyOutsPerMonth ?? globalSettings?.deductionRules?.freeEarlyOutsPerMonth ?? null,
+        earlyCountThreshold: deptSettings?.attendance?.deductionRules?.earlyCountThreshold ?? globalSettings?.deductionRules?.earlyCountThreshold ?? null,
         deductionType: deptSettings?.attendance?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
         deductionDays: deptSettings?.attendance?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
         deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
@@ -293,11 +298,26 @@ function applyDepartmentSettingsPayloadToDoc(settings, body) {
 
   if (attendance) {
     if (attendance.deductionRules) {
+      if (attendance.deductionRules.evaluationMode !== undefined) {
+        settings.attendance.deductionRules.evaluationMode = attendance.deductionRules.evaluationMode;
+      }
       if (attendance.deductionRules.freeAllowedPerMonth !== undefined) {
         settings.attendance.deductionRules.freeAllowedPerMonth = attendance.deductionRules.freeAllowedPerMonth;
       }
       if (attendance.deductionRules.combinedCountThreshold !== undefined) {
         settings.attendance.deductionRules.combinedCountThreshold = attendance.deductionRules.combinedCountThreshold;
+      }
+      if (attendance.deductionRules.freeLateInsPerMonth !== undefined) {
+        settings.attendance.deductionRules.freeLateInsPerMonth = attendance.deductionRules.freeLateInsPerMonth;
+      }
+      if (attendance.deductionRules.lateCountThreshold !== undefined) {
+        settings.attendance.deductionRules.lateCountThreshold = attendance.deductionRules.lateCountThreshold;
+      }
+      if (attendance.deductionRules.freeEarlyOutsPerMonth !== undefined) {
+        settings.attendance.deductionRules.freeEarlyOutsPerMonth = attendance.deductionRules.freeEarlyOutsPerMonth;
+      }
+      if (attendance.deductionRules.earlyCountThreshold !== undefined) {
+        settings.attendance.deductionRules.earlyCountThreshold = attendance.deductionRules.earlyCountThreshold;
       }
       if (attendance.deductionRules.deductionType !== undefined) {
         settings.attendance.deductionRules.deductionType = attendance.deductionRules.deductionType;

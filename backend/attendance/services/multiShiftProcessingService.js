@@ -345,6 +345,7 @@ async function applyShiftEditPatch(processedShifts, shiftEdit, employeeNumber, d
     }
 
     const row = sorted[idx];
+    row.isManualShift = true;
     await recalculateShiftMetrics(row, employeeNumber, date, approvedODs, configWithMode, shiftEdit.shiftId);
     return sorted;
 }
@@ -395,6 +396,31 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
     const manualOpts = normalizeManualOverrides(options.manualOverrides);
 
     try {
+        // Security Division & Department delegation: Route Security employees to dedicated Security Attendance Engine
+        if (!options.isFromSecurityEngine) {
+            const { isSecurityEmployeeNumber, runSecurityDivisionAttendanceEngine } = require('./securityDivisionAttendanceService');
+            const isSec = await isSecurityEmployeeNumber(employeeNumber);
+            if (isSec) {
+                await runSecurityDivisionAttendanceEngine({
+                    startDate: date,
+                    endDate: date,
+                    empNos: [employeeNumber],
+                    overrideWithThumbs: true,
+                    recalculateMonthlySummary: options.recalculateMonthlySummary !== undefined ? options.recalculateMonthlySummary : true,
+                });
+                const secDaily = await AttendanceDaily.findOne({
+                    employeeNumber: String(employeeNumber).toUpperCase(),
+                    date,
+                }).lean();
+                return {
+                    success: true,
+                    isNew: false,
+                    shiftsProcessed: secDaily?.shifts?.length || 0,
+                    attendance: secDaily,
+                };
+            }
+        }
+
         // Resolve processing mode (division override → org default) and apply punch filtering
         const { getAttendanceContextForEmployee } = require('./processingModeResolutionService');
         const { settings: attendanceSettings, processingMode } = await getAttendanceContextForEmployee(employeeNumber);
@@ -889,6 +915,24 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     }
                 }
 
+                // Fallback: If shift detection is still unsuccessful, attempt autoAssignNearestShift
+                if ((!shiftAssignment || !shiftAssignment.success) && currentIn) {
+                    try {
+                        const { autoAssignNearestShift } = require('../../shifts/services/shiftDetectionService');
+                        const autoResult = await autoAssignNearestShift(
+                            employeeNumber,
+                            date,
+                            currentIn.timestamp,
+                            nextOut ? nextOut.timestamp : null
+                        );
+                        if (autoResult && autoResult.success) {
+                            shiftAssignment = autoResult;
+                        }
+                    } catch (autoErr) {
+                        console.warn('[MultiShift] autoAssignNearestShift error:', autoErr.message);
+                    }
+                }
+
                 // Fetch Shift Def for Payable Value
                 if (shiftAssignment && shiftAssignment.assignedShift) {
                     const Shift = require('../../shifts/model/Shift');
@@ -1043,6 +1087,26 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 });
 
                 console.log(`[MultiShift] Shift ${shiftCounter} presence path=${pShift.presenceResolutionPath}, status=${pShift.status}, payable=${pShift.payableShift}`);
+            } else {
+                // When shiftAssignment is not present or unsuccessful (e.g. Sunday / Week Off / unscheduled punches)
+                const expectedDuration = 8;
+                pShift.expectedHours = expectedDuration;
+                pShift.basePayable = 1;
+                if (nextOut) {
+                    if (pShift.workingHours >= expectedDuration * 0.75) {
+                        pShift.status = 'PRESENT';
+                        pShift.payableShift = 1;
+                    } else if (pShift.workingHours >= expectedDuration * 0.4) {
+                        pShift.status = 'HALF_DAY';
+                        pShift.payableShift = 0.5;
+                    } else {
+                        pShift.status = 'ABSENT';
+                        pShift.payableShift = 0;
+                    }
+                } else {
+                    pShift.status = 'incomplete';
+                    pShift.payableShift = 0;
+                }
             }
 
             processedShifts.push(pShift);
@@ -1072,6 +1136,33 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             );
             processedShifts.length = 0;
             processedShifts.push(...patched);
+        } else {
+            // Preserve existing manual shift edits if this day had shifts manually assigned
+            try {
+                const existingDaily = await AttendanceDaily.findOne({ employeeNumber, date }).select('shifts editHistory isEdited').lean();
+                if (existingDaily?.shifts?.length > 0) {
+                    const hasShiftChangeHistory = existingDaily.editHistory?.some(h => h.action === 'SHIFT_CHANGE');
+                    for (let idx = 0; idx < existingDaily.shifts.length; idx++) {
+                        const existingSeg = existingDaily.shifts[idx];
+                        if (existingSeg && (existingSeg.isManualShift || (hasShiftChangeHistory && existingSeg.shiftId))) {
+                            if (idx < processedShifts.length) {
+                                const patched = await applyShiftEditPatch(
+                                    processedShifts,
+                                    { segmentIndex: idx, shiftId: existingSeg.shiftId },
+                                    employeeNumber,
+                                    date,
+                                    approvedODs,
+                                    configWithMode
+                                );
+                                processedShifts.length = 0;
+                                processedShifts.push(...patched);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('[MultiShift] Failed to preserve existing manual shift edit:', err.message);
+            }
         }
 
         try {
@@ -1102,8 +1193,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 6: Determine overall status
         const totalPayableShifts = processedShifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
 
-        // Check for any Present shift
-        const hasPresentShift = processedShifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
+        // Check for any Present shift (s.status === 'complete' is an incomplete state, not a guarantee of full presence)
+        const hasPresentShift = processedShifts.some(s => s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 0.95));
 
         let status = 'ABSENT';
 
@@ -1113,7 +1204,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             } else if (totalPayableShifts >= 0.45 || processedShifts.some(s => s.status === 'HALF_DAY')) {
                 status = 'HALF_DAY';
             } else {
-                const hasIncomplete = processedShifts.some(s => !s.outTime);
+                const hasIncomplete = processedShifts.some(s => s.status === 'incomplete' || !s.outTime);
                 status = hasIncomplete ? 'PARTIAL' : 'ABSENT';
             }
         }
@@ -1157,6 +1248,22 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             && (dailyRecord.status === 'WEEK_OFF' || dailyRecord.status === 'HOLIDAY')
         ) {
             updateData.status = dailyRecord.status;
+        } else if (!dailyRecord) {
+            try {
+                const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+                const rosterDoc = await PreScheduledShift.findOne({
+                    employeeNumber: String(employeeNumber || '').toUpperCase(),
+                    date,
+                }).lean();
+                if (rosterDoc && (rosterDoc.status === 'WO' || rosterDoc.status === 'HOL')) {
+                    updateData.status = rosterDoc.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY';
+                    updateData.notes = rosterDoc.status === 'WO' ? 'Week Off' : 'Holiday';
+                    updateData.rosterFirstHalfNonWorking = rosterDoc.status;
+                    updateData.rosterSecondHalfNonWorking = rosterDoc.status;
+                }
+            } catch (e) {
+                // non-blocking
+            }
         }
 
         // Keep manually corrected attendance immutable ONLY during completed payroll periods.

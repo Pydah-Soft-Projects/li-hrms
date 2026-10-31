@@ -24,6 +24,9 @@ import {
   type DeductionsExportFormat,
   type DeductionsReportPreview,
 } from '@/lib/paysheetDeductionsPdf';
+import dayjs from 'dayjs';
+import ExportColumnModal, { ColumnOption } from '@/components/ExportColumnModal';
+import { exportReportWithColumns } from '@/lib/reportExporter';
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -281,7 +284,26 @@ export default function DeductionsReportsTab() {
     });
   };
 
-  const openDeductionsExportModal = () => {
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+
+  const DEDUCTIONS_COLUMNS: ColumnOption[] = [
+    { key: 'emp_no', label: 'Emp No', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.emp_no || row.employee_id?.emp_no || row.employee?.emp_no || row['Employee Code'] || row['Emp No'] || (typeof row.emp_no === 'string' && row.emp_no.length !== 24 ? row.emp_no : '—') },
+    { key: 'employee_name', label: 'Employee Name', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.employee_name || row.employee_id?.employee_name || row.employee?.employee_name || row['Employee Name'] || row.employee_name || '—' },
+    { key: 'division', label: 'Division', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.division_id?.name || row.employee_id?.division_id?.name || row['Division'] || row.division || '—' },
+    { key: 'department', label: 'Department', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.department_id?.name || row.employee_id?.department_id?.name || row['Department'] || row.department || '—' },
+    { key: 'designation', label: 'Designation', defaultChecked: true, isNecessary: true, getValue: (row: any) => row.employeeId?.designation_id?.name || row.employee_id?.designation_id?.name || row['Designation'] || row.designation || '—' },
+    { key: 'pf', label: 'PF Deduction (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['PF'] ?? row['EPF'] ?? 0 },
+    { key: 'esi', label: 'ESI Deduction (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['ESI'] ?? 0 },
+    { key: 'tds', label: 'TDS (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['TDS'] ?? row['IT'] ?? 0 },
+    { key: 'pt', label: 'Professional Tax (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['PT'] ?? row['Prof Tax'] ?? 0 },
+    { key: 'loan', label: 'Loan Recovery (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['Loan Recovery'] ?? row['Loan'] ?? 0 },
+    { key: 'advance', label: 'Salary Advance (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['Salary Advance'] ?? row['Advance'] ?? 0 },
+    { key: 'totalDeductions', label: 'Total Deductions (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['Total Deductions'] ?? row['Deductions'] ?? 0 },
+    { key: 'netSalary', label: 'Net Payable (₹)', defaultChecked: true, isNecessary: true, getValue: (row: any) => row['Net Salary'] ?? row['Net Payable'] ?? 0 },
+  ];
+
+  const openDeductionsColumnModal = (fmt: 'excel' | 'pdf') => {
     if (!selectedMonth) {
       toast.error('Please select a month');
       return;
@@ -290,8 +312,34 @@ export default function DeductionsReportsTab() {
       toast.error('No paysheet data found for the selected filters');
       return;
     }
-    setDeductionsExportFormat('by_department');
-    setDeductionsExportModalOpen(true);
+    setExportFormat(fmt);
+    setIsColumnModalOpen(true);
+  };
+
+  const handleConfirmColumnExport = async (selectedKeys: string[], format: 'excel' | 'pdf') => {
+    setExportingDeductions(true);
+    try {
+      exportReportWithColumns({
+        title: 'Monthly Deductions Report',
+        subtitle: `Month: ${selectedMonth}`,
+        data: rows,
+        columns: DEDUCTIONS_COLUMNS,
+        selectedKeys,
+        format,
+        fileName: `Deductions_Report_${selectedMonth}`,
+      });
+      toast.success(`${format.toUpperCase()} deductions report downloaded successfully`);
+      setIsColumnModalOpen(false);
+    } catch (error: any) {
+      console.error('Export error:', error);
+      toast.error(error.message || 'Export failed');
+    } finally {
+      setExportingDeductions(false);
+    }
+  };
+
+  const openDeductionsExportModal = () => {
+    openDeductionsColumnModal('pdf');
   };
 
   const confirmExportDeductions = async (exportType: 'pdf' | 'excel' = 'pdf') => {
@@ -583,7 +631,7 @@ export default function DeductionsReportsTab() {
             </button>
             <button
               type="button"
-              onClick={() => void confirmExportDeductions('excel')}
+              onClick={() => openDeductionsColumnModal('excel')}
               disabled={!selectedMonth || !hasData || exportingDeductions}
               className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
               title="Export Deductions Report Excel"
@@ -597,10 +645,10 @@ export default function DeductionsReportsTab() {
             </button>
             <button
               type="button"
-              onClick={openDeductionsExportModal}
+              onClick={() => openDeductionsColumnModal('pdf')}
               disabled={!selectedMonth || !hasData || exportingDeductions}
               className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
-              title="Export Deductions Report Options"
+              title="Export Deductions Report PDF"
             >
               {exportingDeductions ? (
                 <Loader2 className="h-4 w-4 animate-spin shrink-0" />
@@ -898,6 +946,16 @@ export default function DeductionsReportsTab() {
           </div>
         </div>
       )}
+
+      <ExportColumnModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        reportName="Monthly Deductions Report"
+        exportFormat={exportFormat}
+        columns={DEDUCTIONS_COLUMNS}
+        onConfirmExport={handleConfirmColumnExport}
+        loading={exportingDeductions}
+      />
     </div>
   );
 }

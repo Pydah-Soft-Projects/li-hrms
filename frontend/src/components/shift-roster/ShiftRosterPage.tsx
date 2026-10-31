@@ -2,7 +2,7 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { LayoutGrid, Save, Download, CheckCircle2, Copy, CopyPlus } from 'lucide-react';
+import { LayoutGrid, Save, Download, CheckCircle2, Copy, CopyPlus, RefreshCw } from 'lucide-react';
 import CopyRepeatModal from '@/components/shift-roster/CopyRepeatModal';
 import { useShiftRosterPage, UseShiftRosterPageOptions } from '@/lib/shiftRoster/useShiftRosterPage';
 import RosterFilters from '@/app/(workspace)/shift-roster/components/RosterFilters';
@@ -88,7 +88,7 @@ export default function ShiftRosterPage({ holidaysGraceful }: UseShiftRosterPage
             <div className="w-full lg:max-w-sm">
               <SearchSection value={p.searchTerm} onSearchChange={p.setSearchTerm} onSearchSubmit={p.handleSearchSubmit} />
             </div>
-            <div className="w-full lg:w-auto grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="w-full lg:w-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -108,6 +108,16 @@ export default function ShiftRosterPage({ holidaysGraceful }: UseShiftRosterPage
               >
                 <Copy size={13} />
                 {p.autoFillLoading ? 'Filling...' : 'Auto-fill'}
+              </button>
+              <button
+                type="button"
+                onClick={p.handleSyncAttendance}
+                disabled={p.syncingAttendance}
+                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-cyan-600 border border-cyan-700 text-white text-[10px] font-black uppercase tracking-wider hover:bg-cyan-700 transition-all shadow-md disabled:opacity-50"
+                title="Sync Shift Roster week-offs and non-working days to Attendance Daily"
+              >
+                <RefreshCw size={13} className={p.syncingAttendance ? 'animate-spin' : ''} />
+                {p.syncingAttendance ? 'Syncing...' : 'Sync Attendance'}
               </button>
               <button type="button" onClick={p.handleExportExcel} className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-green-600 border border-green-700 text-white text-[10px] font-black uppercase tracking-wider hover:bg-green-700 transition-all shadow-md">
                 <Download size={13} />

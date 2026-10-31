@@ -203,16 +203,15 @@ async function isRepaymentDueForPayrollMonth(loan, payrollMonth) {
   const remaining = Number(loan.repayment?.remainingBalance);
   if (!(remaining > 0)) return false;
 
-  const paid = Number(loan.repayment?.installmentsPaid) || 0;
-  const skipOffset = Number(loan.loanConfig?.scheduleSkipOffset) || 0;
-  const totalInstallments = getEffectiveInstallmentCount(loan) || Number(loan.duration) || 0;
-  if (totalInstallments > 0 && paid >= totalInstallments) return false;
-
   const firstYm = await firstPayrollMonthKeyForRepaymentSchedule(loan);
   if (!firstYm) return false;
 
+  const paid = Number(loan.repayment?.installmentsPaid) || 0;
+  const skipOffset = Number(loan.loanConfig?.scheduleSkipOffset) || 0;
   const dueYm = addCalendarMonthsToYm(firstYm, paid + skipOffset);
-  return comparePayrollMonthKeys(ym, dueYm) === 0;
+
+  // Repayment is due if current payroll month is on or after the scheduled due month (dueYm <= ym)
+  return comparePayrollMonthKeys(ym, dueYm) >= 0;
 }
 
 /**
@@ -220,8 +219,23 @@ async function isRepaymentDueForPayrollMonth(loan, payrollMonth) {
  * stored schedule anchor when present; otherwise disburse/applied + 1 calendar month (same as anchors).
  */
 async function firstPayrollMonthKeyForRepaymentSchedule(loan) {
+  // If loan is disbursed, the earliest possible first deduction month is the month of disbursement
+  const disbursedRef = loan.disbursement?.disbursedAt;
+  let disbursedYm = null;
+  if (disbursedRef) {
+    const { year: dy, month: dm } = extractISTComponents(disbursedRef);
+    disbursedYm = `${dy}-${String(dm).padStart(2, '0')}`;
+  }
+
   const locked = String(loan.approvals?.final?.firstDeductionPayrollMonth || '').trim();
-  if (/^\d{4}-\d{2}$/.test(locked)) return locked;
+  if (/^\d{4}-\d{2}$/.test(locked)) {
+    // If locked is set in the future (e.g. 2027-01 due to multi-EMI deferral preview), but loan is already disbursed,
+    // cap firstYm to disbursedYm so disbursed active loans start deduction immediately in their disbursement period.
+    if (disbursedYm && comparePayrollMonthKeys(disbursedYm, locked) < 0) {
+      return disbursedYm;
+    }
+    return locked;
+  }
 
   if (loan.requestType === 'salary_advance' && loan.advanceConfig?.deductionStartCycle) {
     const m = String(loan.advanceConfig.deductionStartCycle).trim();
@@ -233,7 +247,7 @@ async function firstPayrollMonthKeyForRepaymentSchedule(loan) {
   }
   const ref = loan.disbursement?.disbursedAt || loan.appliedAt || loan.createdAt || new Date();
   const { year: y0, month: m0 } = extractISTComponents(ref);
-  return addCalendarMonthsToYm(`${y0}-${String(m0).padStart(2, '0')}`, 1);
+  return `${y0}-${String(m0).padStart(2, '0')}`;
 }
 
 /** Next due = pay period end for the payroll month after `installmentsPaid` cycles from schedule start. */

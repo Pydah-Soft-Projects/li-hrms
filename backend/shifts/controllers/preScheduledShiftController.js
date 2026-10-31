@@ -91,6 +91,21 @@ exports.createPreScheduledShift = async (req, res) => {
       { path: 'scheduledBy', select: 'name email' },
     ]);
 
+    try {
+      const { syncOneRosterEntryToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+      await syncOneRosterEntryToAttendance({
+        employeeNumber: preScheduled.employeeNumber,
+        date: preScheduled.date,
+        shiftId: preScheduled.shiftId?._id || preScheduled.shiftId,
+        status: preScheduled.status,
+        firstHalfStatus: preScheduled.firstHalfStatus,
+        secondHalfStatus: preScheduled.secondHalfStatus,
+        notes: preScheduled.notes,
+      });
+    } catch (syncErr) {
+      console.error('[Create PreScheduledShift] Direct sync failed:', syncErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Pre-scheduled shift created successfully',
@@ -254,6 +269,16 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
       } catch (error) {
         results.errors.push(`Error creating schedule: ${error.message}`);
         results.skipped++;
+      }
+    }
+
+    if (results.created > 0) {
+      try {
+        const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+        const toSync = schedules.filter((s) => s && s.date && s.employeeNumber);
+        await syncRosterEntriesToAttendance(toSync);
+      } catch (syncErr) {
+        console.error('[BulkCreate PreScheduledShift] Direct sync failed:', syncErr.message);
       }
     }
 
@@ -584,7 +609,17 @@ exports.saveRoster = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Dispatch async roster sync job
+    // Direct in-process sync so attendance updates immediately without requiring an external background worker (essential for local dev)
+    if (lockFilteredBulk.length > 0) {
+      try {
+        const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+        await syncRosterEntriesToAttendance(lockFilteredBulk);
+      } catch (syncErr) {
+        console.error('[Save Roster] Direct attendance sync failed:', syncErr.message);
+      }
+    }
+
+    // Also dispatch async roster sync job as secondary fallback if worker is active
     if (lockFilteredBulk.length > 0) {
       rosterSyncQueue.add('syncRoster', {
         entries: lockFilteredBulk,
@@ -645,6 +680,14 @@ exports.autoFillNextCycle = async (req, res) => {
           shiftId: e.shiftId,
           status: e.status || null,
         });
+      }
+      if (forSync.length > 0) {
+        try {
+          const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+          await syncRosterEntriesToAttendance(forSync);
+        } catch (syncErr) {
+          console.error('[AutoFill] Direct sync failed:', syncErr.message);
+        }
       }
       rosterSyncQueue.add('syncRoster', { entries: forSync, userId: req.user._id }).catch((err) => console.error('Roster sync job add failed:', err));
     }
@@ -768,4 +811,76 @@ exports.deletePreScheduledShift = async (req, res) => {
     });
   }
 };
+
+/**
+ * @desc    Sync Shift Roster to Attendance Daily for a specific date, month, or range
+ * @route   POST /api/shifts/roster/sync-attendance
+ * @access  Private (Super Admin, Sub Admin, HR, HOD)
+ */
+exports.syncRosterToAttendance = async (req, res) => {
+  try {
+    const { date, month, startDate: reqStartDate, endDate: reqEndDate, employeeNumbers } = req.body || {};
+    let startDate, endDate;
+
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) {
+      startDate = String(date).trim();
+      endDate = String(date).trim();
+    } else if (reqStartDate && reqEndDate) {
+      startDate = String(reqStartDate).trim();
+      endDate = String(reqEndDate).trim();
+    } else {
+      let monthStr = month;
+      if (!monthStr || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
+        const { getTodayISTDateString } = require('../../shared/utils/dateUtils');
+        monthStr = getTodayISTDateString().slice(0, 7);
+      }
+      const [year, monthNum] = monthStr.split('-').map(Number);
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const range = await getPayrollDateRange(year, monthNum);
+      startDate = range.startDate;
+      endDate = range.endDate;
+    }
+
+    const query = {
+      date: { $gte: startDate, $lte: endDate },
+    };
+
+    if (Array.isArray(employeeNumbers) && employeeNumbers.length > 0) {
+      query.employeeNumber = {
+        $in: employeeNumbers.map((e) => String(e || '').toUpperCase().trim()).filter(Boolean),
+      };
+    }
+
+    const rosterEntries = await PreScheduledShift.find(query).lean();
+
+    if (!rosterEntries.length) {
+      return res.status(200).json({
+        success: true,
+        message: `No roster entries found between ${startDate} and ${endDate}`,
+        data: { synced: 0, reprocessed: 0, skipped: 0, total: 0 },
+      });
+    }
+
+    const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+    const stats = await syncRosterEntriesToAttendance(rosterEntries);
+
+    res.status(200).json({
+      success: true,
+      message: `Shift roster sync complete for ${startDate} to ${endDate}: ${stats.synced || 0} synced, ${stats.reprocessed || 0} reprocessed, ${stats.skipped || 0} skipped`,
+      data: {
+        ...stats,
+        totalEntries: rosterEntries.length,
+        startDate,
+        endDate,
+      },
+    });
+  } catch (error) {
+    console.error('Error syncing roster to attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync roster to attendance',
+    });
+  }
+};
+
 

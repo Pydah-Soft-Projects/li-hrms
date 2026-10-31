@@ -91,6 +91,7 @@ export const SIDEBAR_MODULE_ICONS: Record<string, SidebarIcon> = {
   EMPLOYEE_GROUPS: Layers,
   DEPARTMENTAL_SETTINGS: Settings2,
   USERS: UserCog,
+  USER_AUDITS: ShieldCheck,
   REPORTS: LineChart,
   MOBILE_ANALYTICS: Smartphone,
   PAYMENTS: CreditCard,
@@ -168,6 +169,7 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
     forceDropdown: true,
     items: [
       { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: `${SUPERADMIN_PREFIX}/audits`, icon: FolderSearch },
+      { code: 'USER_AUDITS', label: 'User Audits', href: `${SUPERADMIN_PREFIX}/user-audits`, icon: ShieldCheck },
     ],
   },
   {
@@ -382,6 +384,7 @@ export const SIDEBAR_SHORT_LABELS: Record<string, string> = {
   PAYROLL_CONFIG: 'Config',
   STATUTORY_DEDUCTIONS: 'Stat',
   USERS: 'Users',
+  USER_AUDITS: 'Audits',
   REPORTS: 'Rpts',
   COMMUNICATIONS: 'Comms',
   GENERAL_SETTINGS: 'Sets',
@@ -394,6 +397,7 @@ export const SIDEBAR_MODULE_PERMISSION_CODES: Record<string, string> = {
   SECOND_SALARY_PAYMENTS: 'PAYMENTS',
   SECOND_SALARY_PAYSLIPS: 'PAYSLIPS',
   MOBILE_ANALYTICS: 'REPORTS',
+  USER_AUDITS: 'USERS',
 };
 
 export function getSidebarPermissionCode(itemCode: string): string {
@@ -405,7 +409,8 @@ export function isSidebarPathActive(href: string, pathname: string): boolean {
   if (href.endsWith('/employees') && pathname.startsWith(`${href}/`)) {
     return pathname === `${href}/form-settings` ? false : true;
   }
-  if (href.endsWith('/audits') && pathname.startsWith(`${href}`)) return true;
+  if (href.endsWith('/user-audits') && pathname.startsWith(href)) return true;
+  if (href.endsWith('/audits') && pathname.startsWith(href) && !pathname.includes('user-audits')) return true;
   return false;
 }
 
@@ -421,6 +426,7 @@ const WORKSPACE_PATH_CHECKS: Record<string, (pathname: string) => boolean> = {
   LOANS: (p) => p === '/loans',
   LIVE_ATTENDANCE: (p) => p === '/live-attendance',
   COMPLAINTS: (p) => p === '/complaints',
+  USER_AUDITS: (p) => p === '/user-audits' || p.startsWith('/user-audits/'),
 };
 
 export function isWorkspacePathActive(code: string, href: string, pathname: string): boolean {

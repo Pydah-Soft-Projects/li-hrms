@@ -10,11 +10,18 @@ const { getAbsentDeductionSettings } = require('../../payroll/services/allowance
 function normalizeBreakdown(b) {
   if (!b || typeof b !== 'object') {
     return {
+      evaluationMode: 'combined',
       lateInsCount: 0,
       earlyOutsCount: 0,
       combinedCount: 0,
       freeAllowedPerMonth: 0,
+      freeLateInsPerMonth: null,
+      freeEarlyOutsPerMonth: null,
       effectiveCount: 0,
+      effectiveLateCount: 0,
+      effectiveEarlyCount: 0,
+      lateDaysDeducted: 0,
+      earlyDaysDeducted: 0,
       daysDeducted: 0,
       lateEarlyDaysDeducted: 0,
       absentExtraDays: 0,
@@ -25,12 +32,20 @@ function normalizeBreakdown(b) {
     };
   }
   const z = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
+  const zNull = (n) => (n != null && Number.isFinite(Number(n)) ? Number(n) : null);
   return {
+    evaluationMode: b.evaluationMode != null ? String(b.evaluationMode) : 'combined',
     lateInsCount: z(b.lateInsCount),
     earlyOutsCount: z(b.earlyOutsCount),
     combinedCount: z(b.combinedCount),
     freeAllowedPerMonth: z(b.freeAllowedPerMonth),
+    freeLateInsPerMonth: zNull(b.freeLateInsPerMonth),
+    freeEarlyOutsPerMonth: zNull(b.freeEarlyOutsPerMonth),
     effectiveCount: z(b.effectiveCount),
+    effectiveLateCount: z(b.effectiveLateCount),
+    effectiveEarlyCount: z(b.effectiveEarlyCount),
+    lateDaysDeducted: z(b.lateDaysDeducted),
+    earlyDaysDeducted: z(b.earlyDaysDeducted),
     daysDeducted: z(b.daysDeducted),
     lateEarlyDaysDeducted: z(b.lateEarlyDaysDeducted),
     absentExtraDays: z(b.absentExtraDays),

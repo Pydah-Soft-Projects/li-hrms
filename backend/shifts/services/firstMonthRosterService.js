@@ -196,6 +196,23 @@ async function generateFirstMonthRoster(employee, scheduledBy) {
     `${tag} emp=${empNo}: created=${created} skipped=${skipped} cycle=${startDate}→${endDate}`
   );
 
+  // Sync created week-offs to AttendanceDaily
+  if (created > 0) {
+    try {
+      const { syncRosterEntriesToAttendance } = require('../../attendance/services/rosterAttendanceSyncService');
+      const woEntries = await PreScheduledShift.find({
+        employeeNumber: empNo,
+        date: { $gte: startDate, $lte: endDate },
+        status: 'WO',
+      }).lean();
+      if (woEntries.length > 0) {
+        await syncRosterEntriesToAttendance(woEntries);
+      }
+    } catch (syncErr) {
+      console.warn(`${tag} Non-blocking error syncing to attendance:`, syncErr.message);
+    }
+  }
+
   return {
     created,
     skipped,
