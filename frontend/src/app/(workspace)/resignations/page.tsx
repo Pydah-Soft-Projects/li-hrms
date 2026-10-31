@@ -41,6 +41,7 @@ import {
   UserPlus,
   UserCheck,
   XCircle,
+  UserX,
 } from 'lucide-react';
 import RejoinEmployeeModal from '@/components/employee/RejoinEmployeeModal';
 
@@ -94,7 +95,7 @@ interface ResignationRequest {
   remarks: string;
   status: string;
   requestedBy?: { _id: string; name: string; email?: string };
-  requestType?: 'resignation' | 'termination';
+  requestType?: 'resignation' | 'termination' | 'obsconded' | 'absconded';
   createdAt: string;
   workflow?: {
     currentStepRole?: string;
@@ -427,7 +428,7 @@ export default function ResignationsPage() {
   const [applySelectedEmpNo, setApplySelectedEmpNo] = useState('');
   const [applyRemarks, setApplyRemarks] = useState('');
   const [applyLastWorkingDate, setApplyLastWorkingDate] = useState('');
-  const [applyType, setApplyType] = useState<'resignation' | 'termination'>('resignation');
+  const [applyType, setApplyType] = useState<'resignation' | 'termination' | 'obsconded'>('resignation');
   const [applyLoading, setApplyLoading] = useState(false);
   const [applyModalLoading, setApplyModalLoading] = useState(false);
   const [applyPendingAssets, setApplyPendingAssets] = useState<any[]>([]);
@@ -640,7 +641,7 @@ export default function ResignationsPage() {
     setShowRejoinModal(true);
   };
 
-  const openApplyModal = (selfOnly: boolean = false, type: 'resignation' | 'termination' = 'resignation') => {
+  const openApplyModal = (selfOnly: boolean = false, type: 'resignation' | 'termination' | 'obsconded' = 'resignation') => {
     setApplySelfOnly(!!selfOnly);
     setApplyType(type);
     const user = auth.getUser();
@@ -654,7 +655,7 @@ export default function ResignationsPage() {
     setApplyEmployeeSearch('');
     setApplyPendingAssets([]);
     
-    if (type === 'termination') {
+    if (type === 'termination' || type === 'obsconded') {
       setApplyLastWorkingDate(toLocalDateString(new Date()));
     } else {
       setApplyLastWorkingDate('');
@@ -663,9 +664,9 @@ export default function ResignationsPage() {
     setShowApplyModal(true);
   };
 
-  const handleApplyTypeChange = (type: 'resignation' | 'termination') => {
+  const handleApplyTypeChange = (type: 'resignation' | 'termination' | 'obsconded') => {
     setApplyType(type);
-    if (type === 'termination') {
+    if (type === 'termination' || type === 'obsconded') {
       setApplyLastWorkingDate(toLocalDateString(new Date()));
     } else {
       // For resignation, we can either clear it or let the notice period calc (which happens in useEffect) take over
@@ -1425,28 +1426,15 @@ export default function ResignationsPage() {
           </div>
           {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && (
             <div className="flex items-center gap-2">
-              {canApplyResignation(currentUser as any) && (
               <button
                 type="button"
                 onClick={() => openApplyModal(isEmployeeRole(currentUser), 'resignation')}
                 className="inline-flex items-center gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 text-sm font-bold shadow-lg shadow-green-500/20 transition active:scale-95"
               >
                 <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">{isEmployeeRole(currentUser) ? 'Submit resignation' : 'Apply for Resignation'}</span>
-                <span className="sm:hidden">{isEmployeeRole(currentUser) ? 'Submit' : 'New'}</span>
+                <span className="hidden sm:inline">Apply</span>
+                <span className="sm:hidden">Apply</span>
               </button>
-              )}
-              {canTerminateEmployee(currentUser as any, resignationSettings) && !isEmployeeRole(currentUser) && (
-                <button
-                  type="button"
-                  onClick={() => openApplyModal(false, 'termination')}
-                  className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 text-sm font-bold shadow-lg shadow-rose-500/20 transition active:scale-95"
-                >
-                  <X className="w-4 h-4" />
-                  <span className="hidden sm:inline">Terminate Employee</span>
-                  <span className="sm:hidden">Terminate</span>
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -1915,6 +1903,11 @@ export default function ResignationsPage() {
                     <X className="w-5 h-5 text-rose-500" />
                     Terminate Employee
                   </>
+                ) : applyType === 'obsconded' ? (
+                  <>
+                    <UserX className="w-5 h-5 text-amber-500" />
+                    Obsconded Employee
+                  </>
                 ) : (
                   <>
                     <LogOut className="w-5 h-5 text-green-500" />
@@ -1971,12 +1964,12 @@ export default function ResignationsPage() {
                 {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && !applySelfOnly && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request Type</label>
-                  <div className={`grid gap-3 ${canApplyResignation(currentUser as any) && canTerminateEmployee(currentUser as any, resignationSettings) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className="grid grid-cols-3 gap-2">
                     {canApplyResignation(currentUser as any) && (
                     <button
                       type="button"
                       onClick={() => handleApplyTypeChange('resignation')}
-                      className={`h-11 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                      className={`h-11 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all ${
                         applyType === 'resignation'
                           ? 'bg-green-500/10 border-green-500 text-green-700 dark:text-green-400'
                           : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
@@ -1990,7 +1983,7 @@ export default function ResignationsPage() {
                     <button
                       type="button"
                       onClick={() => handleApplyTypeChange('termination')}
-                      className={`h-11 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                      className={`h-11 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all ${
                         applyType === 'termination'
                           ? 'bg-rose-500/10 border-rose-500 text-rose-700 dark:text-rose-400'
                           : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
@@ -2000,12 +1993,26 @@ export default function ResignationsPage() {
                       Termination
                     </button>
                     )}
+                    {canTerminateEmployee(currentUser as any, resignationSettings) && (
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTypeChange('obsconded')}
+                      className={`h-11 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all ${
+                        applyType === 'obsconded'
+                          ? 'bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                      }`}
+                    >
+                      <UserX className="w-4 h-4" />
+                      Obsconded
+                    </button>
+                    )}
                   </div>
                 </div>
                 )}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    {applyType === 'termination' ? 'Reason for termination' : 'Remarks for resignation'}
+                    {applyType === 'termination' ? 'Reason for termination' : applyType === 'obsconded' ? 'Reason for obsconded' : 'Remarks for resignation'}
                   </label>
                   <textarea
                     value={applyRemarks}
@@ -2017,7 +2024,7 @@ export default function ResignationsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    {applyType === 'termination' ? 'Termination date' : 'Last working date'}
+                    {applyType === 'termination' ? 'Termination date' : applyType === 'obsconded' ? 'Obsconded date' : 'Last working date'}
                   </label>
                   <div className="flex items-center gap-2 h-11 pl-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-sm font-medium">
                     <Calendar className="w-4 h-4 text-slate-400" />
@@ -2093,9 +2100,9 @@ export default function ResignationsPage() {
                     Cancel
                   </button>
                   <button type="button" onClick={handleSubmitResignation} disabled={applyLoading || !applySelectedEmpNo || !applyLastWorkingDate} className={`flex-1 py-2.5 rounded-xl text-white font-bold text-sm shadow-lg flex items-center justify-center gap-2 ${
-                    applyType === 'termination' ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/20' : 'bg-green-600 hover:bg-green-700 shadow-green-500/20'
+                    applyType === 'termination' ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/20' : applyType === 'obsconded' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20' : 'bg-green-600 hover:bg-green-700 shadow-green-500/20'
                   }`}>
-                    {applyLoading ? 'Submitting...' : (applyType === 'termination' ? 'Confirm Termination' : (applySelfOnly ? 'Submit resignation' : 'Submit Resignation'))}
+                    {applyLoading ? 'Submitting...' : (applyType === 'termination' ? 'Confirm Termination' : applyType === 'obsconded' ? 'Confirm Obsconded' : (applySelfOnly ? 'Submit resignation' : 'Submit Resignation'))}
                   </button>
                 </div>
               </div>

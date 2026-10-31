@@ -3627,12 +3627,277 @@ export default function AttendancePage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-2 sm:px-4 md:px-6">
 
-        {/* Sticky toolbar — horizontal scroll (superadmin-style) */}
-        <div className="sticky top-4 z-40 px-2 md:px-4 mb-2 md:mb-6">
-          <div className="max-w-[1920px] mx-auto md:bg-white/70 md:dark:bg-slate-900/70 md:backdrop-blur-2xl md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none">
-        {/* Header */}
+        {/* Toolbar — sticky on desktop, non-sticky natural scroll on mobile */}
+        <div className="relative md:sticky md:top-4 z-10 md:z-40 w-full px-0 sm:px-2 md:px-4 mb-2 md:mb-6">
+          <div className="w-full max-w-[1920px] mx-auto bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-none md:backdrop-blur-2xl md:rounded-[2.5rem] md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none overflow-hidden">
+        {/* Mobile Header Toolbar (no horizontal scroll, cleanly stacked, full width) */}
+        <div className="flex md:hidden flex-col gap-2.5 p-3 w-full">
+          {/* Row 1: Attendance Title and Search Toggle */}
+          <div className="flex items-center justify-between gap-2 w-full">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+              Attendance
+            </h1>
+            {/* Search Toggle */}
+            {showSearch ? (
+              <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search..."
+                    className="w-36 h-8 pl-7 pr-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-1 focus:ring-green-500/20 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                  />
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-slate-400">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSearch(false);
+                    setSearchQuery('');
+                    setDebouncedSearch('');
+                  }}
+                  className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                className="h-8 w-8 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-green-600 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                title="Search Records"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            )}
+          </div>
 
-        <div className="mb-0 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide px-3 sm:px-6 py-2 md:py-3 min-w-0 min-h-[4.5rem]">
+          {/* Row 2: Month/Year Navigation and Cycle Period Dates */}
+          <div className="flex items-center justify-between gap-2 w-full pt-0.5">
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-slate-100/70 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-sm shrink-0">
+              <button
+                type="button"
+                onClick={() => navigateMonth('prev')}
+                className="h-7 w-6 flex items-center justify-center rounded-lg text-slate-500 hover:bg-white dark:hover:bg-slate-700 transition-colors"
+                title="Previous month"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div className="flex items-center px-1 space-x-1">
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setDate(15);
+                    newDate.setMonth(parseInt(e.target.value) - 1);
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 text-center cursor-pointer appearance-none"
+                >
+                  {monthNames.map((name, idx) => (
+                    <option key={idx} value={idx + 1}>{name.substring(0, 3)}</option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setDate(15);
+                    newDate.setFullYear(parseInt(e.target.value));
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 text-center cursor-pointer appearance-none"
+                >
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateMonth('next')}
+                className="h-7 w-6 flex items-center justify-center rounded-lg text-slate-500 hover:bg-white dark:hover:bg-slate-700 transition-colors"
+                title="Next month"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Cycle Period Dates */}
+            {cycleDates.startDate && cycleDates.endDate && (
+              <div
+                className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100/60 dark:bg-slate-800/50 px-2.5 py-1 rounded-lg border border-slate-200/50 dark:border-slate-700/50 truncate max-w-[55%]"
+                title={`Pay period: ${cycleDates.startDate} to ${cycleDates.endDate}`}
+              >
+                ({new Date(cycleDates.startDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {new Date(cycleDates.endDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})
+              </div>
+            )}
+          </div>
+
+          {/* Row 3: View Mode Tabs and Complete Filter Dropdown */}
+          <div className="flex items-center justify-between gap-2 w-full pt-0.5">
+            {isEmployee ? (
+              <div className="flex items-center gap-1 p-0.5 bg-slate-100/70 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">View</span>
+                <div className="flex rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-white/50 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEmployeeViewMode('table')}
+                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${employeeViewMode === 'table' ? 'bg-slate-700 text-white dark:bg-slate-600 shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400'}`}
+                  >
+                    Table
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmployeeViewMode('cards')}
+                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${employeeViewMode === 'cards' ? 'bg-slate-700 text-white dark:bg-slate-600 shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400'}`}
+                  >
+                    Cards
+                  </button>
+                </div>
+              </div>
+            ) : <div />}
+
+            {/* Completed Filter Dropdown */}
+            <select
+              value={tableType}
+              onChange={(e) => setTableType(e.target.value as any)}
+              className="h-8 pl-2.5 pr-6 text-[11px] font-bold bg-green-50 dark:bg-green-900/20 border border-green-200/50 dark:border-green-800/50 rounded-xl focus:ring-2 focus:ring-green-500/20 text-green-700 dark:text-green-400 shadow-sm cursor-pointer shrink-0"
+            >
+              <option value="complete">Complete</option>
+              <option value="present_absent">Pres/Abs</option>
+              <option value="in_out">In/Out</option>
+              <option value="leaves">Leaves</option>
+              <option value="od">OD</option>
+              <option value="ot">OT</option>
+            </select>
+          </div>
+
+          {/* Row 4: Non-Employee Filters (if !isEmployee) */}
+          {!isEmployee && (
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+              <MultiSelect
+                options={divisions.map((div) => ({ id: div._id, name: div.name }))}
+                selectedIds={selectedDivision ? [selectedDivision] : []}
+                onChange={(vals) => {
+                  const divisionId = vals[0] || '';
+                  setSelectedDivision(divisionId);
+                  setSelectedDepartment('');
+                  setSelectedDesignation('');
+                }}
+                placeholder="All Divisions"
+                className="min-w-[100px] flex-1"
+                single={true}
+              />
+              <MultiSelect
+                options={filteredDepartmentOptions.map((dept) => ({ id: dept._id, name: dept.name }))}
+                selectedIds={selectedDepartment ? [selectedDepartment] : []}
+                onChange={(vals) => {
+                  setSelectedDepartment(vals[0] || '');
+                  setSelectedDesignation('');
+                }}
+                placeholder="All Departments"
+                className="min-w-[100px] flex-1"
+                single={true}
+              />
+              {selectedDepartment && (
+                <MultiSelect
+                  options={designations.map((desig) => ({ id: desig._id, name: desig.name }))}
+                  selectedIds={selectedDesignation ? [selectedDesignation] : []}
+                  onChange={(vals) => setSelectedDesignation(vals[0] || '')}
+                  placeholder="All Designations"
+                  className="min-w-[100px] flex-1"
+                  single={true}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Row 5: Action Buttons (Export, PDF, Sync, Upload) - 100% visible */}
+          <div className="flex items-center gap-2 w-full pt-0.5">
+            {hasManagePermission && (
+              <button
+                type="button"
+                onClick={handleSyncShifts}
+                disabled={syncingShifts}
+                title="Sync Shifts"
+                className="flex-1 h-8 px-2 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-[11px] font-semibold shadow-sm disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+              >
+                {syncingShifts ? (
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent mr-1" />
+                ) : (
+                  <svg className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                Sync
+              </button>
+            )}
+            {hasManagePermission && attendanceFeatureFlags.allowAttendanceUpload && (
+              <button
+                type="button"
+                onClick={() => setShowUploadDialog(true)}
+                title="Upload Excel"
+                className="flex-1 h-8 px-2 flex items-center justify-center rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-[11px] font-bold text-white shadow-sm"
+              >
+                <svg className="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Upload
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleExportAttendance}
+              disabled={exportingExcel}
+              title="Export filtered attendance to Excel"
+              className="flex-1 h-8 px-2.5 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-[11px] font-semibold shadow-sm disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+            >
+              {exportingExcel ? (
+                <div className="mr-1.5 h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+              ) : (
+                <svg className="mr-1.5 h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M5 20h14a1 1 0 001-1v-3a1 1 0 00-1-1h-1M5 20a1 1 0 01-1-1v-3a1 1 0 011-1h1m0 0V4a1 1 0 011-1h8a1 1 0 011 1v11M7 15h10" />
+                </svg>
+              )}
+              Export
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              disabled={exportingPDF}
+              title="Download PDF Attendance Report"
+              className="flex-1 h-8 px-2.5 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-[11px] font-semibold shadow-sm disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+            >
+              {exportingPDF ? (
+                <div className="mr-1.5 h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+              ) : (
+                <svg className="mr-1.5 h-3.5 w-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              )}
+              PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop Header Toolbar (untouched) */}
+        <div className="hidden md:flex mb-0 md:flex-nowrap md:items-center md:justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide px-3 sm:px-6 py-2 md:py-3 min-w-0 min-h-[4.5rem]">
 
           <div className="flex flex-nowrap items-center gap-4 shrink-0">
 
@@ -4177,8 +4442,8 @@ export default function AttendancePage() {
           const visibleCards = cards.filter((c) => c.column == null || orgCompleteSummaryColumns[c.column]);
 
           return (
-            <div className="mb-6 rounded-2xl border border-slate-200/60 bg-white/40 backdrop-blur-md p-4 sm:p-6 shadow-xl shadow-slate-200/20 dark:border-slate-700/50 dark:bg-slate-800/40 dark:shadow-none transition-all hover:shadow-2xl hover:shadow-slate-200/40 dark:hover:shadow-none">
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <div className="mb-6 rounded-2xl border border-slate-200/60 bg-white/40 backdrop-blur-md p-3 sm:p-6 shadow-xl shadow-slate-200/20 dark:border-slate-700/50 dark:bg-slate-800/40 dark:shadow-none transition-all hover:shadow-2xl hover:shadow-slate-200/40 dark:hover:shadow-none">
+              <div className="flex items-center justify-between mb-3 sm:mb-6">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                   Monthly Performance Summary
@@ -4202,14 +4467,14 @@ export default function AttendancePage() {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 xl:gap-6">
+              <div className="grid grid-cols-3 min-[430px]:grid-cols-4 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 xl:gap-6">
                 {visibleCards.map((stat) => (
                   <div
                     key={stat.id}
-                    className={`flex flex-col p-3 rounded-xl border border-transparent transition-all hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 shadow-sm hover:shadow-md ${stat.bcolor}`}
+                    className={`flex flex-col p-2 sm:p-3 rounded-lg sm:rounded-xl border border-transparent transition-all hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 shadow-sm hover:shadow-md ${stat.bcolor}`}
                   >
-                    <div className="text-[10px] xl:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-1">{stat.label}</div>
-                    <div className={`text-lg xl:text-2xl font-black ${stat.color}`}>{stat.value}</div>
+                    <div className="text-[9px] sm:text-[10px] xl:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-0.5 sm:mb-1 truncate" title={stat.label}>{stat.label}</div>
+                    <div className={`text-base sm:text-lg xl:text-2xl font-black ${stat.color}`}>{stat.value}</div>
                   </div>
                 ))}
               </div>

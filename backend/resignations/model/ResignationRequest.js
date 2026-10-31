@@ -29,7 +29,7 @@ const ResignationRequestSchema = new mongoose.Schema(
     },
     requestType: {
       type: String,
-      enum: ['resignation', 'termination'],
+      enum: ['resignation', 'termination', 'obsconded', 'absconded'],
       default: 'resignation',
     },
     // Resignation remarks (reason)
