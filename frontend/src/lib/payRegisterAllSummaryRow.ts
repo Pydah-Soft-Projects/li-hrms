@@ -39,6 +39,68 @@ export type PayRegisterAllRowOptions = {
   isSecurity?: boolean;
 };
 
+/**
+ * Universal security employee check for frontend UI (attendance, pay register, Excel export).
+ * Checks department, division, designation, role across all object shapes (populated ref, flat object, etc.).
+ */
+export function isSecurityEmployee(empOrRow: any): boolean {
+  if (!empOrRow) return false;
+  const emp =
+    typeof empOrRow === 'object' && empOrRow.employee && typeof empOrRow.employee === 'object'
+      ? empOrRow.employee
+      : typeof empOrRow === 'object' && empOrRow.employeeId && typeof empOrRow.employeeId === 'object'
+      ? empOrRow.employeeId
+      : empOrRow;
+
+  const parts = [
+    typeof emp?.department_id === 'object' ? emp.department_id?.name : '',
+    typeof emp?.division_id === 'object' ? emp.division_id?.name : '',
+    typeof emp?.designation_id === 'object'
+      ? (emp.designation_id?.name || emp.designation_id?.title)
+      : '',
+    typeof emp?.department === 'object'
+      ? emp.department?.name
+      : typeof emp?.department === 'string'
+      ? emp.department
+      : '',
+    typeof emp?.division === 'object'
+      ? emp.division?.name
+      : typeof emp?.division === 'string'
+      ? emp.division
+      : '',
+    typeof emp?.designation === 'object'
+      ? emp.designation?.name
+      : typeof emp?.designation === 'string'
+      ? emp.designation
+      : '',
+    emp?.department_name,
+    emp?.division_name,
+    emp?.designation_name,
+    emp?.role,
+    typeof empOrRow?.department === 'object'
+      ? empOrRow.department?.name
+      : typeof empOrRow?.department === 'string'
+      ? empOrRow.department
+      : '',
+    typeof empOrRow?.division === 'object'
+      ? empOrRow.division?.name
+      : typeof empOrRow?.division === 'string'
+      ? empOrRow.division
+      : '',
+    typeof empOrRow?.designation === 'object'
+      ? empOrRow.designation?.name
+      : typeof empOrRow?.designation === 'string'
+      ? empOrRow.designation
+      : '',
+    empOrRow?.department_name,
+    empOrRow?.division_name,
+    empOrRow?.designation_name,
+  ];
+
+  return /security/i.test(parts.filter(Boolean).join(' '));
+}
+
+
 function contributingDatesPartialPresentOverlap(s: NonNullable<MonthlySummaryLike>): number {
   const cd = s.contributingDates;
   if (!cd || typeof cd !== 'object') return 0;

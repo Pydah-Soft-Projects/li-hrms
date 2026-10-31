@@ -162,7 +162,7 @@ import {
   mergeEditDataLeaveNatureFromTypes,
   resolveLeaveNatureFromLeaveTypeCode,
 } from '@/lib/payRegisterLeaveNature';
-import { paidLopSublabel } from '@/lib/payRegisterAllSummaryRow';
+import { paidLopSublabel, isSecurityEmployee } from '@/lib/payRegisterAllSummaryRow';
 import { departmentsForDivisionFilter } from '@/lib/manualDeductionListUi';
 import { MultiSelect } from '@/components/MultiSelect';
 import {
@@ -1519,15 +1519,7 @@ export function PayRegisterContent({
     return single ? [single] : [];
   };
 
-  const isSecurityEmployee = (pr: PayRegisterSummary): boolean => {
-    const emp = typeof pr.employeeId === 'object' ? pr.employeeId : null;
-    const dept = typeof emp?.department_id === 'object' && emp.department_id?.name ? String(emp.department_id.name) : '';
-    const div = typeof (emp as any)?.division_id === 'object' && (emp as any).division_id?.name ? String((emp as any).division_id.name) : '';
-    const desig = typeof emp?.designation_id === 'object' && emp.designation_id?.name ? String(emp.designation_id.name) : '';
-    const deptStr = typeof (emp as any)?.department === 'string' ? (emp as any).department : '';
-    const divStr = typeof (emp as any)?.division === 'string' ? (emp as any).division : '';
-    return /security/i.test(`${dept} ${div} ${desig} ${deptStr} ${divStr}`);
-  };
+  // isSecurityEmployee imported from @/lib/payRegisterAllSummaryRow
 
   /** Primary status for a daily record (full day or first half when split) for coloring in "All" view */
   const getPrimaryStatus = (record: DailyRecord): string => {

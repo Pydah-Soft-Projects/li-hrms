@@ -48,6 +48,7 @@ import { AttendanceLeaveInfoSection } from '@/components/attendance/AttendanceLe
 import { formatAttendanceLeaveDayPortion, sumLeaveCreditFromDailyRecords } from '@/lib/leaveDayRange';
 
 import {
+  isSecurityEmployee,
   computePayRegisterAllRowFromMonthlySummary,
   formatPolicyAttendanceDeductionDisplay,
   paidLopSublabel,
@@ -5182,22 +5183,11 @@ export default function AttendancePage() {
                                       totalODs,
                                       totalAbsentDays: monthAbsentUnits,
                                       totalDaysInMonth: daysArray.length,
+                                      totalPayableShifts: payableShifts,
                                     } as any),
                                   {
                                     processingMode: 'single_shift',
-                                    isSecurity: Boolean(
-                                      /security/i.test(
-                                        String(
-                                          (item.employee as any)?.department?.name ||
-                                          (item.employee as any)?.division?.name ||
-                                          (item.employee as any)?.designation?.name ||
-                                          (item.employee as any)?.department ||
-                                          (item.employee as any)?.division ||
-                                          (item.employee as any)?.designation ||
-                                          ''
-                                        )
-                                      )
-                                    ),
+                                    isSecurity: isSecurityEmployee(item.employee),
                                   }
                                 )
                               : null;

@@ -951,8 +951,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     });
 
     let employeeQueryExec = Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id leftDate leftReason qualificationStatus salaryStatus salaryOnHold salaryHoldReason salaryHeldAt')
+      .select('_id employee_name emp_no department_id designation_id division_id leftDate leftReason qualificationStatus salaryStatus salaryOnHold salaryHoldReason salaryHeldAt')
       .populate('department_id', 'name')
+      .populate('division_id', 'name')
       .populate('designation_id', 'name')
       .sort(EMP_NO_SORT)
       .collation(EMP_NO_COLLATION)

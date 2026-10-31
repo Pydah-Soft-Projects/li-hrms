@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx-js-style';
 import { formatCompleteDayCellForExcel } from '@/lib/attendanceCompleteDayCellText';
 import { getPartialColumnTotal, getMergedPresentDaysForSummary } from '@/lib/attendancePartialContribution';
 import {
+  isSecurityEmployee,
   computePayRegisterAllRowFromMonthlySummary,
   formatPolicyAttendanceDeductionDisplay,
   paidLopSublabel,
@@ -201,22 +202,11 @@ function buildPrAllRowForExport(item: any) {
         totalODs,
         totalAbsentDays: monthAbsentUnits,
         totalDaysInMonth: dailyVals.length,
+        totalPayableShifts: item.payableShifts ?? item.summary?.totalPayableShifts,
       } as any),
     {
       processingMode: 'single_shift',
-      isSecurity: Boolean(
-        /security/i.test(
-          String(
-            item.department ||
-            item.division ||
-            item.designation ||
-            item.employee?.department?.name ||
-            item.employee?.division?.name ||
-            item.employee?.designation?.name ||
-            ''
-          )
-        )
-      ),
+      isSecurity: isSecurityEmployee(item.employee || item),
     }
   );
 }
