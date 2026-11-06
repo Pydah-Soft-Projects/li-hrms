@@ -608,14 +608,8 @@ exports.applyOD = async (req, res) => {
           error: 'OD applications for past dates can only be applied by users with the file upload permission in User Management.'
         });
       }
-
-      const backdateDays = Math.abs(diffDays);
-      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && settings.maxBackdatedDays > 0 && backdateDays > settings.maxBackdatedDays) {
-        return res.status(400).json({
-          success: false,
-          error: `OD application can only be backdated up to ${settings.maxBackdatedDays} days.`
-        });
-      }
+      // Users with file upload permission in User Management are granted the back date apply option
+      // and are not blocked by the past date capping configured for regular employees.
     }
     // 2. Future date validation
     else if (diffDays > 0) {

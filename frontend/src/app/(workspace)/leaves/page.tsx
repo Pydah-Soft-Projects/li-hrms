@@ -2242,19 +2242,36 @@ function LeavesPageContent() {
       // 1. Validation
       const policy = applyType === 'leave' ? leavePolicy : odPolicy;
       const { minDate: policyMin, maxDate: policyMax } = getPolicyDateBounds(policy);
-      if (formData.fromDate && (formData.fromDate < policyMin || formData.fromDate > policyMax)) {
-        toast.error(
-          applyType === 'leave'
-            ? `From date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`
-            : `Date must be within the allowed range (${policyMin} to ${policyMax}) as per OD settings.`
-        );
-        setLoading(false);
-        return;
-      }
-      if (formData.toDate && (formData.toDate < policyMin || formData.toDate > policyMax)) {
-        toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per ${applyType === 'leave' ? 'leave' : 'OD'} settings.`);
-        setLoading(false);
-        return;
+      const canUploadFile = canOdUploadFromDevice(currentUser);
+
+      if (applyType === 'leave') {
+        if (formData.fromDate && (formData.fromDate < policyMin || formData.fromDate > policyMax)) {
+          toast.error(`From date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`);
+          setLoading(false);
+          return;
+        }
+        if (formData.toDate && (formData.toDate < policyMin || formData.toDate > policyMax)) {
+          toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`);
+          setLoading(false);
+          return;
+        }
+      } else {
+        // applyType === 'od'
+        // Future date limit check
+        if (policy.allowFutureDated && policy.maxAdvanceDays && formData.fromDate && formData.fromDate > policyMax) {
+          toast.error(`Date cannot be more than ${policy.maxAdvanceDays} day(s) in advance as per OD settings.`);
+          setLoading(false);
+          return;
+        }
+        // Past date validation: regular employees are capped for past dates,
+        // but users who have the file upload option are granted the back date apply option.
+        const todayStr = todayIsoDate();
+        const isPastDate = (formData.fromDate && formData.fromDate < todayStr) || (formData.toDate && formData.toDate < todayStr);
+        if (isPastDate && !canUploadFile) {
+          showOdPastDateAlert(formData.fromDate);
+          setLoading(false);
+          return;
+        }
       }
 
       if (applyType === 'od') {
@@ -6217,12 +6234,12 @@ function LeavesPageContent() {
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
                   (() => {
                     const policy = odPolicy;
-                    const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
+                    const { maxDate: singleMax } = getPolicyDateBounds(policy);
                     const canUploadFile = canOdUploadFromDevice(currentUser);
                     const todayStr = todayIsoDate();
                     // Persons who have the file upload option for user management can apply OD for past dates.
-                    // Others cannot apply for past dates (when the date changes).
-                    const effectiveMin = canUploadFile ? singleMin : (singleMin > todayStr ? singleMin : todayStr);
+                    // Employees without file upload option are capped and cannot apply for past dates.
+                    const effectiveMin = canUploadFile ? undefined : todayStr;
                     return (
                       <div>
                         <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Date *</label>
@@ -6242,9 +6259,13 @@ function LeavesPageContent() {
                           required
                           className="w-full rounded-lg sm:rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
-                        {!canUploadFile && (
+                        {!canUploadFile ? (
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             Past dates are restricted. OD applications for past dates require the file upload permission in User Management.
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                            Backdated OD application enabled (File Upload permission granted).
                           </p>
                         )}
                       </div>

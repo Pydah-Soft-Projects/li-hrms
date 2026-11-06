@@ -2103,7 +2103,16 @@ function LeavesPageContent() {
           remarks: formData.remarks,
         });
       } else {
-        if (!canOdUploadFromDevice(auth.getUser() as any) && approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
+        const canUploadFile = canOdUploadFromDevice(auth.getUser() as any);
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isPastDate = (formData.fromDate && formData.fromDate < todayStr) || (formData.toDate && formData.toDate < todayStr);
+        if (isPastDate && !canUploadFile) {
+          showOdPastDateAlert(formData.fromDate);
+          setLoading(false);
+          return;
+        }
+
+        if (!canUploadFile && approvedRecordsInfo?.attendanceInfo?.hasAttendance) {
           const att: any = approvedRecordsInfo.attendanceInfo;
           const hasIn = att.hasIn !== undefined ? att.hasIn : Boolean(att.punchInTime);
           const hasOut = att.hasOut !== undefined ? att.hasOut : Boolean(att.punchOutTime && att.punchOutTime !== att.punchInTime);
@@ -4899,18 +4908,25 @@ function LeavesPageContent() {
               {/* Date Selection Logic */}
               {(() => {
                 const policy = applyType === 'od' ? odPolicy : leavePolicy;
+                const canUploadFile = canOdUploadFromDevice(auth.getUser() as any);
                 const todayStr = new Date().toISOString().split('T')[0];
-                const minDate = policy.allowBackdated && policy.maxBackdatedDays > 0
-                  ? new Date(Date.now() - policy.maxBackdatedDays * 86400000).toISOString().split('T')[0]
-                  : todayStr;
+                const minDate = applyType === 'od'
+                  ? (canUploadFile ? undefined : todayStr)
+                  : (policy.allowBackdated && policy.maxBackdatedDays > 0
+                    ? new Date(Date.now() - policy.maxBackdatedDays * 86400000).toISOString().split('T')[0]
+                    : todayStr);
                 const maxDate = policy.allowFutureDated && policy.maxAdvanceDays > 0
                   ? new Date(Date.now() + policy.maxAdvanceDays * 86400000).toISOString().split('T')[0]
                   : undefined;
-                const hint = policy.allowBackdated && policy.maxBackdatedDays > 0
-                  ? `Backdating allowed up to ${policy.maxBackdatedDays} day(s)`
-                  : policy.allowFutureDated && policy.maxAdvanceDays > 0
-                    ? `Up to ${policy.maxAdvanceDays} day(s) in advance`
-                    : null;
+                const hint = applyType === 'od'
+                  ? (canUploadFile
+                    ? 'Backdated OD application enabled (File Upload permission granted)'
+                    : 'Past dates are restricted. OD applications for past dates require the file upload permission in User Management.')
+                  : (policy.allowBackdated && policy.maxBackdatedDays > 0
+                    ? `Backdating allowed up to ${policy.maxBackdatedDays} day(s)`
+                    : policy.allowFutureDated && policy.maxAdvanceDays > 0
+                      ? `Up to ${policy.maxAdvanceDays} day(s) in advance`
+                      : null);
                 return (
                   <>
                     {applyType === 'od' ? (
@@ -4922,11 +4938,22 @@ function LeavesPageContent() {
                           min={minDate}
                           max={maxDate}
                           value={formData.fromDate}
-                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (applyType === 'od' && !canUploadFile && val && val < todayStr) {
+                              showOdPastDateAlert(val);
+                              return;
+                            }
+                            setFormData({ ...formData, fromDate: val, toDate: val });
+                          }}
                           required
                           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
-                        {hint && <p className="mt-1 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
+                        {hint && (
+                          <p className={`mt-1 text-xs ${applyType === 'od' && canUploadFile ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-indigo-500 dark:text-indigo-400'}`}>
+                            {hint}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       /* Two Date Inputs for Full Day */
