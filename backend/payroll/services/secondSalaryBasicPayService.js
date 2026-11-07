@@ -32,9 +32,11 @@ function calculateBasicPay(employee, attendanceSummary) {
     // Calculate per day basic pay
     const perDayBasicPay = totalDaysInMonth > 0 ? basicPay / totalDaysInMonth : 0;
 
-    // Same structure as before; EL-as-paid is a separate column and is added to paid-day units here.
+    // 1. Calculate Total Paid Days (User Formula)
+    // Formula: Calculated Paid Days = Payable Shifts (P + OD) + Paid Leaves + EL used in payroll + Holidays + Weekly Offs
     const elUsedInPayroll = Number(attendanceSummary.elUsedInPayroll) || 0;
     const physicalUnits = (attendanceSummary.totalPayableShifts || 0) +
+        (attendanceSummary.totalPaidLeaveDays || 0) +
         elUsedInPayroll +
         (attendanceSummary.totalWeeklyOffs || 0) +
         (attendanceSummary.totalHolidays || 0);

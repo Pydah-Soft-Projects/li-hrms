@@ -658,8 +658,9 @@ async function syncTotalsFromMonthlySummary(payRegister, summary) {
   
   // Payroll specific
   totals.totalPayableShifts = summary.totalPayableShifts || 0;
-  // Single-shift: ensure payable shifts never sit below present + partial PT + OD + paid
+  // Single-shift: ensure payable shifts never sit below present + partial PT + OD
   // (summary engine can differ from stored summary rows; partial halves are easy to drop on daily recompute).
+  // Note: paid leaves are NOT added here because payroll adds totalPaidLeaveDays separately (avoids double-counting).
   if (pm.mode === 'single_shift') {
     let mergedPres = Math.round((sPresRaw + sPartRaw - sOverlapRaw) * 100) / 100;
     mergedPres = Math.min(
@@ -667,8 +668,7 @@ async function syncTotalsFromMonthlySummary(payRegister, summary) {
       Math.max(sPresRaw, mergedPres)
     );
     const sOd = Math.round((Number(summary.totalODs) || 0) * 100) / 100;
-    const sPaid = Math.round((Number(summary.totalPaidLeaves) || 0) * 100) / 100;
-    const payableFloor = Math.round((mergedPres + sOd + sPaid) * 100) / 100;
+    const payableFloor = Math.round((mergedPres + sOd) * 100) / 100;
     const cur = Math.round((Number(totals.totalPayableShifts) || 0) * 100) / 100;
     if (payableFloor > cur) totals.totalPayableShifts = payableFloor;
   }
@@ -750,8 +750,8 @@ async function mergeSingleShiftPresentPayableFromSummaryIfApplicable(totals, sum
     Math.max(sPresRaw, mergedPres)
   );
   const sOd = Math.round((Number(summary.totalODs) || 0) * 100) / 100;
-  const sPaid = Math.round((Number(summary.totalPaidLeaves) || 0) * 100) / 100;
-  const payableFloor = Math.round((mergedPres + sOd + sPaid) * 100) / 100;
+  // Paid leaves are kept in totalPaidLeaveDays and added separately in payroll (avoids double-counting)
+  const payableFloor = Math.round((mergedPres + sOd) * 100) / 100;
   const cur = Math.round((Number(totals.totalPayableShifts) || 0) * 100) / 100;
   if (payableFloor > cur) totals.totalPayableShifts = payableFloor;
   return true;
