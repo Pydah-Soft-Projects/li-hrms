@@ -28,6 +28,18 @@ function getDateKeyIST(date) {
     }).format(new Date(date));
 }
 
+/** Returns all YYYY-MM-DD date keys from start to end (inclusive) in IST. */
+function getAllDateKeysIST(startDateStr, endDateStr) {
+    const dates = [];
+    const curr = new Date(startDateStr + 'T00:00:00+05:30');
+    const end = new Date(endDateStr + 'T23:59:59+05:30');
+    while (curr <= end) {
+        dates.push(getDateKeyIST(curr));
+        curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+}
+
 /** DD-Mon-YY for report PDate column (IST calendar day from YYYY-MM-DD key). */
 function formatPDateFromYMDKey(dateKey) {
     const [y, m, d] = dateKey.split('-').map((x) => parseInt(x, 10));
@@ -234,8 +246,17 @@ router.get('/export/attendance', async (req, res) => {
         }
 
         const logs = await AttendanceLog.find(logQuery).lean();
-        // If no logs found
-        if (logs.length === 0) {
+
+        const empNosSet = new Set(logs.map(l => String(l.employeeId).toUpperCase()));
+        if (allowedEmpNos) {
+            allowedEmpNos.forEach(id => empNosSet.add(id));
+        }
+        if (employeeId && employeeId.trim()) {
+            empNosSet.add(String(employeeId).toUpperCase().trim());
+        }
+        const empNos = [...empNosSet];
+
+        if (empNos.length === 0) {
             // Return empty Excel
             const headers = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate', 'IN 1', 'OUT 1', 'TOT HRS'];
             const worksheet = XLSX.utils.aoa_to_sheet([headers]);
@@ -247,8 +268,6 @@ router.get('/export/attendance', async (req, res) => {
             res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
             return res.send(buffer);
         }
-
-        const empNos = [...new Set(logs.map(l => String(l.employeeId).toUpperCase()))];
 
         // 3) Fetch employee details (HRMS or Fallback)
         const empMap = {};
@@ -268,7 +287,9 @@ router.get('/export/attendance', async (req, res) => {
                     emp_no: e.emp_no,
                     employee_name: (e.employee_name || '').trim() || e.emp_no,
                     department: (e.department_id?.name || '').trim(),
-                    division: (e.division_id?.name || '').trim()
+                    division: (e.division_id?.name || '').trim(),
+                    leftDate: e.leftDate,
+                    doj: e.doj
                 };
             });
         }
@@ -429,11 +450,15 @@ router.get('/export/attendance', async (req, res) => {
 
         // 4) Build groups (Division > Dept)
         const groupKey = (empNo) => {
-            const info = empMap[empNo];
-            return `${info.division}\t${info.department}`;
+            const info = empMap[empNo] || { division: '', department: '' };
+            return `${info.division || ''}\t${info.department || ''}`;
         };
         const groups = new Map();
-        for (const empNo of Object.keys(byEmpDate)) { // Use the processed byEmpDate
+        const allEmpNosToGroup = [...new Set([...Object.keys(empMap), ...Object.keys(byEmpDate)])];
+        for (const empNo of allEmpNosToGroup) {
+            if (!empMap[empNo]) {
+                empMap[empNo] = { emp_no: empNo, employee_name: empNo, department: '', division: '' };
+            }
             const key = groupKey(empNo);
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(empNo);
@@ -447,6 +472,7 @@ router.get('/export/attendance', async (req, res) => {
             return c !== 0 ? c : (deptA || '').localeCompare(deptB || '');
         });
 
+        const allDateKeys = getAllDateKeysIST(startDate, endDate);
         const rows = [];
         let sno = 0;
         let maxPairs = 1; // At least 1 pair columns (IN 1 / OUT 1)
@@ -465,13 +491,22 @@ router.get('/export/attendance', async (req, res) => {
 
             for (const empNo of groupEmpNos) {
                 const info = empMap[empNo];
-                const dates = Object.keys(byEmpDate[empNo]).sort();
+                const empDatesData = byEmpDate[empNo] || {};
 
-                for (const dateKey of dates) {
+                for (const dateKey of allDateKeys) {
+                    if (info.leftDate) {
+                        const leftStr = getDateKeyIST(info.leftDate);
+                        if (dateKey > leftStr) continue;
+                    }
+                    if (info.doj) {
+                        const dojStr = getDateKeyIST(info.doj);
+                        if (dateKey < dojStr) continue;
+                    }
+
                     const pDate = formatPDateFromYMDKey(dateKey);
-
-                    // dayLogs is now { pairs, totHrsStr }
-                    const { pairs, totHrsStr } = byEmpDate[empNo][dateKey];
+                    const dayData = empDatesData[dateKey];
+                    const pairs = dayData?.pairs || [];
+                    const totHrsStr = dayData?.totHrsStr || '';
 
                     if (pairs.length > maxPairs) maxPairs = pairs.length;
 
@@ -516,13 +551,22 @@ router.get('/export/attendance', async (req, res) => {
             };
 
             // Add pairs
-            for (let i = 0; i < maxPairs; i++) {
-                const p = r.pairs && r.pairs[i];
-                rowObj[`IN ${i + 1}`] = p?.in ? formatTimeIST(p.in) : '';
-                rowObj[`OUT ${i + 1}`] = p?.out ? formatTimeIST(p.out) : '';
+            if (r.pairs && r.pairs.length > 0) {
+                for (let i = 0; i < maxPairs; i++) {
+                    const p = r.pairs[i];
+                    rowObj[`IN ${i + 1}`] = p?.in ? formatTimeIST(p.in) : '';
+                    rowObj[`OUT ${i + 1}`] = p?.out ? formatTimeIST(p.out) : '';
+                }
+                rowObj['TOT HRS'] = r.totHrs;
+            } else {
+                rowObj['IN 1'] = 'Absent';
+                rowObj['OUT 1'] = '';
+                for (let i = 1; i < maxPairs; i++) {
+                    rowObj[`IN ${i + 1}`] = '';
+                    rowObj[`OUT ${i + 1}`] = '';
+                }
+                rowObj['TOT HRS'] = '';
             }
-
-            rowObj['TOT HRS'] = r.totHrs;
             return rowObj;
         });
 

@@ -362,7 +362,7 @@ const LoanSettingsSchema = new mongoose.Schema(
       },
       sameDivisionOnly: {
         type: Boolean,
-        default: true,
+        default: false,
       },
       sameDepartmentOnly: {
         type: Boolean,

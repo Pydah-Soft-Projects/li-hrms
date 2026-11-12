@@ -125,10 +125,15 @@ const getEffectiveGrace = (segmentGrace, globalGrace, shiftGrace) => {
     const num = Number(globalGrace);
     if (!isNaN(num)) return num;
   }
-  if (typeof segmentGrace === 'number' && segmentGrace > 0) {
-    return segmentGrace;
+  const sGrace = (typeof shiftGrace === 'number' && !isNaN(shiftGrace)) ? shiftGrace : null;
+  const segGrace = (typeof segmentGrace === 'number' && !isNaN(segmentGrace)) ? segmentGrace : null;
+  if (sGrace !== null && segGrace !== null) {
+    return Math.max(sGrace, segGrace);
   }
-  return typeof shiftGrace === 'number' ? shiftGrace : 15;
+  if (segGrace !== null && segGrace > 0) {
+    return segGrace;
+  }
+  return sGrace !== null ? sGrace : 15;
 };
 
 const calculateSegmentLateIn = (segment, inTime, globalGrace, shiftGrace) => {
@@ -303,8 +308,9 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
     );
   }
 
-  const firstHalfEffectiveGrace = getEffectiveGrace(firstHalf.gracePeriod, options?.globalLateInGrace, 15);
-  const secondHalfEffectiveGrace = getEffectiveGrace(secondHalf.gracePeriod, options?.globalEarlyOutGrace, 15);
+  const shiftGrace = options?.shiftGrace ?? options?.shift?.gracePeriod ?? 15;
+  const firstHalfEffectiveGrace = getEffectiveGrace(firstHalf.gracePeriod, options?.globalLateInGrace, shiftGrace);
+  const secondHalfEffectiveGrace = getEffectiveGrace(secondHalf.gracePeriod, options?.globalEarlyOutGrace, shiftGrace);
 
   const firstHalfEval = evaluateHalfPresenceWithBreakCredit({
     rawMinutes: firstHalfRawMinutes,
@@ -493,7 +499,7 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
 
   // Calculate intelligent presence using dominant segment logic
   const intelligentPresence = inTime && outTime 
-    ? calculateSegmentPresenceIntelligent(timeline, inTime, outTime, options)
+    ? calculateSegmentPresenceIntelligent(timeline, inTime, outTime, { ...options, shiftGrace: shift.gracePeriod })
     : { firstHalf: false, secondHalf: false };
 
   const segmentDetails = timeline.segments.map((segment) => {

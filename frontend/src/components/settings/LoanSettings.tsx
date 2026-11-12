@@ -38,7 +38,7 @@ const DEFAULT_GUARANTOR_RULES: GuarantorRules = {
   includeGuaranteedEmi: true,
   minServicePeriodMonths: 0,
   minSalary: 0,
-  sameDivisionOnly: true,
+  sameDivisionOnly: false,
   sameDepartmentOnly: false,
   activeEmployeeOnly: true,
 };

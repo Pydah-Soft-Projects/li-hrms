@@ -10,6 +10,7 @@ export type LoanGuarantorCandidate = {
   employee_name: string;
   department?: { _id?: string; name?: string } | null;
   designation?: { _id?: string; name?: string } | null;
+  division?: { _id?: string; name?: string; code?: string } | null;
   eligibility?: {
     eligible: boolean;
     reasons?: string[];
@@ -256,6 +257,7 @@ export default function LoanGuarantorPicker({
                         </p>
                         <p className="text-[11px] text-slate-500">
                           {c.emp_no}
+                          {c.division?.name ? ` · ${c.division.name}` : ''}
                           {c.department?.name ? ` · ${c.department.name}` : ''}
                           {c.designation?.name ? ` · ${c.designation.name}` : ''}
                         </p>

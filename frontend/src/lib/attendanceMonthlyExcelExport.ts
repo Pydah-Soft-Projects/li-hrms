@@ -5,7 +5,10 @@
  */
 import { format, parseISO } from 'date-fns';
 import * as XLSX from 'xlsx-js-style';
-import { formatCompleteDayCellForExcel } from '@/lib/attendanceCompleteDayCellText';
+import {
+  formatCompleteDayCellForExcel,
+  resolvePresentExportCode,
+} from '@/lib/attendanceCompleteDayCellText';
 import { getPartialColumnTotal, getMergedPresentDaysForSummary } from '@/lib/attendancePartialContribution';
 import {
   isSecurityEmployee,
@@ -340,7 +343,7 @@ export function writeMonthlyAttendanceExcelFile(
         const sEarly = (s.earlyOutMinutes != null && s.earlyOutMinutes > 0);
         const sSuffix = (sLate ? '●' : '') + (sEarly ? '◆' : '');
         let sText = '-';
-        if (s.status === 'PRESENT') sText = 'P';
+        if (s.status === 'PRESENT') sText = resolvePresentExportCode(r, s);
         else if (s.status === 'HALF_DAY') sText = 'HD';
         else if (s.status === 'PARTIAL') sText = 'PT';
         else if (s.status === 'LEAVE' || s.hasLeave) sText = 'L';
@@ -354,7 +357,7 @@ export function writeMonthlyAttendanceExcelFile(
       });
       text = shiftLines.join('\n');
     } else {
-      if (r.status === 'PRESENT') text = 'P' + suffix;
+      if (r.status === 'PRESENT') text = resolvePresentExportCode(r) + suffix;
       else if (r.status === 'HALF_DAY') text = 'HD' + suffix;
       else if (r.status === 'PARTIAL') text = 'PT' + suffix;
       else if (r.status === 'LEAVE' || r.hasLeave) text = 'L';
