@@ -120,6 +120,9 @@ app.use('/api/leaves', leaveRoutes);
 const complaintRoutes = require('./complaints/index.js');
 app.use('/api/complaints', complaintRoutes);
 
+const generalComplaintRoutes = require('./general-complaints');
+app.use('/api/general-complaints', generalComplaintRoutes);
+
 // Resignation policy and requests
 const resignationRoutes = require('./resignations/index.js');
 app.use('/api/resignations', resignationRoutes);

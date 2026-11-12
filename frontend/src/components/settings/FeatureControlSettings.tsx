@@ -59,6 +59,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'HOLIDAY_CALENDAR', label: 'Holidays' },
   { id: 'HOLIDAY_CALENDAR_MANAGE_GLOBAL', label: 'Holidays (Global Manage)' },
   { id: 'COMPLAINTS', label: 'Complaints' },
+  { id: 'GENERAL_COMPLAINTS', label: 'General Complaints' },
   { id: 'SETTINGS', label: 'Settings' },
 ];
 

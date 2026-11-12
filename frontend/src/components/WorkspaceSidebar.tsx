@@ -33,6 +33,7 @@ export default function WorkspaceSidebar() {
   } | null>(null);
   const { profile: companyProfile } = useCompanyProfile();
   const [featureControl, setFeatureControl] = useState<string[] | null>(null);
+  const [generalComplaintsEnabled, setGeneralComplaintsEnabled] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -73,20 +74,33 @@ export default function WorkspaceSidebar() {
       if (managementRoles.includes(user.role)) {
         setFeatureControl(MODULE_CATEGORIES.flatMap((c) => c.modules.map((m) => m.code)));
       } else {
-        setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+        setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'GENERAL_COMPLAINTS']);
       }
     };
     fetchFeatureControl();
   }, [user?.role, user?.featureControl]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.getSetting('general_complaints_enabled')
+      .then((response) => {
+        if (!cancelled && response.success && response.data) {
+          setGeneralComplaintsEnabled(response.data.value !== false);
+        }
+      })
+      .catch((error) => console.error('Failed to load general complaints access setting:', error));
+    return () => { cancelled = true; };
+  }, [pathname]);
+
   const navCategories = useMemo((): SidebarNavCategory[] => {
     return WORKSPACE_NAV_CATEGORIES.map((category) => ({
       ...category,
       items: category.items.filter((item) =>
+        (item.code !== 'GENERAL_COMPLAINTS' || generalComplaintsEnabled) &&
         isModuleEnabled(getSidebarPermissionCode(item.code), featureControl),
       ),
     })).filter((category) => category.items.length > 0);
-  }, [featureControl]);
+  }, [featureControl, generalComplaintsEnabled]);
 
   const handleLogout = async () => {
     await auth.logoutWithConfirmation();

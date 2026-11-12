@@ -29,6 +29,7 @@ export default function Sidebar() {
   const { profile: companyProfile } = useCompanyProfile();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [secondSalaryNavEnabled, setSecondSalaryNavEnabled] = useState(true);
+  const [generalComplaintsEnabled, setGeneralComplaintsEnabled] = useState(true);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -52,6 +53,21 @@ export default function Sidebar() {
     return () => { cancelled = true; };
   }, [user?.role]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getSetting('general_complaints_enabled');
+        if (!cancelled && res?.success && res?.data) {
+          setGeneralComplaintsEnabled(res.data.value !== false);
+        }
+      } catch (error) {
+        console.error('Failed to load general complaints access setting:', error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pathname]);
+
   const isAdmin = user?.role === 'super_admin' || user?.role === 'sub_admin';
   const featureControl = user?.featureControl || null;
 
@@ -60,12 +76,13 @@ export default function Sidebar() {
       ...category,
       items: category.items.filter((item) => {
         if (item.code === 'USER_AUDITS' && user?.role !== 'super_admin') return false;
+        if (item.code === 'GENERAL_COMPLAINTS' && !generalComplaintsEnabled) return false;
         if (item.feature === 'second_salary' && isAdmin && !secondSalaryNavEnabled) return false;
         if (isAdmin) return true;
         return isModuleEnabled(getSidebarPermissionCode(item.code), featureControl);
       }),
     })).filter((category) => category.items.length > 0);
-  }, [isAdmin, user?.role, secondSalaryNavEnabled, featureControl]);
+  }, [isAdmin, user?.role, secondSalaryNavEnabled, generalComplaintsEnabled, featureControl]);
 
   if (!mounted) return null;
 

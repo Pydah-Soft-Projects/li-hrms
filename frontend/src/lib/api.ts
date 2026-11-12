@@ -1498,6 +1498,33 @@ export type HolidaySaveProgressCallback = (event: {
   statusCode?: number;
 }) => void;
 
+export interface GeneralComplaint {
+  id: number;
+  complaint_number: string;
+  requester_name?: string | null;
+  category_id: number;
+  sub_category_id?: number | null;
+  category_name?: string | null;
+  sub_category_name?: string | null;
+  college_name?: string | null;
+  block_no?: string | null;
+  floor_no?: string | null;
+  room_no?: string | null;
+  title: string;
+  description?: string | null;
+  photo_url?: string | null;
+  status: string;
+  priority: string;
+  resolved_at?: string | null;
+  closed_at?: string | null;
+  assignments?: Array<Record<string, unknown>>;
+  comments?: Array<{ id: number; user_name: string; comment: string; created_at: string }>;
+  status_history?: Array<{ id: number; notes?: string; new_status: string; old_status?: string | null; created_at: string }>;
+  feedback?: { rating?: number; comment?: string | null; is_satisfied?: boolean; submitted_at?: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
@@ -4415,6 +4442,62 @@ export const api = {
   // Initialize default settings
   initializeLeaveSettings: async () => {
     return apiRequest<any>('/leaves/settings/initialize', { method: 'POST' });
+  },
+
+  // ==========================================
+  // GENERAL COMPLAINTS (maintenance database)
+  // ==========================================
+  getGeneralComplaintCategories: async () => {
+    return apiRequest<{
+      all: Array<{ id: number; name: string; description?: string | null; parent_id?: number | null; requires_approval?: boolean }>;
+      categories: Array<{ id: number; name: string; description?: string | null; parent_id?: number | null; requires_approval?: boolean }>;
+      subCategoriesByParent: Record<string, Array<{ id: number; name: string; description?: string | null; parent_id?: number | null }>>;
+    }>('/general-complaints/categories', { method: 'GET' });
+  },
+  getGeneralComplaints: async (filters: { status?: string; search?: string; page?: number; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    });
+    const suffix = query.toString();
+    return apiRequest<{
+      complaints: GeneralComplaint[];
+      pagination: { total: number; page: number; limit: number; totalPages: number };
+      stats: { total: number; pending: number; in_progress: number; completed: number; cancelled: number };
+    }>(`/general-complaints/my${suffix ? `?${suffix}` : ''}`, { method: 'GET' });
+  },
+  getGeneralComplaint: async (id: string | number) => {
+    return apiRequest<GeneralComplaint>(`/general-complaints/${encodeURIComponent(String(id))}`, { method: 'GET' });
+  },
+  createGeneralComplaint: async (data: {
+    title: string;
+    description?: string;
+    category_id: number;
+    sub_category_id?: number | null;
+    college_id?: number | null;
+    college_name?: string;
+    block_no?: string;
+    floor_no?: string;
+    room_no?: string;
+    photo_url?: string;
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+  }) => {
+    return apiRequest<{ id: number; complaint_number: string; status: string }>('/general-complaints', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  addGeneralComplaintComment: async (id: string | number, comment: string) => {
+    return apiRequest<any>(`/general-complaints/${encodeURIComponent(String(id))}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ comment }),
+    });
+  },
+  submitGeneralComplaintFeedback: async (id: string | number, isSatisfied: boolean, comment?: string) => {
+    return apiRequest<any>(`/general-complaints/${encodeURIComponent(String(id))}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ is_satisfied: isSatisfied, comment }),
+    });
   },
 
   // ==========================================

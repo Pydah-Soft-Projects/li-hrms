@@ -41,6 +41,7 @@ export const MODULE_CATEGORIES = [
             { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leave-register' },
             { code: 'CCL', label: 'CCL', href: '/ccl' },
             { code: 'COMPLAINTS', label: 'Complaints', href: '/complaints' },
+            { code: 'GENERAL_COMPLAINTS', label: 'General Complaints', href: '/general-complaints' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
@@ -142,7 +143,8 @@ function hasModulePermission(moduleCode: string, featureControl: string[]): bool
 
 // Helper to check if a module is enabled based on feature control
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
-    if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
+    if (!featureControl) return true; // No feature-control configuration preserves legacy access.
+    if (featureControl.length === 0) return moduleCode !== 'GENERAL_COMPLAINTS';
 
     if (hasModulePermission(moduleCode, featureControl)) return true;
 

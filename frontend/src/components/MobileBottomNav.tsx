@@ -26,6 +26,7 @@ export default function MobileBottomNav() {
   const router = useRouter();
   const [user, setUser] = useState<{ role: string; featureControl?: string[] | null } | null>(null);
   const [featureControl, setFeatureControl] = useState<string[] | null>(null);
+  const [generalComplaintsEnabled, setGeneralComplaintsEnabled] = useState(true);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -67,11 +68,23 @@ export default function MobileBottomNav() {
       if (managementRoles.includes(user.role)) {
         setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
       } else {
-        setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+        setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'GENERAL_COMPLAINTS']);
       }
     };
     fetchFeatureControl();
   }, [user?.role, user?.featureControl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSetting('general_complaints_enabled')
+      .then((response) => {
+        if (!cancelled && response.success && response.data) {
+          setGeneralComplaintsEnabled(response.data.value !== false);
+        }
+      })
+      .catch((error) => console.error('Failed to load general complaints access setting:', error));
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   // Close "More" menu on route change
   useEffect(() => {
@@ -85,13 +98,16 @@ export default function MobileBottomNav() {
     const modules: { code: string; label: string; href: string }[] = [];
     WORKSPACE_NAV_CATEGORIES.forEach((category) => {
       category.items.forEach((item) => {
-        if (isModuleEnabled(getSidebarPermissionCode(item.code), featureControl)) {
+        if (
+          (item.code !== 'GENERAL_COMPLAINTS' || generalComplaintsEnabled) &&
+          isModuleEnabled(getSidebarPermissionCode(item.code), featureControl)
+        ) {
           modules.push(item);
         }
       });
     });
     return modules;
-  }, [mounted, featureControl]);
+  }, [mounted, featureControl, generalComplaintsEnabled]);
 
   if (!mounted) return null;
 

@@ -57,6 +57,7 @@ const GeneralSettings = () => {
   const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
   const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState<boolean>(false);
+  const [generalComplaintsEnabled, setGeneralComplaintsEnabled] = useState<boolean>(true);
   const [autoODCreationEnabled, setAutoODCreationEnabled] = useState<boolean>(false);
   const [leaveAttendanceReconciliationEnabled, setLeaveAttendanceReconciliationEnabled] =
     useState<boolean>(true);
@@ -70,12 +71,13 @@ const GeneralSettings = () => {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
+      const [resLate, resEarly, resBulk, resGrouping, resGeneralComplaints, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
         await Promise.all([
         api.getSetting('late_in_grace_time'),
         api.getSetting('early_out_grace_time'),
         api.getSetting('allow_employee_bulk_process'),
         api.getSetting('custom_employee_grouping_enabled'),
+        api.getSetting('general_complaints_enabled'),
         api.getSetting('auto_od_creation_enabled'),
         api.getSetting('leave_attendance_reconciliation_enabled'),
         api.getSetting('skip_leave_attendance_reconciliation'),
@@ -86,6 +88,9 @@ const GeneralSettings = () => {
       if (resEarly.success && resEarly.data) setEarlyOutGrace(Number(resEarly.data.value));
       if (resBulk.success && resBulk.data) setAllowEmployeeBulkProcess(!!resBulk.data.value);
       if (resGrouping.success && resGrouping.data) setCustomEmployeeGroupingEnabled(!!resGrouping.data.value);
+      if (resGeneralComplaints.success && resGeneralComplaints.data) {
+        setGeneralComplaintsEnabled(resGeneralComplaints.data.value !== false);
+      }
       if (resAutoOD.success && resAutoOD.data) setAutoODCreationEnabled(!!resAutoOD.data.value);
       if (resLeaveRecon.success && resLeaveRecon.data) {
         setLeaveAttendanceReconciliationEnabled(resLeaveRecon.data.value !== false);
@@ -144,7 +149,7 @@ const GeneralSettings = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const [resLate, resEarly, resBulk, resGrouping, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
+      const [resLate, resEarly, resBulk, resGrouping, resGeneralComplaints, resAutoOD, resLeaveRecon, resSkipRecon, resFileStorage] =
         await Promise.all([
         api.upsertSetting({
           key: 'late_in_grace_time',
@@ -169,6 +174,12 @@ const GeneralSettings = () => {
           value: customEmployeeGroupingEnabled,
           category: 'employee',
           description: 'Enable custom employee groups (CRUD, applications, bulk upload, filters)'
+        }),
+        api.upsertSetting({
+          key: 'general_complaints_enabled',
+          value: generalComplaintsEnabled,
+          category: 'general',
+          description: 'Enable or disable the General Complaints page system-wide',
         }),
         api.upsertSetting({
           key: 'auto_od_creation_enabled',
@@ -203,6 +214,7 @@ const GeneralSettings = () => {
         resEarly.success &&
         resBulk.success &&
         resGrouping.success &&
+        resGeneralComplaints.success &&
         resAutoOD.success &&
         resLeaveRecon.success &&
         resSkipRecon.success &&
@@ -310,6 +322,16 @@ const GeneralSettings = () => {
           description="When ON, you can maintain employee groups, assign them on applications and bulk upload, and filter employees by group."
           checked={customEmployeeGroupingEnabled}
           onChange={setCustomEmployeeGroupingEnabled}
+        />
+      </SettingsSectionCard>
+
+      <SettingsSectionCard title="General complaints page">
+        <SettingsToggleRow
+          id="generalComplaintsEnabled"
+          label="Enable General Complaints"
+          description="When OFF, the General Complaints page is hidden and its APIs are blocked for everyone, regardless of role-level Feature Control."
+          checked={generalComplaintsEnabled}
+          onChange={setGeneralComplaintsEnabled}
         />
       </SettingsSectionCard>
 

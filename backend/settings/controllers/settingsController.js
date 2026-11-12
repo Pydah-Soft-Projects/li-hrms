@@ -58,6 +58,7 @@ exports.getSetting = async (req, res) => {
         'auto_reject_pending_requests_on_batch_complete': false,
         'allow_employee_bulk_process': false,
         'custom_employee_grouping_enabled': false,
+        'general_complaints_enabled': true,
         'auto_od_creation_enabled': false,
         'leave_attendance_reconciliation_enabled': true,
         'skip_leave_attendance_reconciliation': false,
@@ -88,6 +89,8 @@ exports.getSetting = async (req, res) => {
             : req.params.key === 'mobile_login_geofence'
               ? 'geofence'
             : req.params.key === FILE_STORAGE_SETTING_KEY
+              ? 'general'
+            : req.params.key === 'general_complaints_enabled'
               ? 'general'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(req.params.key)
             ? 'employee'
@@ -244,6 +247,13 @@ exports.upsertSetting = async (req, res) => {
           message: 'allow_employee_bulk_process must be a boolean',
         });
       }
+    }
+
+    if (key === 'general_complaints_enabled' && typeof value !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'general_complaints_enabled must be a boolean',
+      });
     }
     if (key === 'custom_employee_grouping_enabled') {
       if (typeof value !== 'boolean') {
