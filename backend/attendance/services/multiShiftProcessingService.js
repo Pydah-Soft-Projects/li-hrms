@@ -722,7 +722,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                             formatDate(sIn),
                                             sIn,
                                             sOut,
-                                            {}
+                                            {
+                                                globalLateInGrace,
+                                                globalEarlyOutGrace,
+                                            }
                                         );
                                         shouldFold = (segResult.totalPayableShifts === 0);
                                         console.log(`[MultiShift] Segment ${splitIdx + 1} half-segment check: totalPayable=${segResult.totalPayableShifts}, fold=${shouldFold}`);

@@ -120,11 +120,13 @@ const normalizeSegment = (segment, name, dateStr, shiftRange = null) => {
 };
 
 const getEffectiveGrace = (segmentGrace, globalGrace, shiftGrace) => {
+  // Global settings take top priority when configured
+  if (globalGrace !== null && globalGrace !== undefined && globalGrace !== '') {
+    const num = Number(globalGrace);
+    if (!isNaN(num)) return num;
+  }
   if (typeof segmentGrace === 'number' && segmentGrace > 0) {
     return segmentGrace;
-  }
-  if (typeof globalGrace === 'number') {
-    return globalGrace;
   }
   return typeof shiftGrace === 'number' ? shiftGrace : 15;
 };
@@ -249,7 +251,7 @@ const evaluateHalfPresenceWithBreakCredit = ({
  * Break-aware presence: each half is evaluated independently (raw overlap, then break credit).
  * Dominant-segment fallback runs only when neither half qualifies after those checks.
  */
-const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
+const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options = {}) => {
   if (!inTime || !outTime) return { firstHalf: false, secondHalf: false };
   
   const finalOutTime = new Date(outTime);
@@ -301,8 +303,8 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime) => {
     );
   }
 
-  const firstHalfEffectiveGrace = typeof firstHalf.gracePeriod === 'number' ? firstHalf.gracePeriod : 15;
-  const secondHalfEffectiveGrace = typeof secondHalf.gracePeriod === 'number' ? secondHalf.gracePeriod : 15;
+  const firstHalfEffectiveGrace = getEffectiveGrace(firstHalf.gracePeriod, options?.globalLateInGrace, 15);
+  const secondHalfEffectiveGrace = getEffectiveGrace(secondHalf.gracePeriod, options?.globalEarlyOutGrace, 15);
 
   const firstHalfEval = evaluateHalfPresenceWithBreakCredit({
     rawMinutes: firstHalfRawMinutes,
@@ -491,7 +493,7 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
 
   // Calculate intelligent presence using dominant segment logic
   const intelligentPresence = inTime && outTime 
-    ? calculateSegmentPresenceIntelligent(timeline, inTime, outTime)
+    ? calculateSegmentPresenceIntelligent(timeline, inTime, outTime, options)
     : { firstHalf: false, secondHalf: false };
 
   const segmentDetails = timeline.segments.map((segment) => {
@@ -510,7 +512,11 @@ const getShiftSegmentAssignment = (shift, dateStr, inTime, outTime, options = {}
       duration: segment.duration,
       minDuration: segment.minDuration,
       gracePeriod: segment.gracePeriod,
-      effectiveGrace: getEffectiveGrace(segment.gracePeriod, globalLateInGrace ?? globalEarlyOutGrace, shift.gracePeriod),
+      effectiveGrace: getEffectiveGrace(
+        segment.gracePeriod,
+        segment.segmentName === 'firstHalf' ? globalLateInGrace : globalEarlyOutGrace,
+        shift.gracePeriod
+      ),
       payableShifts: segment.payableShifts,
       present,
       lateInMinutes: lateInMinutes !== null ? Math.max(0, lateInMinutes) : null,
