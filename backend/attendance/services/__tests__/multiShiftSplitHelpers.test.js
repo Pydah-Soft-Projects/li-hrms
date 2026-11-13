@@ -160,6 +160,36 @@ describe('findShiftForSplit — second-half IN beyond 5h from start', () => {
     const found = findShiftForSplit(punch(DATE, '09:20'), [shift1], DATE);
     assert.equal(found?.name, 'Day');
   });
+
+  it('early arrival for next shift (20:57 before 21:00) matches 9 PM shift, not ending 9 AM-9 PM shift', () => {
+    const day12 = {
+      _id: 's_day12',
+      name: '9 AM TO 9 PM Shift',
+      startTime: '09:00',
+      endTime: '21:00',
+      duration: 12,
+      firstHalf: { startTime: '09:00', endTime: '15:00', duration: 6, payableShifts: 0.5 },
+      secondHalf: { startTime: '15:00', endTime: '21:00', duration: 6, payableShifts: 0.5 },
+    };
+    const night12 = {
+      _id: 's_night12',
+      name: '9 PM to 9 AM Shift',
+      startTime: '21:00',
+      endTime: '09:00',
+      duration: 12,
+      firstHalf: { startTime: '21:00', endTime: '03:00', duration: 6, payableShifts: 0.5 },
+      secondHalf: { startTime: '03:00', endTime: '09:00', duration: 6, payableShifts: 0.5 },
+    };
+    const inTime = punch(DATE, '20:57');
+    const found = findShiftForSplit(inTime, [day12, night12], DATE);
+    assert.equal(found?.name, '9 PM to 9 AM Shift');
+  });
+
+  it('early arrival (16:50 before 17:00) matches Evening shift, not ending Day shift', () => {
+    const inTime = punch(DATE, '16:50');
+    const found = findShiftForSplit(inTime, [shift1, shift2BackToBack], DATE);
+    assert.equal(found?.name, 'Evening');
+  });
 });
 
 describe('buildIterativeSplitSegments', () => {

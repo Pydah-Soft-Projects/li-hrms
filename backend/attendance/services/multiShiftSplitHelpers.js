@@ -155,7 +155,22 @@ function findShiftForSplit(inTime, shiftsList, date) {
         }
     }
 
-    if (bestContaining) return bestContaining;
+    if (bestContaining) {
+        const window = getShiftWindowContaining(bestContaining, dateStr, inTime);
+        const remainingMs = window.end ? window.end.getTime() - inMs : 0;
+        const remainingHours = remainingMs / (3600 * 1000);
+        const containingDuration = Number(bestContaining.duration) > 0 ? Number(bestContaining.duration) : 8;
+        const minHalfHours = Math.min(3.75, containingDuration * 0.40);
+        const startDiffMin = (inMs - window.start.getTime()) / 60000;
+
+        const isEarlyArrivalForBestNear = bestNear && bestNearDiff <= NEAR_START_MAX_MINUTES && (
+            remainingHours < minHalfHours || bestNearDiff < startDiffMin
+        ) && (bestNear._id?.toString?.() || bestNear.name) !== (bestContaining._id?.toString?.() || bestContaining.name);
+
+        if (!isEarlyArrivalForBestNear) {
+            return bestContaining;
+        }
+    }
     return bestNearDiff <= NEAR_START_MAX_MINUTES ? bestNear : null;
 }
 
@@ -228,13 +243,6 @@ function addExtraHours(segment, hours) {
 function isLateJoinFirstHalfAbsentSecondPresent(shift, dateStr, inTime, outTime) {
     if (!shift || !inTime || !outTime) return false;
 
-    if (shiftHasHalfSegments(shift)) {
-        const assignment = getShiftSegmentAssignment(shift, dateStr, inTime, outTime, {});
-        const first = (assignment.shiftSegments || []).find((s) => s.segmentName === 'firstHalf');
-        const second = (assignment.shiftSegments || []).find((s) => s.segmentName === 'secondHalf');
-        return Boolean(first && second && !first.present && second.present);
-    }
-
     const start = getShiftStartDate(shift, dateStr);
     const end = getShiftEndDate(shift, dateStr);
     if (!start || !end || end <= start) return false;
@@ -242,7 +250,18 @@ function isLateJoinFirstHalfAbsentSecondPresent(shift, dateStr, inTime, outTime)
     const inside = overlapHours(inTime, outTime, start, end);
     if (expected <= 0) return false;
     const ratio = inside / expected;
-    if (ratio < 0.40 || ratio >= 0.90) return false;
+    // To qualify as a late-join half, work within this shift must meet at least half-day ratio (40%)
+    if (ratio < 0.40) return false;
+
+    if (shiftHasHalfSegments(shift)) {
+        const effectiveOut = end && outTime > end ? end : outTime;
+        const assignment = getShiftSegmentAssignment(shift, dateStr, inTime, effectiveOut, {});
+        const first = (assignment.shiftSegments || []).find((s) => s.segmentName === 'firstHalf');
+        const second = (assignment.shiftSegments || []).find((s) => s.segmentName === 'secondHalf');
+        return Boolean(first && second && !first.present && second.present);
+    }
+
+    if (ratio >= 0.90) return false;
     const mid = new Date(start.getTime() + (end.getTime() - start.getTime()) / 2);
     return inTime >= mid;
 }
