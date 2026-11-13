@@ -20,6 +20,10 @@ import {
 import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import ModuleGranularPermissionToggles from '@/components/users/ModuleGranularPermissionToggles';
 import { expandLegacyPromotionTransferPermissions } from '@/lib/userFeaturePermissions';
+import ProfileApprovalFieldsConfig, {
+  ProfileApprovalFieldsModal,
+  type ProfileApprovalConfig,
+} from '@/components/users/ProfileApprovalFieldsConfig';
 import Spinner from '@/components/Spinner';
 import {
   buildDivisionMappingFromDepartment,
@@ -112,6 +116,7 @@ interface UserFormData {
   division?: string;
   employeeId?: string;
   phone_number?: string;
+  profileApprovalConfig?: ProfileApprovalConfig;
   [key: string]: any;
 }
 
@@ -392,6 +397,7 @@ export default function UsersPage() {
     divisionMapping: [],
     division: '',
     phone_number: '',
+    profileApprovalConfig: { allFields: true, allowedFields: [] },
   });
 
   // Form state for create from employee
@@ -407,7 +413,11 @@ export default function UsersPage() {
     allowedDivisions: [],
     divisionMapping: [],
     division: '',
+    phone_number: '',
+    profileApprovalConfig: { allFields: true, allowedFields: [] },
   });
+
+  const [profileApprovalModalTarget, setProfileApprovalModalTarget] = useState<'create' | 'employeeCreate' | 'edit' | null>(null);
 
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
@@ -843,6 +853,7 @@ export default function UsersPage() {
       payload.featureControl = formData.featureControl;
       (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
       (payload as any).holidayDivisionMapping = (formData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
+      (payload as any).profileApprovalConfig = formData.profileApprovalConfig;
 
       const res = await api.createUser(payload as any);
 
@@ -934,6 +945,7 @@ export default function UsersPage() {
       payload.featureControl = employeeFormData.featureControl;
       (payload as any).managedHolidayGroupIds = employeeFormData.managedHolidayGroupIds || [];
       (payload as any).holidayDivisionMapping = (employeeFormData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
+      (payload as any).profileApprovalConfig = employeeFormData.profileApprovalConfig;
 
       const res = await api.createUserFromEmployee(payload);
 
@@ -1012,6 +1024,7 @@ export default function UsersPage() {
       payload.featureControl = formData.featureControl;
       (payload as any).managedHolidayGroupIds = formData.managedHolidayGroupIds || [];
       (payload as any).holidayDivisionMapping = (formData.holidayDivisionMapping || []).filter((m: HolidayMappingRow) => m.division);
+      (payload as any).profileApprovalConfig = formData.profileApprovalConfig;
 
       const res = await api.updateUser(selectedUser._id, payload);
 
@@ -1218,6 +1231,7 @@ export default function UsersPage() {
       phone_number: user.phone_number || '',
       managedHolidayGroupIds: ((user as any).managedHolidayGroupIds || []).map((g: any) => typeof g === 'string' ? g : g?._id).filter(Boolean),
       holidayDivisionMapping: normalizeHolidayMappingFromApi((user as any).holidayDivisionMapping),
+      profileApprovalConfig: (user as any).profileApprovalConfig || { allFields: true, allowedFields: [] },
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -1268,6 +1282,7 @@ export default function UsersPage() {
       phone_number: '',
       managedHolidayGroupIds: [],
       holidayDivisionMapping: [],
+      profileApprovalConfig: { allFields: true, allowedFields: [] },
     });
     previousRoleRef.current = '';
     setCreateStep(1);
@@ -1290,6 +1305,7 @@ export default function UsersPage() {
       phone_number: '',
       managedHolidayGroupIds: [],
       holidayDivisionMapping: [],
+      profileApprovalConfig: { allFields: true, allowedFields: [] },
     });
     previousRoleRef.current = '';
     setEmployeeCreateStep(1);
@@ -1316,6 +1332,41 @@ export default function UsersPage() {
       />
     </div>
   );
+
+  const renderProfileApprovalScopeSection = (data: UserFormData, setData: (v: UserFormData) => void) => {
+    const hasProfileApproval = (data.featureControl || []).includes('EMPLOYEES:profile_approval');
+    if (!hasProfileApproval) return null;
+
+    return (
+      <div className="rounded-2xl border border-purple-200/90 bg-white p-6 shadow-sm dark:border-purple-900/40 dark:bg-slate-900/50">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-500/10">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Profile Approval Field Configuration</span>
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                  {data.profileApprovalConfig?.allFields !== false
+                    ? 'All fields permitted'
+                    : `${data.profileApprovalConfig?.allowedFields?.length || 0} fields permitted`}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Configure which employee profile fields this user can review and approve
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <ProfileApprovalFieldsConfig
+          config={data.profileApprovalConfig || { allFields: true, allowedFields: [] }}
+          onChange={(next) => setData({ ...data, profileApprovalConfig: next })}
+        />
+      </div>
+    );
+  };
 
   const toggleDivisionMapping = (divisionId: string, deptId: string | null, setData: React.Dispatch<React.SetStateAction<UserFormData>>, role: string) => {
     setData((prev) => {
@@ -2423,6 +2474,7 @@ export default function UsersPage() {
                             </div>
 
                             {renderHolidayEmployeeScopeSection(formData, setFormData)}
+                            {renderProfileApprovalScopeSection(formData, setFormData)}
 
                             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                               <div className="mb-5 flex items-center justify-between">
@@ -2580,6 +2632,8 @@ export default function UsersPage() {
                                                 featureControl={formData.featureControl}
                                                 onChange={(featureControl) => setFormData({ ...formData, featureControl })}
                                                 secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                profileApprovalConfig={formData.profileApprovalConfig}
+                                                onConfigureProfileApproval={() => setProfileApprovalModalTarget(showEditDialog ? 'edit' : 'create')}
                                               />
                                             </div>
                                           </td>
@@ -2667,6 +2721,8 @@ export default function UsersPage() {
                                                       featureControl={formData.featureControl}
                                                       onChange={(featureControl) => setFormData({ ...formData, featureControl })}
                                                       secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                      profileApprovalConfig={formData.profileApprovalConfig}
+                                                      onConfigureProfileApproval={() => setProfileApprovalModalTarget(showEditDialog ? 'edit' : 'create')}
                                                     />
                                                   </div>
                                                 </td>
@@ -3184,6 +3240,7 @@ export default function UsersPage() {
                           </div>
 
                           {renderHolidayEmployeeScopeSection(employeeFormData, setEmployeeFormData)}
+                          {renderProfileApprovalScopeSection(employeeFormData, setEmployeeFormData)}
 
                           {/* Feature privileges card */}
                           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
@@ -3342,6 +3399,8 @@ export default function UsersPage() {
                                               featureControl={employeeFormData.featureControl}
                                               onChange={(featureControl) => setEmployeeFormData({ ...employeeFormData, featureControl })}
                                               secondSalaryOrgEnabled={secondSalaryEnabled}
+                                              profileApprovalConfig={employeeFormData.profileApprovalConfig}
+                                              onConfigureProfileApproval={() => setProfileApprovalModalTarget('employeeCreate')}
                                             />
                                           </div>
                                         </td>
@@ -3429,6 +3488,8 @@ export default function UsersPage() {
                                                     featureControl={employeeFormData.featureControl}
                                                     onChange={(featureControl) => setEmployeeFormData({ ...employeeFormData, featureControl })}
                                                     secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                    profileApprovalConfig={employeeFormData.profileApprovalConfig}
+                                                    onConfigureProfileApproval={() => setProfileApprovalModalTarget('employeeCreate')}
                                                   />
                                                 </div>
                                               </td>
@@ -3847,6 +3908,7 @@ export default function UsersPage() {
                             </div>
 
                             {renderHolidayEmployeeScopeSection(formData, setFormData)}
+                            {renderProfileApprovalScopeSection(formData, setFormData)}
 
                             {/* Feature privileges card */}
                             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
@@ -4005,6 +4067,8 @@ export default function UsersPage() {
                                                 featureControl={formData.featureControl}
                                                 onChange={(featureControl) => setFormData({ ...formData, featureControl })}
                                                 secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                profileApprovalConfig={formData.profileApprovalConfig}
+                                                onConfigureProfileApproval={() => setProfileApprovalModalTarget(showEditDialog ? 'edit' : 'create')}
                                               />
                                             </div>
                                           </td>
@@ -4092,6 +4156,8 @@ export default function UsersPage() {
                                                       featureControl={formData.featureControl}
                                                       onChange={(featureControl) => setFormData({ ...formData, featureControl })}
                                                       secondSalaryOrgEnabled={secondSalaryEnabled}
+                                                      profileApprovalConfig={formData.profileApprovalConfig}
+                                                      onConfigureProfileApproval={() => setProfileApprovalModalTarget(showEditDialog ? 'edit' : 'create')}
                                                     />
                                                   </div>
                                                 </td>
@@ -4355,6 +4421,30 @@ export default function UsersPage() {
             </button>
           </LoanDetailDialogBody>
         </LoanDetailDialog>
+
+        <ProfileApprovalFieldsModal
+          isOpen={profileApprovalModalTarget !== null}
+          onClose={() => setProfileApprovalModalTarget(null)}
+          userName={
+            profileApprovalModalTarget === 'edit'
+              ? selectedUser?.name || selectedUser?.email
+              : profileApprovalModalTarget === 'employeeCreate'
+              ? employeeFormData.name || employeeFormData.email
+              : formData.name || formData.email
+          }
+          config={
+            profileApprovalModalTarget === 'employeeCreate'
+              ? employeeFormData.profileApprovalConfig || { allFields: true, allowedFields: [] }
+              : formData.profileApprovalConfig || { allFields: true, allowedFields: [] }
+          }
+          onSave={(next) => {
+            if (profileApprovalModalTarget === 'employeeCreate') {
+              setEmployeeFormData({ ...employeeFormData, profileApprovalConfig: next });
+            } else {
+              setFormData({ ...formData, profileApprovalConfig: next });
+            }
+          }}
+        />
     </LoansPageShell>
   );
 }

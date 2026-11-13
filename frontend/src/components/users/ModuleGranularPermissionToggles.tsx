@@ -1,5 +1,6 @@
 'use client';
 
+import { Settings } from 'lucide-react';
 import {
   FEATURE_SUFFIX,
   featurePerm,
@@ -16,6 +17,13 @@ type Props = {
   onChange: (next: string[]) => void;
   /** When false, hides the 2nd Salary toggle (org payroll setting off). */
   secondSalaryOrgEnabled?: boolean;
+  /** Callback to open profile approval fields configuration modal. */
+  onConfigureProfileApproval?: () => void;
+  /** Current profile approval configuration */
+  profileApprovalConfig?: {
+    allFields?: boolean;
+    allowedFields?: string[];
+  };
 };
 
 function ToggleButton({
@@ -51,6 +59,8 @@ export default function ModuleGranularPermissionToggles({
   featureControl,
   onChange,
   secondSalaryOrgEnabled = true,
+  onConfigureProfileApproval,
+  profileApprovalConfig,
 }: Props) {
   const fc = featureControl || [];
   const code = module.code;
@@ -113,14 +123,33 @@ export default function ModuleGranularPermissionToggles({
       />
     ) : null,
     module.profileApprover ? (
-      <ToggleButton
-        key="profileApproval"
-        active={fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval))}
-        onClick={() => toggle(FEATURE_SUFFIX.profileApproval)}
-        title={PROFILE_APPROVAL_TOGGLE_TITLE}
-        label="Profile Appr"
-        activeClass="bg-purple-600"
-      />
+      <div key="profileApproval" className="flex items-center gap-1">
+        <ToggleButton
+          active={fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval))}
+          onClick={() => toggle(FEATURE_SUFFIX.profileApproval)}
+          title={PROFILE_APPROVAL_TOGGLE_TITLE}
+          label="Profile Appr"
+          activeClass="bg-purple-600"
+        />
+        {fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval)) && onConfigureProfileApproval && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onConfigureProfileApproval();
+            }}
+            title={
+              profileApprovalConfig?.allFields === false
+                ? `Configured fields (${profileApprovalConfig.allowedFields?.length || 0} allowed). Click to edit.`
+                : 'All fields allowed. Click to configure specific fields.'
+            }
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/50 dark:text-purple-300 dark:hover:bg-purple-900/80 transition-colors"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     ) : null,
   ].filter(Boolean);
 

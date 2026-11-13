@@ -1135,6 +1135,11 @@ export interface User {
   managedHolidayGroupIds?: (string | HolidayGroup)[];
   /** Direct employee scope for holiday management (division/dept/employee group). */
   holidayDivisionMapping?: Holiday['divisionMapping'];
+  /** Configuration for profile approval fields (when EMPLOYEES:profile_approval is enabled). */
+  profileApprovalConfig?: {
+    allFields: boolean;
+    allowedFields: string[];
+  };
   phone_number?: string | null;
   lastLogin?: string;
   createdAt: string;

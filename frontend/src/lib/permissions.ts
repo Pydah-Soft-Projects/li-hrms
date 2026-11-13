@@ -16,6 +16,10 @@ export interface User {
     /** Holiday groups this user may manage (scoped calendar write). */
     managedHolidayGroupIds?: string[];
     holidayDivisionMapping?: { division: string; departments: string[]; employeeGroups: string[] }[];
+    profileApprovalConfig?: {
+        allFields: boolean;
+        allowedFields: string[];
+    };
 }
 
 // ==========================================
@@ -738,6 +742,67 @@ export function canApproveProfileRequests(user: User | null | undefined): boolea
     }
     return user.featureControl.includes('EMPLOYEES:profile_approval') ||
         user.featureControl.includes('EMPLOYEES:edit');
+}
+
+const PROFILE_FIELD_ALIASES: Record<string, string[]> = {
+    phone: ['phone_number', 'contact_number'],
+    phone_number: ['phone', 'contact_number'],
+    contact_number: ['phone', 'phone_number'],
+    personal_email: ['email'],
+    email: ['personal_email'],
+    profilePhoto: ['profile_photo'],
+    profile_photo: ['profilePhoto'],
+    proposedSalary: ['gross_salary'],
+    gross_salary: ['proposedSalary'],
+    address: ['present_address'],
+    present_address: ['address'],
+    employee_group_id: ['employee_group', 'employeeGroupId', 'employeeGroup'],
+    employee_group: ['employee_group_id'],
+    dob: ['date_of_birth'],
+    date_of_birth: ['dob'],
+    doj: ['joining_date'],
+    joining_date: ['doj'],
+    bank_account_no: ['bankAccountNo'],
+    bankAccountNo: ['bank_account_no'],
+    bank_name: ['bankName'],
+    bankName: ['bank_name'],
+    bank_place: ['bankPlace'],
+    bankPlace: ['bank_place'],
+    ifsc_code: ['ifscCode'],
+    ifscCode: ['ifsc_code'],
+    salary_mode: ['salaryMode'],
+    salaryMode: ['salary_mode'],
+    second_salary: ['secondSalary'],
+    secondSalary: ['second_salary'],
+    division_id: ['divisionId', 'division'],
+    department_id: ['departmentId', 'department'],
+    designation_id: ['designationId', 'designation'],
+};
+
+/**
+ * Check if the user is authorized to approve a specific profile field.
+ * Returns true if super_admin or if user has global approval or the field is in allowedFields.
+ */
+export function canApproveProfileField(user: User | null | undefined, fieldId: string): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    const config = (user as any).profileApprovalConfig;
+    if (!config || config.allFields !== false) return true;
+    const allowed = Array.isArray(config.allowedFields) ? config.allowedFields : [];
+    if (allowed.includes(fieldId)) return true;
+    const aliases = PROFILE_FIELD_ALIASES[fieldId] || [];
+    return aliases.some(alias => allowed.includes(alias));
+}
+
+/**
+ * Returns list of allowed fields for profile approval, or null if unrestricted.
+ */
+export function getAllowedProfileApprovalFields(user: User | null | undefined): string[] | null {
+    if (!user) return null;
+    if (user.role === 'super_admin') return null;
+    const config = (user as any).profileApprovalConfig;
+    if (!config || config.allFields !== false) return null;
+    return Array.isArray(config.allowedFields) ? config.allowedFields : [];
 }
 
 // DATA SCOPE HELPERS

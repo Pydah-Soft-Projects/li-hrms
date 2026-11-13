@@ -153,6 +153,16 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    profileApprovalConfig: {
+      allFields: {
+        type: Boolean,
+        default: true,
+      },
+      allowedFields: {
+        type: [String],
+        default: [],
+      },
+    },
     customRoles: [
       {
         type: mongoose.Schema.Types.ObjectId,

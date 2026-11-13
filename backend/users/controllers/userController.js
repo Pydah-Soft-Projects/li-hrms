@@ -97,6 +97,7 @@ exports.registerUser = async (req, res) => {
       customRoles,
       managedHolidayGroupIds,
       holidayDivisionMapping,
+      profileApprovalConfig,
     } = req.body;
     const { department, division } = req.body;
 
@@ -178,6 +179,7 @@ exports.registerUser = async (req, res) => {
       customRoles: customRoles || [],
       managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
       holidayDivisionMapping: Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [],
+      profileApprovalConfig: profileApprovalConfig || { allFields: true, allowedFields: [] },
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -294,6 +296,7 @@ exports.createUserFromEmployee = async (req, res) => {
       customRoles,
       managedHolidayGroupIds,
       holidayDivisionMapping,
+      profileApprovalConfig,
     } = req.body;
     const { departments, department, division } = req.body;
 
@@ -428,6 +431,7 @@ exports.createUserFromEmployee = async (req, res) => {
       customRoles: customRoles || [],
       managedHolidayGroupIds: Array.isArray(managedHolidayGroupIds) ? managedHolidayGroupIds : [],
       holidayDivisionMapping: Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [],
+      profileApprovalConfig: profileApprovalConfig || { allFields: true, allowedFields: [] },
     });
 
     // Update the employee password if it was newly generated or provided
@@ -659,6 +663,7 @@ exports.updateUser = async (req, res) => {
       customRoles,
       managedHolidayGroupIds,
       holidayDivisionMapping,
+      profileApprovalConfig,
     } = req.body;
     const { department, division } = req.body;
 
@@ -734,6 +739,16 @@ exports.updateUser = async (req, res) => {
     }
     if (holidayDivisionMapping !== undefined) {
       user.holidayDivisionMapping = Array.isArray(holidayDivisionMapping) ? holidayDivisionMapping : [];
+    }
+    if (profileApprovalConfig !== undefined) {
+      user.profileApprovalConfig = {
+        allFields: profileApprovalConfig.allFields !== false,
+        allowedFields: Array.isArray(profileApprovalConfig.allowedFields) ? profileApprovalConfig.allowedFields : [],
+      };
+      diffs.profileApprovalConfig = {
+        to: user.profileApprovalConfig,
+      };
+      isAccessChange = true;
     }
 
     await user.save();

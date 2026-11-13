@@ -1,6 +1,39 @@
 import React from 'react';
-import { Edit2, Plus, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Edit2, Plus, ShieldCheck, ExternalLink, Lock } from 'lucide-react';
 import Spinner from '@/components/Spinner';
+import { auth } from '@/lib/auth';
+import { canApproveProfileField } from '@/lib/permissions';
+
+function getFieldCategory(fieldId: string, formGroups: any): string {
+    const fid = (fieldId || '').toLowerCase();
+    if (fid === 'profilephoto' || fid === 'profile_photo') return 'Basic Information';
+    if (fid.includes('qualification')) return 'Qualifications';
+    if (formGroups?.groups && Array.isArray(formGroups.groups)) {
+        for (const g of formGroups.groups) {
+            if (g.id === fieldId || g.id === fid) return g.label || g.name || 'Custom Section';
+            if (Array.isArray(g.fields)) {
+                if (g.fields.some((f: any) => f.id === fieldId || (f.id && f.id.toLowerCase() === fid))) {
+                    return g.label || g.name || 'General';
+                }
+            }
+        }
+    }
+    // Standard system field fallbacks
+    if (['emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'doj', 'proposedsalary', 'gross_salary', 'second_salary', 'aadhaar_number', 'employee_group_id'].includes(fid)) {
+        return 'Basic Information';
+    }
+    if (['dob', 'gender', 'marital_status', 'blood_group', 'father_name', 'mother_name', 'caste', 'category'].includes(fid)) {
+        return 'Personal Information';
+    }
+    if (['phone', 'phone_number', 'contact_number', 'alternate_phone', 'email', 'personal_email', 'address', 'present_address', 'permanent_address', 'emergency_contact_name', 'emergency_contact_number'].includes(fid)) {
+        return 'Contact Information';
+    }
+    if (['bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode', 'pf_number', 'esi_number'].includes(fid)) {
+        return 'Bank Details';
+    }
+    if (fid === 'reporting_authority') return 'Reporting Authority';
+    return 'Other Information';
+}
 
 interface UpdateRequestReviewModalProps {
     request: any;
@@ -36,6 +69,16 @@ export default function UpdateRequestReviewModal({
     readOnly = false,
 }: UpdateRequestReviewModalProps) {
     const [selectedFields, setSelectedFields] = React.useState<string[]>([]);
+
+    const currentUser = auth.getUser();
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    const profileConfig = (currentUser as any)?.profileApprovalConfig;
+    const isRestricted = !isSuperAdmin && profileConfig && profileConfig.allFields === false;
+    const allowedFieldsList = isRestricted ? (profileConfig?.allowedFields || []) : null;
+    const isFieldAllowed = React.useCallback((field: string) => {
+        if (!isRestricted) return true;
+        return canApproveProfileField(currentUser, field);
+    }, [isRestricted, currentUser]);
 
     const renderTableValue = React.useCallback((data: any[]) => {
         if (!data || data.length === 0) return '—';
@@ -241,14 +284,18 @@ export default function UpdateRequestReviewModal({
                     const formattedNew = resolveValue(newValue, field);
                     if (formattedOld === formattedNew) return false;
 
+                    // If user is restricted, only auto-select fields within approval scope
+                    if (isRestricted && !isFieldAllowed(field)) return false;
+
                     return true;
                 })
                 .map(([field]) => field);
             setSelectedFields(initialFields);
         }
-    }, [request]);
+    }, [request, isRestricted, isFieldAllowed]);
 
     const toggleField = (field: string) => {
+        if (!isFieldAllowed(field)) return;
         setSelectedFields(prev => 
             prev.includes(field) ? prev.filter(f => f !== field) : [...prev, field]
         );
@@ -280,7 +327,15 @@ export default function UpdateRequestReviewModal({
                 </div>
 
                 {/* Modal Body */}
-                <div className="max-h-[60vh] overflow-y-auto p-6">
+                <div className="max-h-[60vh] overflow-y-auto p-6 space-y-4">
+                    {isRestricted && (
+                        <div className="flex items-center gap-2.5 rounded-xl border border-purple-200 bg-purple-50/70 p-3 text-xs text-purple-800 dark:border-purple-800/60 dark:bg-purple-950/40 dark:text-purple-300">
+                            <ShieldCheck className="h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400" />
+                            <span>
+                                Your profile approval permission is restricted to specific fields ({allowedFieldsList?.length || 0} allowed). Fields outside your scope are locked and cannot be approved by your account.
+                            </span>
+                        </div>
+                    )}
                     <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-900">
                             <span>Current Value</span>
@@ -342,12 +397,18 @@ export default function UpdateRequestReviewModal({
 
                                 if (request.status === 'pending' && formattedOld === formattedNew) return null;
 
+                                const fieldAllowed = isFieldAllowed(field);
+
                                  return (
                                     <div 
                                         key={field} 
-                                        onClick={() => !readOnly && request.status === 'pending' && toggleField(field)}
-                                        className={`group relative space-y-2 rounded-2xl border p-4 transition-all ${!readOnly && request.status === 'pending' ? 'cursor-pointer' : 'cursor-default'} ${
-                                            isSelected 
+                                        onClick={() => !readOnly && fieldAllowed && request.status === 'pending' && toggleField(field)}
+                                        className={`group relative space-y-2 rounded-2xl border p-4 transition-all ${
+                                            !readOnly && request.status === 'pending' && fieldAllowed ? 'cursor-pointer' : 'cursor-not-allowed'
+                                        } ${
+                                            !fieldAllowed
+                                                ? 'border-amber-200/60 bg-amber-50/20 dark:border-amber-900/30 dark:bg-amber-950/10 opacity-70'
+                                                : isSelected 
                                                 ? 'border-indigo-100 bg-indigo-50/30 dark:border-indigo-900/40 dark:bg-indigo-900/10 shadow-sm' 
                                                 : 'border-slate-100 bg-white dark:border-slate-800 dark:bg-transparent opacity-60 grayscale-[0.5]'
                                         }`}
@@ -356,18 +417,32 @@ export default function UpdateRequestReviewModal({
                                             <div className="flex items-center gap-2">
                                                 {!readOnly && request.status === 'pending' && (
                                                     <div className={`flex h-5 w-5 items-center justify-center rounded-md border transition-all ${
-                                                        isSelected 
+                                                        !fieldAllowed
+                                                            ? 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
+                                                            : isSelected 
                                                             ? 'border-indigo-500 bg-indigo-500 text-white' 
                                                             : 'border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900'
                                                     }`}>
-                                                        {isSelected && <Plus className="h-3.5 w-3.5" />}
+                                                        {!fieldAllowed ? <Lock className="h-3 w-3" /> : isSelected && <Plus className="h-3.5 w-3.5" />}
                                                     </div>
                                                 )}
-                                                <span className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                                                <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                                    !fieldAllowed ? 'text-amber-700 dark:text-amber-400' : isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'
+                                                }`}>
                                                     {field.toLowerCase() === 'profilephoto' || field.toLowerCase() === 'profile_photo' ? 'Profile Photo' : getFieldLabel(field, formGroups)}
                                                 </span>
+                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                    {getFieldCategory(field, formGroups)}
+                                                </span>
                                             </div>
-                                            {!readOnly && request.status === 'pending' && isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
+                                            {!fieldAllowed ? (
+                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 flex items-center gap-1">
+                                                    <Lock className="h-2.5 w-2.5" />
+                                                    Outside scope
+                                                </span>
+                                            ) : !readOnly && request.status === 'pending' && isSelected ? (
+                                                <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>
+                                            ) : null}
                                         </div>
                                         <div className="grid grid-cols-2 gap-8">
                                             <div className={`text-sm ${typeof formattedOld === 'string' ? 'text-slate-500 line-through decoration-red-300/50' : ''}`}>

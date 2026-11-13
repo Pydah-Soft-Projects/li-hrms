@@ -8,6 +8,52 @@ const {
     splitUpdatesIntoPermanentAndDynamic,
 } = require('../../shared/utils/promotePermanentFieldsFromDynamic');
 
+const PROFILE_FIELD_ALIASES = {
+    phone: ['phone_number', 'contact_number'],
+    phone_number: ['phone', 'contact_number'],
+    contact_number: ['phone', 'phone_number'],
+    personal_email: ['email'],
+    email: ['personal_email'],
+    profilePhoto: ['profile_photo'],
+    profile_photo: ['profilePhoto'],
+    proposedSalary: ['gross_salary'],
+    gross_salary: ['proposedSalary'],
+    address: ['present_address'],
+    present_address: ['address'],
+    employee_group_id: ['employee_group', 'employeeGroupId', 'employeeGroup'],
+    employee_group: ['employee_group_id'],
+    dob: ['date_of_birth'],
+    date_of_birth: ['dob'],
+    doj: ['joining_date'],
+    joining_date: ['doj'],
+    bank_account_no: ['bankAccountNo'],
+    bankAccountNo: ['bank_account_no'],
+    bank_name: ['bankName'],
+    bankName: ['bank_name'],
+    bank_place: ['bankPlace'],
+    bankPlace: ['bank_place'],
+    ifsc_code: ['ifscCode'],
+    ifscCode: ['ifsc_code'],
+    salary_mode: ['salaryMode'],
+    salaryMode: ['salary_mode'],
+    second_salary: ['secondSalary'],
+    secondSalary: ['second_salary'],
+    division_id: ['divisionId', 'division'],
+    department_id: ['departmentId', 'department'],
+    designation_id: ['designationId', 'designation'],
+};
+
+function expandAllowedFields(allowedFields) {
+    const set = new Set(allowedFields || []);
+    (allowedFields || []).forEach(f => {
+        const aliases = PROFILE_FIELD_ALIASES[f];
+        if (aliases) {
+            aliases.forEach(a => set.add(a));
+        }
+    });
+    return set;
+}
+
 /** Frontend / form aliases → Employee root schema keys */
 const PROFILE_FIELD_MAPPING = {
     personal_email: 'email',
@@ -370,6 +416,11 @@ exports.approveRequest = async (req, res) => {
         let updates = { ...request.requestedChanges };
         let rejectedUpdates = {};
 
+        // Profile approval field restriction check
+        const User = require('../../users/model/User');
+        const approverUser = await User.findById(req.user._id).select('role profileApprovalConfig featureControl');
+        const isSuperAdmin = (approverUser?.role || req.user?.role) === 'super_admin';
+
         // If granular approval is requested, filter the changes
         if (selectedFields && Array.isArray(selectedFields)) {
             const filteredUpdates = {};
@@ -386,6 +437,32 @@ exports.approveRequest = async (req, res) => {
             });
             updates = filteredUpdates;
             rejectedUpdates = rejectedSubset;
+        }
+
+        // Validate approver has permission to approve the requested updates
+        let unauthorizedUpdates = {};
+        if (!isSuperAdmin && approverUser?.profileApprovalConfig && approverUser.profileApprovalConfig.allFields === false) {
+            const allowedSet = expandAllowedFields(approverUser.profileApprovalConfig.allowedFields || []);
+            const disallowed = Object.keys(updates).filter(f => !allowedSet.has(f));
+            if (disallowed.length > 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: `You are not permitted to approve the following field(s): ${disallowed.join(', ')}`
+                });
+            }
+
+            // Separate fields that were outside scope from intentionally rejected ones
+            const unauth = {};
+            const rej = {};
+            Object.keys(rejectedUpdates).forEach(field => {
+                if (!allowedSet.has(field)) {
+                    unauth[field] = rejectedUpdates[field];
+                } else {
+                    rej[field] = rejectedUpdates[field];
+                }
+            });
+            unauthorizedUpdates = unauth;
+            rejectedUpdates = rej;
         }
 
         if (!Object.keys(updates).length) {
@@ -452,6 +529,26 @@ exports.approveRequest = async (req, res) => {
                 approvedBy: req.user._id,
                 parentRequestId: request._id,
                 comments: request.comments || 'Rejected during partial approval'
+            });
+        }
+
+        // 6. If any fields were outside approver scope, persist remainder as pending for higher-level review
+        if (Object.keys(unauthorizedUpdates).length > 0) {
+            const pendingPreviousValues = {};
+            Object.keys(unauthorizedUpdates).forEach((key) => {
+                pendingPreviousValues[key] = originalPreviousValues ? originalPreviousValues[key] : null;
+            });
+
+            await EmployeeUpdateApplication.create({
+                employeeId: request.employeeId,
+                emp_no: request.emp_no,
+                requestedChanges: unauthorizedUpdates,
+                previousValues: pendingPreviousValues,
+                status: 'pending',
+                type: request.type || 'profile',
+                createdBy: request.createdBy,
+                parentRequestId: request._id,
+                comments: (request.comments ? request.comments + ' | ' : '') + 'Pending approval for fields outside previous reviewer scope'
             });
         }
 

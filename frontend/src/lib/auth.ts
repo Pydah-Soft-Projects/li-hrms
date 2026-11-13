@@ -20,6 +20,10 @@ export interface User {
     departments: string[];
     employeeGroups: string[];
   }[];
+  profileApprovalConfig?: {
+    allFields: boolean;
+    allowedFields: string[];
+  };
   loginMethod?: string;
 }
 
