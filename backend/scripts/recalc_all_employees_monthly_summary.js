@@ -27,7 +27,7 @@ async function run() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected.\n');
 
-    let monthStr = process.env.MONTH || '2026-06';
+    let monthStr = process.argv[2] || process.env.MONTH || '2026-10';
     if (!monthStr || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) {
       const now = new Date();
       monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -37,7 +37,7 @@ async function run() {
     }
     const [year, monthNumber] = monthStr.split('-').map(Number);
 
-    const clearFirst = process.env.CLEAR_FIRST === '1' || process.env.CLEAR_FIRST === 'true';
+    const clearFirst = process.env.CLEAR_FIRST === '1' || process.env.CLEAR_FIRST === 'true' || process.argv.includes('--clear');
     if (clearFirst) {
       console.log('CLEAR_FIRST=1: Deleting ALL monthly attendance summaries...');
       const { deletedCount } = await deleteAllMonthlySummaries();

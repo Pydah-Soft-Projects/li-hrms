@@ -19,8 +19,13 @@ function snapshot(summary) {
     totalODDays: summary.totalODs,
     totalAbsentDays: summary.totalAbsentDays,
     totalPayableShifts: summary.totalPayableShifts,
+    lateInPermissionCount: summary.lateInPermissionCount,
+    earlyOutPermissionCount: summary.earlyOutPermissionCount,
+    lateOrEarlyCount: summary.lateOrEarlyCount,
     contributingAbsent: summary.contributingDates?.absent || [],
-    contributingODs: summary.contributingDates?.ods || [],
+    contributingEarlyPermissions: summary.contributingDates?.earlyPermissions || [],
+    contributingLatePermissions: summary.contributingDates?.latePermissions || [],
+    contributingLateIn: summary.contributingDates?.lateIn || [],
   };
 }
 
