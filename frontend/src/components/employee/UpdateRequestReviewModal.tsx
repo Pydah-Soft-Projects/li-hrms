@@ -77,7 +77,7 @@ export default function UpdateRequestReviewModal({
     const allowedFieldsList = isRestricted ? (profileConfig?.allowedFields || []) : null;
     const isFieldAllowed = React.useCallback((field: string) => {
         if (!isRestricted) return true;
-        return canApproveProfileField(currentUser, field);
+        return canApproveProfileField(currentUser as any, field);
     }, [isRestricted, currentUser]);
 
     const renderTableValue = React.useCallback((data: any[]) => {
