@@ -3957,30 +3957,30 @@ export default function UsersPage() {
           )
         }
       </div>
-    </div>
 
-    <ProfileApprovalFieldsModal
-      isOpen={profileApprovalModalTarget !== null}
-      onClose={() => setProfileApprovalModalTarget(null)}
-      userName={
-        profileApprovalModalTarget === 'edit'
-          ? selectedUser?.name || selectedUser?.email
-          : profileApprovalModalTarget === 'employeeCreate'
-          ? employeeFormData.name || employeeFormData.email
-          : formData.name || formData.email
-      }
-      config={
-        profileApprovalModalTarget === 'employeeCreate'
-          ? employeeFormData.profileApprovalConfig || { allFields: true, allowedFields: [] }
-          : formData.profileApprovalConfig || { allFields: true, allowedFields: [] }
-      }
-      onSave={(next) => {
-        if (profileApprovalModalTarget === 'employeeCreate') {
-          setEmployeeFormData({ ...employeeFormData, profileApprovalConfig: next });
-        } else {
-          setFormData({ ...formData, profileApprovalConfig: next });
+      <ProfileApprovalFieldsModal
+        isOpen={profileApprovalModalTarget !== null}
+        onClose={() => setProfileApprovalModalTarget(null)}
+        userName={
+          profileApprovalModalTarget === 'edit'
+            ? selectedUser?.name || selectedUser?.email
+            : profileApprovalModalTarget === 'employeeCreate'
+            ? employeeFormData.name || employeeFormData.email
+            : formData.name || formData.email
         }
-      }}
-    />
+        config={
+          profileApprovalModalTarget === 'employeeCreate'
+            ? employeeFormData.profileApprovalConfig || { allFields: true, allowedFields: [] }
+            : formData.profileApprovalConfig || { allFields: true, allowedFields: [] }
+        }
+        onSave={(next) => {
+          if (profileApprovalModalTarget === 'employeeCreate') {
+            setEmployeeFormData({ ...employeeFormData, profileApprovalConfig: next });
+          } else {
+            setFormData({ ...formData, profileApprovalConfig: next });
+          }
+        }}
+      />
+    </div>
   );
 }
