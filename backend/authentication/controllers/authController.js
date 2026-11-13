@@ -6,11 +6,6 @@ const Settings = require('../../settings/model/Settings');
 const LoginAudit = require('../model/LoginAudit');
 const passwordNotificationService = require('../../shared/services/passwordNotificationService');
 const {
-  buildTicketSsoUrlForUser,
-  getTicketAppUrl,
-  TICKET_SSO_DEFAULT_REDIRECT,
-} = require('../../shared/utils/ticketSso');
-const {
   issueAuthTokens,
   logLoginAttempt,
   bumpTokenVersionAndDestroySession,
@@ -622,44 +617,6 @@ exports.ssoLogin = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error during SSO login',
-      error: error.message,
-    });
-  }
-};
-
-// @desc    Build signed SSO URL for Ticket Management portal
-// @route   GET /api/auth/ticket-sso-url
-// @access  Private
-exports.getTicketSsoUrl = async (req, res) => {
-  try {
-    if (!getTicketAppUrl()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Ticket portal SSO is not configured. Please set TICKET_APP_URL.',
-      });
-    }
-
-    const redirect = typeof req.query.redirect === 'string' && req.query.redirect.trim()
-      ? req.query.redirect.trim()
-      : undefined;
-
-    const url = buildTicketSsoUrlForUser(req.user, redirect);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        url,
-        redirect: redirect || TICKET_SSO_DEFAULT_REDIRECT,
-      },
-    });
-  } catch (error) {
-    console.error('[TicketSSO] Error:', error.message);
-    const isConfigError = /not configured/i.test(error.message);
-    res.status(isConfigError ? 503 : 500).json({
-      success: false,
-      message: isConfigError
-        ? error.message
-        : 'Could not generate ticket portal login URL',
       error: error.message,
     });
   }

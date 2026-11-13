@@ -14,7 +14,6 @@ router.get('/geofence-config', authController.getGeofenceConfig);
 
 // Protected routes
 router.get('/me', protect, authController.getMe);
-router.get('/ticket-sso-url', protect, authController.getTicketSsoUrl);
 router.get('/session', protect, authController.getSession);
 router.get('/login-metrics', protect, authController.getLoginMetrics);
 router.put('/change-password', protect, authController.changePassword);
