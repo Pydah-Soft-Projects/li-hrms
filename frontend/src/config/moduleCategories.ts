@@ -16,7 +16,7 @@ export const MODULE_CATEGORIES = [
             { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true, bankable: true, editable: true, profileApprover: true, secondSalaryEditable: true },
             { code: 'PROMOTIONS', label: 'Promotions', href: '/promotions-transfers' },
             { code: 'TRANSFERS', label: 'Transfers', href: '/promotions-transfers' },
-            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true },
+            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations', terminable: true, abscondable: true },
             { code: 'EMPLOYEE_BIRTHDAYS', label: 'Birthdays', href: '/employee-birthdays' },
             { code: 'ASSETS_MANAGEMENT', label: 'Assets', href: '/assets-management' },
             { code: 'PROFILE', label: 'My Profile', href: '/profile' }

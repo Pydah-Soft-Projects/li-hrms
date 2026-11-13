@@ -421,8 +421,29 @@ export function canViewTerminationRequests(
     return canTerminateEmployee(user, settings);
 }
 
+/**
+ * Abscond permission — independent of read/write. Must be explicitly granted via RESIGNATION:abscond or RESIGNATION:terminate.
+ * When featureControl is empty, falls back to resignation settings terminationAllowedRoles.
+ */
+export function canAbscondEmployee(
+    user: User,
+    settings?: { workflow?: { terminationAllowedRoles?: string[] } }
+): boolean {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    if (!hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager'])) return false;
+
+    if (!user.featureControl || user.featureControl.length === 0) {
+        const role = String(user.role || '').toLowerCase();
+        const allowedRoles = settings?.workflow?.terminationAllowedRoles || ['super_admin', 'hr'];
+        return allowedRoles.includes(role);
+    }
+
+    return user.featureControl.includes('RESIGNATION:abscond') || user.featureControl.includes('RESIGNATION:terminate');
+}
+
 export function canAccessResignationsPage(user: User): boolean {
-    return canViewResignation(user) || canViewTerminationRequests(user);
+    return canViewResignation(user) || canViewTerminationRequests(user) || canAbscondEmployee(user);
 }
 
 export function canManageResignationRequest(
@@ -432,6 +453,9 @@ export function canManageResignationRequest(
 ): boolean {
     if (requestType === 'termination') {
         return canTerminateEmployee(user, settings);
+    }
+    if (requestType === 'obsconded' || requestType === 'absconded') {
+        return canAbscondEmployee(user, settings);
     }
     return canApproveResignation(user);
 }

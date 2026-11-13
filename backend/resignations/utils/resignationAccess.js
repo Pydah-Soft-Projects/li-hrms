@@ -44,6 +44,14 @@ function hasModuleTerminate(user, code) {
   return fc.includes(`${code}:terminate`);
 }
 
+function hasModuleAbscond(user, code) {
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const fc = resolveFeatureControl(user);
+  if (!fc.length) return false;
+  return fc.includes(`${code}:abscond`);
+}
+
 function canInitiateTerminationLegacy(user, settings) {
   const role = (user?.role || '').toLowerCase();
   const allowedRoles = settings?.workflow?.terminationAllowedRoles || ['super_admin', 'hr'];
@@ -57,7 +65,29 @@ function assertCanCreateRequest(user, requestType, settings) {
 
   const fc = resolveFeatureControl(user);
 
-  if (type === 'termination' || type === 'obsconded' || type === 'absconded') {
+  if (type === 'obsconded' || type === 'absconded') {
+    if (role === 'employee') {
+      const err = new Error('Employees cannot initiate abscond requests.');
+      err.statusCode = 403;
+      throw err;
+    }
+    if (fc.length === 0) {
+      if (!canInitiateTerminationLegacy(user, settings)) {
+        const err = new Error(`Your role (${role}) is not authorized to initiate abscond requests based on current policy.`);
+        err.statusCode = 403;
+        throw err;
+      }
+      return;
+    }
+    if (!hasModuleAbscond(user, 'RESIGNATION') && !hasModuleTerminate(user, 'RESIGNATION')) {
+      const err = new Error('You do not have abscond permission for resignations.');
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+
+  if (type === 'termination') {
     if (role === 'employee') {
       const err = new Error('Employees cannot initiate terminations.');
       err.statusCode = 403;
@@ -95,9 +125,10 @@ function assertCanViewRequests(user) {
 
   const canRes = hasModuleRead(user, 'RESIGNATION');
   const canTerm = hasModuleTerminate(user, 'RESIGNATION');
+  const canAbscond = hasModuleAbscond(user, 'RESIGNATION');
 
-  if (!canRes && !canTerm) {
-    const err = new Error('You do not have permission to view resignation or termination requests.');
+  if (!canRes && !canTerm && !canAbscond) {
+    const err = new Error('You do not have permission to view resignation, termination or abscond requests.');
     err.statusCode = 403;
     throw err;
   }
@@ -110,7 +141,24 @@ function assertCanManageRequest(user, requestType, settings) {
 
   const fc = resolveFeatureControl(user);
 
-  if (type === 'termination' || type === 'obsconded' || type === 'absconded') {
+  if (type === 'obsconded' || type === 'absconded') {
+    if (fc.length === 0) {
+      if (!canInitiateTerminationLegacy(user, settings)) {
+        const err = new Error('You are not authorized to manage abscond requests.');
+        err.statusCode = 403;
+        throw err;
+      }
+      return;
+    }
+    if (!hasModuleAbscond(user, 'RESIGNATION') && !hasModuleTerminate(user, 'RESIGNATION')) {
+      const err = new Error('You do not have abscond permission for resignations.');
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+
+  if (type === 'termination') {
     if (fc.length === 0) {
       if (!canInitiateTerminationLegacy(user, settings)) {
         const err = new Error('You are not authorized to manage termination requests.');
@@ -152,20 +200,33 @@ function buildRequestTypeFilter(user) {
 
   const canRes = hasModuleRead(user, 'RESIGNATION');
   const canTerm = hasModuleTerminate(user, 'RESIGNATION');
+  const canAbscond = hasModuleAbscond(user, 'RESIGNATION');
 
-  if (canRes && canTerm) return null;
-  if (canTerm && !canRes) return { requestType: 'termination' };
-  if (canRes && !canTerm) {
+  if (canRes && canTerm && canAbscond) return null;
+
+  if (!canRes) {
+    const allowedTypes = [];
+    if (canTerm) allowedTypes.push('termination');
+    if (canAbscond) allowedTypes.push('obsconded', 'absconded');
+    if (allowedTypes.length) return { requestType: { $in: allowedTypes } };
+    return { _id: null };
+  }
+
+  const disallowedTypes = [];
+  if (!canTerm) disallowedTypes.push('termination');
+  if (!canAbscond) disallowedTypes.push('obsconded', 'absconded');
+
+  if (disallowedTypes.length) {
     return {
       $or: [
-        { requestType: { $ne: 'termination' } },
+        { requestType: { $nin: disallowedTypes } },
         { requestType: { $exists: false } },
         { requestType: null },
       ],
     };
   }
 
-  return { _id: null };
+  return null;
 }
 
 async function assertEmployeeInScope(user, employeeDoc, isSelfRequest) {
@@ -204,6 +265,7 @@ module.exports = {
   hasModuleRead,
   hasModuleWrite,
   hasModuleTerminate,
+  hasModuleAbscond,
   assertCanCreateRequest,
   assertCanViewRequests,
   assertCanManageRequest,

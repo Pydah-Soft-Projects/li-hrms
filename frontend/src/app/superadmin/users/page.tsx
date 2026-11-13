@@ -2537,6 +2537,7 @@ export default function UsersPage() {
                                       const hasRead = modulePermissionState !== 'none';
                                       const hasWrite = modulePermissionState === 'write';
                                       const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                      const hasAbscond = (module as any).abscondable ? (formData.featureControl?.includes(`${module.code}:abscond`) || false) : false;
                                       const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
                                       const scopedDivisionIds = activeDivisionScope === 'all' ? [] : [activeDivisionScope];
 
@@ -2562,6 +2563,15 @@ export default function UsersPage() {
                                         const newFeatures = hasTerminate
                                           ? currentFeatures.filter(f => f !== terminatePerm)
                                           : [...currentFeatures, terminatePerm];
+                                        setFormData({ ...formData, featureControl: newFeatures });
+                                      };
+
+                                      const toggleAbscond = () => {
+                                        const currentFeatures = formData.featureControl || [];
+                                        const abscondPerm = `${module.code}:abscond`;
+                                        const newFeatures = hasAbscond
+                                          ? currentFeatures.filter(f => f !== abscondPerm)
+                                          : [...currentFeatures, abscondPerm];
                                         setFormData({ ...formData, featureControl: newFeatures });
                                       };
 
@@ -2612,6 +2622,19 @@ export default function UsersPage() {
                                                     }`}
                                                 >
                                                   Terminate
+                                                </button>
+                                              )}
+                                              {(module as any).abscondable && (
+                                                <button
+                                                  type="button"
+                                                  onClick={toggleAbscond}
+                                                  title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                    ? 'bg-amber-600 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  Abscond
                                                 </button>
                                               )}
                                               {(module as any).releasable && (
@@ -2701,6 +2724,19 @@ export default function UsersPage() {
                                                           }`}
                                                       >
                                                         Terminate
+                                                      </button>
+                                                    )}
+                                                    {(module as any).abscondable && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={toggleAbscond}
+                                                        title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                          ? 'bg-amber-600 text-white shadow-sm'
+                                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                          }`}
+                                                      >
+                                                        Abscond
                                                       </button>
                                                     )}
                                                     {(module as any).releasable && (
@@ -3304,6 +3340,7 @@ export default function UsersPage() {
                                     const hasRead = modulePermissionState !== 'none';
                                     const hasWrite = modulePermissionState === 'write';
                                     const hasTerminate = (module as any).terminable ? (employeeFormData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                    const hasAbscond = (module as any).abscondable ? (employeeFormData.featureControl?.includes(`${module.code}:abscond`) || false) : false;
                                     const hasRelease = (module as any).releasable ? (employeeFormData.featureControl?.includes(`${module.code}:release`) || false) : false;
                                     const scopedDivisionIds = activeDivisionScope === 'all' ? [] : [activeDivisionScope];
 
@@ -3329,6 +3366,15 @@ export default function UsersPage() {
                                       const newFeatures = hasTerminate
                                         ? currentFeatures.filter(f => f !== terminatePerm)
                                         : [...currentFeatures, terminatePerm];
+                                      setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                    };
+
+                                    const toggleAbscond = () => {
+                                      const currentFeatures = employeeFormData.featureControl || [];
+                                      const abscondPerm = `${module.code}:abscond`;
+                                      const newFeatures = hasAbscond
+                                        ? currentFeatures.filter(f => f !== abscondPerm)
+                                        : [...currentFeatures, abscondPerm];
                                       setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
                                     };
 
@@ -3379,6 +3425,19 @@ export default function UsersPage() {
                                                   }`}
                                               >
                                                 Terminate
+                                              </button>
+                                            )}
+                                            {(module as any).abscondable && (
+                                              <button
+                                                type="button"
+                                                onClick={toggleAbscond}
+                                                title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                  ? 'bg-amber-600 text-white shadow-sm'
+                                                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                  }`}
+                                              >
+                                                Abscond
                                               </button>
                                             )}
                                             {(module as any).releasable && (
@@ -3468,6 +3527,19 @@ export default function UsersPage() {
                                                         }`}
                                                     >
                                                       Terminate
+                                                    </button>
+                                                  )}
+                                                  {(module as any).abscondable && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={toggleAbscond}
+                                                      title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                        ? 'bg-amber-600 text-white shadow-sm'
+                                                        : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                        }`}
+                                                    >
+                                                      Abscond
                                                     </button>
                                                   )}
                                                   {(module as any).releasable && (
@@ -3972,6 +4044,7 @@ export default function UsersPage() {
                                       const hasRead = modulePermissionState !== 'none';
                                       const hasWrite = modulePermissionState === 'write';
                                       const hasTerminate = (module as any).terminable ? (formData.featureControl?.includes(`${module.code}:terminate`) || false) : false;
+                                      const hasAbscond = (module as any).abscondable ? (formData.featureControl?.includes(`${module.code}:abscond`) || false) : false;
                                       const hasRelease = (module as any).releasable ? (formData.featureControl?.includes(`${module.code}:release`) || false) : false;
                                       const scopedDivisionIds = activeDivisionScope === 'all' ? [] : [activeDivisionScope];
 
@@ -3997,6 +4070,15 @@ export default function UsersPage() {
                                         const newFeatures = hasTerminate
                                           ? currentFeatures.filter(f => f !== terminatePerm)
                                           : [...currentFeatures, terminatePerm];
+                                        setFormData({ ...formData, featureControl: newFeatures });
+                                      };
+
+                                      const toggleAbscond = () => {
+                                        const currentFeatures = formData.featureControl || [];
+                                        const abscondPerm = `${module.code}:abscond`;
+                                        const newFeatures = hasAbscond
+                                          ? currentFeatures.filter(f => f !== abscondPerm)
+                                          : [...currentFeatures, abscondPerm];
                                         setFormData({ ...formData, featureControl: newFeatures });
                                       };
 
@@ -4047,6 +4129,19 @@ export default function UsersPage() {
                                                     }`}
                                                 >
                                                   Terminate
+                                                </button>
+                                              )}
+                                              {(module as any).abscondable && (
+                                                <button
+                                                  type="button"
+                                                  onClick={toggleAbscond}
+                                                  title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                    ? 'bg-amber-600 text-white shadow-sm'
+                                                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                    }`}
+                                                >
+                                                  Abscond
                                                 </button>
                                               )}
                                               {(module as any).releasable && (
@@ -4136,6 +4231,19 @@ export default function UsersPage() {
                                                           }`}
                                                       >
                                                         Terminate
+                                                      </button>
+                                                    )}
+                                                    {(module as any).abscondable && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={toggleAbscond}
+                                                        title="Abscond: grants access to initiate and manage employee absconds within scope. Independent of Read/Write."
+                                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasAbscond
+                                                          ? 'bg-amber-600 text-white shadow-sm'
+                                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                                          }`}
+                                                      >
+                                                        Abscond
                                                       </button>
                                                     )}
                                                     {(module as any).releasable && (

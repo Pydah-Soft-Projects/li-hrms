@@ -1836,14 +1836,14 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
         query.employeeNumber = { $in: targetEmployeeNumbers };
       }
     } else {
+      // No filters (all divisions / all departments) — sync ALL records in the date range.
+      // Previously only partial/incomplete records were picked, which caused the sync button
+      // to silently do nothing when no filter was selected.
       if (securityEmpNumbers.length > 0) {
         query.employeeNumber = { $nin: securityEmpNumbers };
       }
-      query.$or = [
-        { shiftId: { $exists: false }, inTime: { $ne: null } },
-        { status: 'PRESENT', totalWorkingHours: { $gt: 0, $lt: 6 } },
-        { 'shifts.status': 'complete' }
-      ];
+      // No $or restriction: include every attendance record in the date range so that
+      // already-assigned records are also re-evaluated with the latest shift config.
     }
 
     // Get attendance records to sync

@@ -12,7 +12,7 @@ import {
   getUserAllowedEmployeeGroupIds,
 } from '@/lib/employeeGroupScopeUtils';
 import { auth } from '@/lib/auth';
-import { canViewResignation, canViewTerminationRequests, canApplyResignation, canTerminateEmployee, canAccessResignationsPage, canManageResignationRequest } from '@/lib/permissions';
+import { canViewResignation, canViewTerminationRequests, canApplyResignation, canTerminateEmployee, canAbscondEmployee, canAccessResignationsPage, canManageResignationRequest } from '@/lib/permissions';
 import { toast, ToastContainer } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -1424,11 +1424,16 @@ export default function ResignationsPage() {
               Print
             </button>
           </div>
-          {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && (
+          {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings) || canAbscondEmployee(currentUser as any, resignationSettings)) && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => openApplyModal(isEmployeeRole(currentUser), 'resignation')}
+                onClick={() => {
+                  const canApply = canApplyResignation(currentUser as any);
+                  const canTerm = canTerminateEmployee(currentUser as any, resignationSettings);
+                  const initialType = canApply ? 'resignation' : canTerm ? 'termination' : 'obsconded';
+                  openApplyModal(isEmployeeRole(currentUser), initialType);
+                }}
                 className="inline-flex items-center gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 text-sm font-bold shadow-lg shadow-green-500/20 transition active:scale-95"
               >
                 <Plus className="w-4 h-4" />
@@ -1961,7 +1966,7 @@ export default function ResignationsPage() {
                 </div>
                 )}
 
-                {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings)) && !applySelfOnly && (
+                {(canApplyResignation(currentUser as any) || canTerminateEmployee(currentUser as any, resignationSettings) || canAbscondEmployee(currentUser as any, resignationSettings)) && !applySelfOnly && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request Type</label>
                   <div className="grid grid-cols-3 gap-2">
@@ -1993,7 +1998,7 @@ export default function ResignationsPage() {
                       Termination
                     </button>
                     )}
-                    {canTerminateEmployee(currentUser as any, resignationSettings) && (
+                    {canAbscondEmployee(currentUser as any, resignationSettings) && (
                     <button
                       type="button"
                       onClick={() => handleApplyTypeChange('obsconded')}

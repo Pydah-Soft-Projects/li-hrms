@@ -8,6 +8,7 @@ export const FEATURE_SUFFIX = {
   terminate: 'terminate',
   release: 'release',
   profileApproval: 'profile_approval',
+  abscond: 'abscond',
 } as const;
 
 export type GranularModuleDef = {
@@ -21,6 +22,7 @@ export type GranularModuleDef = {
   terminable?: boolean;
   releasable?: boolean;
   profileApprover?: boolean;
+  abscondable?: boolean;
 };
 
 export function featurePerm(moduleCode: string, suffix: string): string {
@@ -47,6 +49,7 @@ export type ModulePermissionFlags = {
   hasTerminate: boolean;
   hasRelease: boolean;
   hasProfileApproval: boolean;
+  hasAbscond: boolean;
 };
 
 export function collectModulePermissionFlags(
@@ -68,6 +71,7 @@ export function collectModulePermissionFlags(
     hasTerminate: module.terminable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.terminate)) : false,
     hasRelease: module.releasable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.release)) : false,
     hasProfileApproval: module.profileApprover ? fc.includes(featurePerm(code, FEATURE_SUFFIX.profileApproval)) : false,
+    hasAbscond: module.abscondable ? fc.includes(featurePerm(code, FEATURE_SUFFIX.abscond)) : false,
   };
 }
 
@@ -82,7 +86,8 @@ export function moduleHasAnyGrantedPermission(flags: ModulePermissionFlags): boo
     flags.hasFile ||
     flags.hasTerminate ||
     flags.hasRelease ||
-    flags.hasProfileApproval
+    flags.hasProfileApproval ||
+    flags.hasAbscond
   );
 }
 
