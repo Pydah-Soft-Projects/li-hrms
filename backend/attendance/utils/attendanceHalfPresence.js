@@ -340,9 +340,10 @@ function resolvePartialWorkedHalfKey(daily) {
   return 'first_half';
 }
 
-/** Aligns with AttendanceDaily: HALF_DAY when payable ≥0.45 or punch duration ≥40% of expected. */
+/** Aligns with AttendanceDaily: HALF_DAY when payable ≥0.45, punch duration ≥40% of expected, or worked ≥3.75 hours (4.0h - 15m grace). */
 const PARTIAL_IN_OUT_HALF_DAY_PAYABLE_MIN = 0.45;
 const PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN = 0.4;
+const PARTIAL_IN_OUT_HALF_DAY_MIN_HOURS = 3.75; // 4.0 hours standard - 15-minute grace (3h 45m)
 
 /**
  * IN+OUT on a PARTIAL day: true only when punches qualify as half-day (not merely “has both punches”).
@@ -359,7 +360,13 @@ function partialInOutSatisfiesHalfDay(daily) {
   const totalPayableFromShifts = shifts.reduce((acc, s) => acc + (Number(s?.payableShift) || 0), 0);
   if (totalPayableFromShifts >= PARTIAL_IN_OUT_HALF_DAY_PAYABLE_MIN - 1e-6) return true;
 
-  const punchOnlyDuration = shifts.reduce((acc, s) => acc + (Number(s?.punchHours) || 0), 0);
+  const punchOnlyDuration = shifts.reduce((acc, s) => acc + (Number(s?.punchHours || s?.workingHours) || 0), 0);
+  const totalWorking = Number(daily?.totalWorkingHours) || punchOnlyDuration;
+  // If employee completed at least 3.75 hours of working (4h minus 15m grace), that qualifies for half day
+  if (punchOnlyDuration >= PARTIAL_IN_OUT_HALF_DAY_MIN_HOURS - 1e-6 || totalWorking >= PARTIAL_IN_OUT_HALF_DAY_MIN_HOURS - 1e-6) {
+    return true;
+  }
+
   let totalExpected = Number(daily?.totalExpectedHours) || 0;
   if (totalExpected <= 0) {
     totalExpected = shifts.reduce((acc, s) => acc + (Number(s?.expectedHours) || 0), 0);

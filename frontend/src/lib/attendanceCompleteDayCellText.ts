@@ -65,9 +65,50 @@ function timeToMins(t: any): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+export function isNightShiftRecord(r: any): boolean {
+  if (!r) return false;
+  const s0 = Array.isArray(r.shifts) && r.shifts.length > 0 ? r.shifts[0] : null;
+  const shiftName = String(s0?.shiftName || r.shiftId?.name || r.shiftName || '').trim();
+  if (/night/i.test(shiftName) || /^c([-_ ]|$)/i.test(shiftName)) {
+    return true;
+  }
+  const startTime = String(s0?.shiftStartTime || r.shiftId?.startTime || r.shiftStartTime || '').trim();
+  const endTime = String(s0?.shiftEndTime || r.shiftId?.endTime || r.shiftEndTime || '').trim();
+  if (startTime) {
+    const [sh, sm] = startTime.split(':').map(Number);
+    if (!isNaN(sh)) {
+      if (sh >= 18 || sh < 4) return true;
+      if (endTime) {
+        const [eh, em] = endTime.split(':').map(Number);
+        if (!isNaN(eh) && (sh * 60 + (sm || 0)) > (eh * 60 + (em || 0))) {
+          return true;
+        }
+      }
+    }
+  }
+  const punchTime = s0?.inTime || r.inTime;
+  if (punchTime) {
+    const d = new Date(punchTime);
+    const istMins = d.getUTCHours() * 60 + d.getUTCMinutes() + 330;
+    const istHour = Math.floor(istMins / 60) % 24;
+    if (istHour >= 18 || istHour < 4) return true;
+  }
+  return false;
+}
+
+export function resolvePresentExportCode(r: any, shiftObj?: any): string {
+  const pay = Number(shiftObj?.payableShift ?? shiftObj?.basePayable ?? r?.payableShifts ?? 1);
+  if (pay >= 1.75) return 'PP'; // Double Duty
+  if (pay >= 1.25 && pay < 1.75) return 'PH'; // 1.5 Duty
+  if (isNightShiftRecord(shiftObj || r)) return 'PN'; // Present Night
+  return 'PD'; // Present Day
+}
+
+export const resolvePresentStatusCode = resolvePresentExportCode;
+
 export function getBaseDisplayStatus(record: any | null): string {
   if (!record) return 'A';
-  if (record.status === 'PRESENT') return 'P';
+  if (record.status === 'PRESENT') return resolvePresentExportCode(record);
   if (record.status === 'HALF_DAY') return 'HD';
   if (record.status === 'PARTIAL') return 'PT';
   if (record.status === 'HOLIDAY') return 'H';
@@ -127,8 +168,9 @@ export function buildSplitCellStatus(record: any | null): { top: string; bottom:
   let bottom = 'A';
 
   if (record.status === 'PRESENT') {
-    top = 'P';
-    bottom = 'P';
+    const pCode = resolvePresentExportCode(record);
+    top = pCode;
+    bottom = pCode;
   } else if (record.status === 'PARTIAL') {
     if (hasPartialPolicySplit) {
       const toCell = (status?: string | null) => {
@@ -249,45 +291,6 @@ function formatHoursCell(hours: number | null | undefined): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
-}
-
-export function isNightShiftRecord(r: any): boolean {
-  if (!r) return false;
-  const s0 = Array.isArray(r.shifts) && r.shifts.length > 0 ? r.shifts[0] : null;
-  const shiftName = String(s0?.shiftName || r.shiftId?.name || r.shiftName || '').trim();
-  if (/night/i.test(shiftName) || /^c([-_ ]|$)/i.test(shiftName)) {
-    return true;
-  }
-  const startTime = String(s0?.shiftStartTime || r.shiftId?.startTime || r.shiftStartTime || '').trim();
-  const endTime = String(s0?.shiftEndTime || r.shiftId?.endTime || r.shiftEndTime || '').trim();
-  if (startTime) {
-    const [sh, sm] = startTime.split(':').map(Number);
-    if (!isNaN(sh)) {
-      if (sh >= 18 || sh < 4) return true;
-      if (endTime) {
-        const [eh, em] = endTime.split(':').map(Number);
-        if (!isNaN(eh) && (sh * 60 + (sm || 0)) > (eh * 60 + (em || 0))) {
-          return true;
-        }
-      }
-    }
-  }
-  const punchTime = s0?.inTime || r.inTime;
-  if (punchTime) {
-    const d = new Date(punchTime);
-    const istMins = d.getUTCHours() * 60 + d.getUTCMinutes() + 330;
-    const istHour = Math.floor(istMins / 60) % 24;
-    if (istHour >= 18 || istHour < 4) return true;
-  }
-  return false;
-}
-
-export function resolvePresentExportCode(r: any, shiftObj?: any): string {
-  const pay = Number(shiftObj?.payableShift ?? shiftObj?.basePayable ?? r?.payableShifts ?? 1);
-  if (pay >= 1.75) return 'PP'; // Double Duty
-  if (pay >= 1.25 && pay < 1.75) return 'PH'; // 1.5 Duty
-  if (isNightShiftRecord(shiftObj || r)) return 'PN'; // Present Night
-  return 'PD'; // Present Day
 }
 
 /** Multi-line text aligned with Complete table day cells (status + optional late/early + shift/hours badges). */

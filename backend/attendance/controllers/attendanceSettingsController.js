@@ -23,6 +23,14 @@ exports.getSettings = async (req, res) => {
     const dataObj = settings.toObject();
     dataObj.completeSummaryColumns = completeSummaryColumns;
 
+    try {
+      const AttendanceDeductionSettings = require('../model/AttendanceDeductionSettings');
+      const attDed = await AttendanceDeductionSettings.getActiveSettings();
+      dataObj.evaluationMode = attDed?.deductionRules?.evaluationMode || 'combined';
+    } catch {
+      dataObj.evaluationMode = 'combined';
+    }
+
     res.status(200).json({
       success: true,
       data: dataObj,

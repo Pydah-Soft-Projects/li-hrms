@@ -684,7 +684,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 if (statusRatio >= 0.9) {
                                     segStatus = 'PRESENT';
                                     segPayable = basePayablePerShift(split.assignedShift);
-                                } else if (statusRatio >= 0.40) {
+                                } else if (statusRatio >= 0.40 || effectiveWorking >= 3.75 - 1e-6) {
                                     segStatus = 'HALF_DAY';
                                     segPayable = basePayablePerShift(split.assignedShift) * 0.5;
                                 } else {
@@ -836,7 +836,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     if (er >= 0.9) {
                                         pSplitShift.status = 'PRESENT';
                                         pSplitShift.payableShift = pSplitShift.basePayable;
-                                    } else if (er >= 0.40) {
+                                    } else if (er >= 0.40 || pSplitShift.workingHours >= 3.75 - 1e-6) {
                                         pSplitShift.status = 'HALF_DAY';
                                         pSplitShift.payableShift = pSplitShift.basePayable * 0.5;
                                         pSplitShift.earlyOutMinutes = 0; pSplitShift.isEarlyOut = false;
@@ -1204,7 +1204,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         if (processedShifts.length > 0) {
             if (hasPresentShift || totalPayableShifts >= 0.95) {
                 status = 'PRESENT';
-            } else if (totalPayableShifts >= 0.45 || processedShifts.some(s => s.status === 'HALF_DAY')) {
+            } else if (totalPayableShifts >= 0.45 || processedShifts.some(s => s.status === 'HALF_DAY') || (totals.totalWorkingHours >= 3.75 - 1e-6)) {
                 status = 'HALF_DAY';
             } else {
                 const hasIncomplete = processedShifts.some(s => s.status === 'incomplete' || !s.outTime);

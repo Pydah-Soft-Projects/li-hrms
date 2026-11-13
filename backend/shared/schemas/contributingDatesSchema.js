@@ -21,6 +21,8 @@ const contributingDatesShape = {
   lateIn: contributingDateEntry,
   earlyOut: contributingDateEntry,
   permissions: contributingDateEntry,
+  latePermissions: contributingDateEntry,
+  earlyPermissions: contributingDateEntry,
   absent: contributingDateEntry,
   conflicts: contributingDateEntry,
 };

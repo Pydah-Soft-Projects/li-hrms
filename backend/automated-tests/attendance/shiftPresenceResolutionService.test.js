@@ -330,6 +330,88 @@ describe('shiftPresenceResolutionService', () => {
       expect(pShift.status).toBe('ABSENT');
       expect(pShift.payableShift).toBe(0);
     });
+
+    test('completed 4 hours working on 12-hour shift (4h 07m, 34% < 40%) falls back to HALF_DAY', async () => {
+      const shift12h = {
+        _id: 'shift-12h',
+        name: '9 AM TO 9 PM',
+        startTime: '09:00',
+        endTime: '21:00',
+        duration: 12,
+        firstHalf: null,
+        secondHalf: null,
+      };
+      const pShift = {
+        shiftNumber: 1,
+        shiftId: 'shift-12h',
+        shiftStartTime: '09:00',
+        shiftEndTime: '21:00',
+        expectedHours: 12,
+        basePayable: 1,
+        inTime: createISTDate(DATE, '09:00'),
+        outTime: createISTDate(DATE, '13:07'),
+        punchHours: 4.12,
+        workingHours: 4.12,
+        odHours: 0,
+        edgePermissionHours: 0,
+        lateInMinutes: 0,
+        earlyOutMinutes: 473,
+      };
+
+      await resolveShiftPresence({
+        pShift,
+        dateStr: DATE,
+        employeeNumber: '1019',
+        graceOpts: grace,
+        shiftDoc: shift12h,
+        applyEdgePermissions: false,
+      });
+
+      expect(pShift.presenceResolutionPath).toBe('duration_half_day_fallback');
+      expect(pShift.status).toBe('HALF_DAY');
+      expect(pShift.payableShift).toBe(0.5);
+    });
+
+    test('completed 3h 56m (3.93h >= 3.75h with 15m grace) on 9-20 shift resolves to HALF_DAY', async () => {
+      const shift11h = {
+        name: '9 AM to 8 PM',
+        startTime: '09:00',
+        endTime: '20:00',
+        duration: 11,
+        firstHalf: null,
+        secondHalf: null,
+        gracePeriod: 15,
+      };
+      const pShift = {
+        shiftNumber: 1,
+        shiftId: 'shift-11h',
+        shiftStartTime: '09:00',
+        shiftEndTime: '20:00',
+        expectedHours: 11,
+        basePayable: 1,
+        inTime: createISTDate(DATE, '09:23'),
+        outTime: createISTDate(DATE, '13:19'),
+        punchHours: 3.93,
+        workingHours: 3.93,
+        odHours: 0,
+        edgePermissionHours: 0,
+        lateInMinutes: 23,
+        earlyOutMinutes: 401,
+      };
+
+      await resolveShiftPresence({
+        pShift,
+        dateStr: DATE,
+        employeeNumber: '1019',
+        graceOpts: grace,
+        shiftDoc: shift11h,
+        applyEdgePermissions: false,
+      });
+
+      expect(pShift.presenceResolutionPath).toBe('duration_half_day_fallback');
+      expect(pShift.status).toBe('HALF_DAY');
+      expect(pShift.payableShift).toBe(0.5);
+    });
   });
 });
 

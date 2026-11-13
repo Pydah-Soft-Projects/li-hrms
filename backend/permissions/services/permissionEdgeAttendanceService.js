@@ -105,15 +105,65 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
       const empDoc = await Employee.findOne({ emp_no: empUpper }).select('department_id division_id').lean();
       if (empDoc) {
         const resolved = await getResolvedPermissionSettings(empDoc.department_id, empDoc.division_id);
-        const monthlyCap = (resolved?.monthlyLimit != null && Number(resolved.monthlyLimit) > 0)
-          ? Number(resolved.monthlyLimit)
-          : (resolved?.deductionRules?.freeAllowedPerMonth != null && Number(resolved.deductionRules.freeAllowedPerMonth) > 0)
-            ? Number(resolved.deductionRules.freeAllowedPerMonth)
-            : null;
+        const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
+        let isSeparateMode = false;
+        let lateInMonthlyCap = null;
+        let earlyOutMonthlyCap = null;
+        let monthlyCap = null;
 
-        if (monthlyCap !== null && monthlyCap > 0) {
-          const [year, month] = date.split('-').map(Number);
-          const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        try {
+          const attDed = await AttendanceDeductionSettings.getActiveSettings();
+          const attRules = attDed?.deductionRules || {};
+          isSeparateMode = attRules.evaluationMode === 'separate';
+          if (isSeparateMode) {
+            if (attRules.freeLateInsPerMonth != null && Number(attRules.freeLateInsPerMonth) > 0) {
+              lateInMonthlyCap = Number(attRules.freeLateInsPerMonth);
+            } else if (resolved?.monthlyLimit != null && Number(resolved.monthlyLimit) > 0) {
+              lateInMonthlyCap = Number(resolved.monthlyLimit);
+            }
+            if (attRules.freeEarlyOutsPerMonth != null && Number(attRules.freeEarlyOutsPerMonth) > 0) {
+              earlyOutMonthlyCap = Number(attRules.freeEarlyOutsPerMonth);
+            } else if (resolved?.monthlyLimit != null && Number(resolved.monthlyLimit) > 0) {
+              earlyOutMonthlyCap = Number(resolved.monthlyLimit);
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!isSeparateMode) {
+          monthlyCap = (resolved?.monthlyLimit != null && Number(resolved.monthlyLimit) > 0)
+            ? Number(resolved.monthlyLimit)
+            : (resolved?.deductionRules?.freeAllowedPerMonth != null && Number(resolved.deductionRules.freeAllowedPerMonth) > 0)
+              ? Number(resolved.deductionRules.freeAllowedPerMonth)
+              : null;
+        }
+
+        const [year, month] = date.split('-').map(Number);
+        const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+
+        if (isSeparateMode) {
+          const filteredPerms = [];
+          for (const perm of activePerms) {
+            const pType = perm.permissionType;
+            const cap = pType === 'late_in' ? lateInMonthlyCap : earlyOutMonthlyCap;
+            if (cap != null && cap > 0) {
+              const priorCount = await Permission.countDocuments({
+                employeeNumber: empUpper,
+                permissionType: pType,
+                date: { $gte: monthStartStr, $lt: date },
+                isActive: true,
+                status: { $nin: ['rejected', 'manager_rejected'] },
+              });
+              if (priorCount < cap) {
+                filteredPerms.push(perm);
+              }
+            } else {
+              filteredPerms.push(perm);
+            }
+          }
+          activePerms = filteredPerms;
+        } else if (monthlyCap !== null && monthlyCap > 0) {
           const priorCount = await Permission.countDocuments({
             employeeNumber: empUpper,
             date: { $gte: monthStartStr, $lt: date },

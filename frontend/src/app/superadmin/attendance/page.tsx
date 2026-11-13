@@ -33,6 +33,7 @@ import {
 } from '@/lib/attendancePartialContribution';
 import {
   buildSplitCellStatus,
+  resolvePresentExportCode,
   shouldShowWorkedHoursInCompleteCell,
 } from '@/lib/attendanceCompleteDayCellText';
 import { AttendanceLeaveInfoSection } from '@/components/attendance/AttendanceLeaveInfoSection';
@@ -255,6 +256,8 @@ interface MonthlyAttendanceData {
     totalPermissionDeductionDays?: number;
     /** Total number of permission records / counts for the month */
     totalPermissionCount?: number;
+    lateInPermissionCount?: number;
+    earlyOutPermissionCount?: number;
     permissionDeductionBreakdown?: {
       full_day?: number;
       partial_day?: number;
@@ -273,6 +276,8 @@ interface MonthlyAttendanceData {
       lateIn?: string[];
       earlyOut?: string[];
       permissions?: string[];
+      latePermissions?: Array<string | { date: string; value?: number; label?: string }>;
+      earlyPermissions?: Array<string | { date: string; value?: number; label?: string }>;
       absent?: Array<string | { date: string; value?: number; label?: string }>;
       paidLeaves?: Array<string | { date: string; value?: number; label?: string }>;
       lopLeaves?: Array<string | { date: string; value?: number; label?: string }>;
@@ -364,7 +369,7 @@ export default function AttendancePage() {
 
   const getBaseDisplayStatus = (record: AttendanceRecord | null) => {
     if (!record) return 'A';
-    if (record.status === 'PRESENT') return 'P';
+    if (record.status === 'PRESENT') return resolvePresentExportCode(record);
     if (record.status === 'HALF_DAY') return 'HD';
     if (record.status === 'PARTIAL') return 'PT';
     if (record.status === 'HOLIDAY') return 'H';
@@ -398,7 +403,7 @@ export default function AttendancePage() {
     if (v.includes('HD')) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/45 dark:text-emerald-200';
     if (v === 'H' || v.startsWith('H/') || v.endsWith('/H')) return 'bg-rose-100 text-rose-800 dark:bg-rose-900/45 dark:text-rose-200';
     if (v === 'WO' || v.includes('WO')) return 'bg-orange-100 text-orange-800 dark:bg-orange-900/45 dark:text-orange-200';
-    if (v === 'P') return 'bg-green-100 text-green-800 dark:bg-green-900/45 dark:text-green-200';
+    if (v === 'P' || v === 'PD' || v === 'PN' || v === 'PH' || v === 'PP') return 'bg-green-100 text-green-800 dark:bg-green-900/45 dark:text-green-200';
     if (v === 'A') return 'bg-slate-100 text-slate-700 dark:bg-slate-800/80 dark:text-slate-300';
     return 'bg-slate-100 text-slate-800 dark:bg-slate-800/70 dark:text-slate-200';
   };
@@ -459,6 +464,7 @@ export default function AttendancePage() {
   const [payrollCycleStartDay, setPayrollCycleStartDay] = useState(1);
   const [payrollCycleEndDay, setPayrollCycleEndDay] = useState(31);
   const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
+  const [evaluationMode, setEvaluationMode] = useState<'combined' | 'separate'>('combined');
 
   // Search state
   const [showSearch, setShowSearch] = useState(Boolean(initialUrl.q));
@@ -768,6 +774,9 @@ export default function AttendancePage() {
         if (attendanceRes?.data?.completeSummaryColumns) {
           setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(attendanceRes.data.completeSummaryColumns));
         }
+        if (attendanceRes?.data?.evaluationMode) {
+          setEvaluationMode(attendanceRes.data.evaluationMode);
+        }
         const mode = attendanceRes?.data?.processingMode?.mode;
         if (mode === 'single_shift' || mode === 'multi_shift') {
           setAttendanceProcessingMode(mode);
@@ -1074,6 +1083,9 @@ export default function AttendancePage() {
         }
 
         const pagInfo = (response as any).pagination;
+        if ((response as any)?.evaluationMode) {
+          setEvaluationMode((response as any).evaluationMode);
+        }
         if (pagInfo) {
           setTotalPages(pagInfo.totalPages || 1);
           setTotalCount(pagInfo.total || 0);
@@ -2438,8 +2450,8 @@ export default function AttendancePage() {
   }, [cycleDates.startDate, cycleDates.endDate]);
 
   const visibleSuperadminCompleteKeys = useMemo(
-    () => superadminVisibleCompleteKeys(orgCompleteSummaryColumns),
-    [orgCompleteSummaryColumns]
+    () => superadminVisibleCompleteKeys(orgCompleteSummaryColumns, evaluationMode),
+    [orgCompleteSummaryColumns, evaluationMode]
   );
 
   const usePayRegisterAllComplete = attendanceProcessingMode === 'single_shift' && tableType === 'complete';
@@ -2717,11 +2729,14 @@ export default function AttendancePage() {
 
 
         {/* Status Legend */}
-        <div className="mb-6 flex flex-wrap items-center gap-4 px-4 py-3 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
-          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mr-2">Status Key</span>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="mb-6 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-500 overflow-x-auto scrollbar-thin">
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest shrink-0 mr-1">Status Key</span>
+          <div className="flex flex-nowrap items-center gap-x-3.5 shrink-0">
             {[
-              { label: 'P', name: 'Present', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
+              { label: 'PD', name: 'Present Day', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
+              { label: 'PN', name: 'Present Night', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' },
+              { label: 'PH', name: '1.5 Duty', color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800' },
+              { label: 'PP', name: 'Double Duty', color: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800' },
               { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
               { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
               { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
@@ -2735,7 +2750,7 @@ export default function AttendancePage() {
               { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
               { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
             ].map((item, idx) => (
-              <div key={`${item.label}-${item.name}-${idx}`} className="flex items-center gap-2 group cursor-help">
+              <div key={`${item.label}-${item.name}-${idx}`} className="flex items-center gap-1.5 shrink-0 whitespace-nowrap group cursor-help">
                 <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
                   {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
                 </div>
@@ -3084,14 +3099,24 @@ export default function AttendancePage() {
                             Perms
                           </th>
                         );
-                      case 'permissionDeductionDays':
+                      case 'latePermissions':
                         return (
                           <th
                             key={colKey}
-                            className={`${edge} ${base} bg-teal-50 text-teal-700 dark:bg-teal-900/20 w-[100px] min-w-[100px]`}
-                            title="Permission deduction days"
+                            className={`${edge} ${base} bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]`}
+                            title="Late-in permissions count"
                           >
-                            Perm Ded
+                            Late Perms
+                          </th>
+                        );
+                      case 'earlyPermissions':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-teal-50 text-teal-700 dark:bg-teal-900/20 w-[80px] min-w-[80px]`}
+                            title="Early-out permissions count"
+                          >
+                            Early Perms
                           </th>
                         );
                       case 'lateEarly':
@@ -3209,9 +3234,9 @@ export default function AttendancePage() {
                                             ? 'bg-orange-50 dark:bg-orange-900/20'
                                             : colKey === 'extraHours'
                                               ? 'bg-purple-50 dark:bg-purple-900/20'
-                                              : colKey === 'permissions'
+                                              : colKey === 'permissions' || colKey === 'latePermissions'
                                                 ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                : colKey === 'permissionDeductionDays'
+                                                : colKey === 'earlyPermissions'
                                                   ? 'bg-teal-50 dark:bg-teal-900/20'
                                                   : colKey === 'lateEarly'
                                                     ? 'bg-rose-50 dark:bg-rose-900/20'
@@ -3219,11 +3244,9 @@ export default function AttendancePage() {
                                                       ? 'bg-violet-50 dark:bg-violet-900/25'
                                                       : 'bg-green-50 dark:bg-green-900/20';
                           const w =
-                            colKey === 'permissions'
+                            colKey === 'permissions' || colKey === 'latePermissions' || colKey === 'earlyPermissions'
                               ? 'w-[80px] min-w-[80px]'
-                              : colKey === 'permissionDeductionDays'
-                                ? 'w-[100px] min-w-[100px]'
-                                : colKey === 'lateEarly'
+                              : colKey === 'lateEarly'
                                   ? 'w-[70px] min-w-[70px]'
                                   : colKey === 'attDed'
                                     ? 'w-[64px] min-w-[64px]'
@@ -3490,15 +3513,23 @@ export default function AttendancePage() {
                             ? 'ring-2 ring-rose-400/70 ring-inset z-10 !bg-rose-50/90 dark:!bg-rose-900/55 shadow-[0_0_20px_rgba(244,63,94,0.18)] scale-[1.05] rounded-md'
                             : isHighlighted && activeHighlight?.category === 'paidLeaves'
                               ? 'ring-2 ring-yellow-400/70 ring-inset z-10 !bg-yellow-50/90 dark:!bg-yellow-900/40 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.05] rounded-md'
-                              : isHighlighted
-                                ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60 shadow-[0_0_20px_rgba(59,130,246,0.2)] scale-[1.05] rounded-md'
-                                : '';
+                              : isHighlighted && (activeHighlight?.category === 'permissions' || activeHighlight?.category === 'latePermissions')
+                                ? 'ring-2 ring-cyan-400/70 ring-inset z-10 !bg-cyan-50/90 dark:!bg-cyan-900/55 shadow-[0_0_20px_rgba(6,182,212,0.25)] scale-[1.05] rounded-md'
+                                : isHighlighted && activeHighlight?.category === 'earlyPermissions'
+                                  ? 'ring-2 ring-teal-400/70 ring-inset z-10 !bg-teal-50/90 dark:!bg-teal-900/55 shadow-[0_0_20px_rgba(20,184,166,0.25)] scale-[1.05] rounded-md'
+                                  : isHighlighted
+                                    ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60 shadow-[0_0_20px_rgba(59,130,246,0.2)] scale-[1.05] rounded-md'
+                                    : '';
                         const dayBadgeBg =
                           activeHighlight?.category === 'lopLeaves'
                             ? 'bg-rose-600/90'
                             : activeHighlight?.category === 'paidLeaves'
                               ? 'bg-yellow-600/90'
-                              : 'bg-blue-600/90';
+                              : activeHighlight?.category === 'permissions' || activeHighlight?.category === 'latePermissions'
+                                ? 'bg-cyan-600/90'
+                                : activeHighlight?.category === 'earlyPermissions'
+                                  ? 'bg-teal-600/90'
+                                  : 'bg-blue-600/90';
 
                         return (
                           <td
@@ -3823,13 +3854,26 @@ export default function AttendancePage() {
                                   {item.summary?.totalPermissionCount ?? dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
                                 </td>
                               );
-                            case 'permissionDeductionDays':
+                            case 'latePermissions':
                               return (
                                 <td
                                   key={colKey}
-                                  className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300 w-[100px] min-w-[100px]`}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'latePermissions')}
+                                  className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-cyan-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'latePermissions' ? 'ring-2 ring-cyan-400 ring-inset bg-white dark:bg-cyan-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                  title="Late-in permissions count"
                                 >
-                                  {Number(item.summary?.totalPermissionDeductionDays ?? item.summary?.permissionDeductionBreakdown?.full_day ?? 0).toFixed(2).replace(/\.?0+$/, '') || '0'}
+                                  {item.summary?.lateInPermissionCount ?? 0}
+                                </td>
+                              );
+                            case 'earlyPermissions':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'earlyPermissions')}
+                                  className={`${edge} border-slate-200 bg-teal-50 px-2 py-2 text-center text-[11px] font-bold text-teal-700 dark:border-slate-700 dark:bg-teal-900/20 dark:text-teal-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-teal-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'earlyPermissions' ? 'ring-2 ring-teal-400 ring-inset bg-white dark:bg-teal-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                  title="Early-out permissions count"
+                                >
+                                  {item.summary?.earlyOutPermissionCount ?? 0}
                                 </td>
                               );
                             case 'lateEarly':

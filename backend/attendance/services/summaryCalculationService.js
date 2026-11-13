@@ -399,6 +399,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       lateIn: [],
       earlyOut: [],
       permissions: [],
+      latePermissions: [],
+      earlyPermissions: [],
       absent: [],
     };
 
@@ -834,6 +836,101 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     const payRegisterDaySnapshots = [];
     const partialPolicyMetaByDate = new Map();
+
+    // 0b. Pre-load and resolve approved permissions within monthly caps
+    const Permission = require('../../permissions/model/Permission');
+    const approvedPermissions = await Permission.find({
+      employeeId,
+      status: { $in: ['approved', 'checked_out', 'checked_in'] },
+      date: { $gte: startDateStr, $lte: endDateStr },
+      isActive: true,
+    }).select('permissionHours date permissionType creationSource comments').sort({ date: 1, createdAt: 1 });
+
+    let isSeparateMode = false;
+    let lateInMonthlyCap = null;
+    let earlyOutMonthlyCap = null;
+    let combinedMonthlyCap = null;
+    try {
+      const AttendanceDeductionSettings = require('../model/AttendanceDeductionSettings');
+      const attDed = await AttendanceDeductionSettings.getActiveSettings();
+      const attRules = attDed?.deductionRules || {};
+      isSeparateMode = attRules.evaluationMode === 'separate';
+      if (isSeparateMode) {
+        if (attRules.freeLateInsPerMonth != null && Number(attRules.freeLateInsPerMonth) > 0) {
+          lateInMonthlyCap = Number(attRules.freeLateInsPerMonth);
+        }
+        if (attRules.freeEarlyOutsPerMonth != null && Number(attRules.freeEarlyOutsPerMonth) > 0) {
+          earlyOutMonthlyCap = Number(attRules.freeEarlyOutsPerMonth);
+        }
+      } else if (attRules.freeAllowedPerMonth != null && Number(attRules.freeAllowedPerMonth) > 0) {
+        combinedMonthlyCap = Number(attRules.freeAllowedPerMonth);
+      }
+    } catch {
+      // ignore
+    }
+
+    let totalPermissionHours = 0;
+    let lateInPermissionCount = 0;
+    let earlyOutPermissionCount = 0;
+    let totalPermissionCount = 0;
+    const permissionsByDateAndType = new Set();
+
+    for (const permission of approvedPermissions) {
+      const permDate = toNormalizedDateStr(permission.date);
+      if (permDate && isOutsideEmploymentBound(permDate)) continue;
+
+      const pType = permission.permissionType;
+      let exceedsQuota = false;
+      if (isSeparateMode) {
+        if (pType === 'late_in' && lateInMonthlyCap != null && lateInPermissionCount >= lateInMonthlyCap) {
+          exceedsQuota = true;
+        } else if (pType === 'early_out' && earlyOutMonthlyCap != null && earlyOutPermissionCount >= earlyOutMonthlyCap) {
+          exceedsQuota = true;
+        }
+      } else if (combinedMonthlyCap != null && totalPermissionCount >= combinedMonthlyCap) {
+        exceedsQuota = true;
+      }
+
+      if (exceedsQuota) {
+        if (permission.creationSource === 'auto_edge' && typeof permission.save === 'function') {
+          permission.isActive = false;
+          permission.status = 'rejected';
+          permission.comments = (permission.comments || '') + ' [Deactivated: Exceeds monthly permission cap]';
+          await permission.save().catch(() => {});
+        }
+        continue;
+      }
+
+      totalPermissionHours += permission.permissionHours || 0;
+      totalPermissionCount++;
+      if (pType === 'late_in') {
+        lateInPermissionCount++;
+      } else if (pType === 'early_out') {
+        earlyOutPermissionCount++;
+      }
+
+      if (permDate) {
+        permissionsByDateAndType.add(`${permDate}_${pType}`);
+        if (!contributingDates.permissions.some(cd => cd.date === permDate)) {
+          contributingDates.permissions.push({ date: permDate, value: permission.permissionHours, label: 'Perm' });
+        }
+        if (pType === 'late_in') {
+          const existing = contributingDates.latePermissions.find(cd => cd.date === permDate);
+          if (existing) {
+            existing.value = (Number(existing.value) || 0) + 1;
+          } else {
+            contributingDates.latePermissions.push({ date: permDate, value: 1, label: 'Late Perm' });
+          }
+        } else if (pType === 'early_out') {
+          const existing = contributingDates.earlyPermissions.find(cd => cd.date === permDate);
+          if (existing) {
+            existing.value = (Number(existing.value) || 0) + 1;
+          } else {
+            contributingDates.earlyPermissions.push({ date: permDate, value: 1, label: 'Early Perm' });
+          }
+        }
+      }
+    }
 
     // Process each day
     let totalPresentDays = 0;
@@ -1460,19 +1557,27 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         });
       }
 
-      // 3. Lates & Early Outs (only on PRESENT days)
-      if (day.attendance && (day.attendance.status === 'PRESENT' || day.attendance.status === 'OD') && !day.isWO && !day.isHOL) {
+      // 3. Lates & Early Outs (on PRESENT, HALF_DAY, OD, and PARTIAL attended days)
+      const isAttendedDay =
+        day.attendance &&
+        !day.isWO &&
+        !day.isHOL &&
+        ['PRESENT', 'HALF_DAY', 'OD', 'PARTIAL'].includes(day.attendance.status);
+
+      if (isAttendedDay) {
         const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
         const hourOdWaiver = resolveDayLateEarlyWaiver(day);
         const lateInWaved = hourOdWaiver.lateInWaved;
         const earlyOutWaved = hourOdWaiver.earlyOutWaved;
+        const hasLateInPermission = permissionsByDateAndType.has(`${dStr}_late_in`);
+        const hasEarlyOutPermission = permissionsByDateAndType.has(`${dStr}_early_out`);
 
         // Late In
         let dayLateMin = (shifts.length > 0)
           ? shifts.reduce((sum, s) => sum + (Number(s.lateInMinutes) || 0), 0)
           : (Number(day.attendance.totalLateInMinutes) || 0);
 
-        if (dayLateMin > 0 && !lateInWaved) {
+        if (dayLateMin > 0 && !lateInWaved && !hasLateInPermission) {
           totalLateInMinutes += dayLateMin;
           lateInCount++;
         }
@@ -1482,31 +1587,36 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           ? shifts.reduce((sum, s) => sum + (Number(s.earlyOutMinutes) || 0), 0)
           : (Number(day.attendance.totalEarlyOutMinutes) || 0);
 
-        if (dayEarlyMin > 0 && !earlyOutWaved) {
+        // On HALF_DAY, earlyOutMinutes > 240 (e.g. 400+ min) represents the second half absence already credited as half day, not an early-out penalty
+        if (day.attendance.status === 'HALF_DAY' && dayEarlyMin > 240) {
+          dayEarlyMin = 0;
+        }
+
+        if (dayEarlyMin > 0 && !earlyOutWaved && !hasEarlyOutPermission) {
           totalEarlyOutMinutes += dayEarlyMin;
           earlyOutCount++;
         }
 
         // Combined Highlighting Contribution (Late + Early)
-        const isLate = dayLateMin > 0 && !lateInWaved;
-        const isEarly = dayEarlyMin > 0 && !earlyOutWaved;
+        const isLate = dayLateMin > 0 && !lateInWaved && !hasLateInPermission;
+        const isEarly = dayEarlyMin > 0 && !earlyOutWaved && !hasEarlyOutPermission;
 
         if (isLate || isEarly) {
           let countContribution = 0;
           if (isLate) countContribution++;
           if (isEarly) countContribution++;
 
+          const label = countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early');
           contributingDates.lateIn.push({
             date: dStr,
             value: countContribution,
-            label: countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early')
+            label,
           });
-          // Also set in earlyOut for backwards compatibility/consistency if needed, 
-          // but clicking "Lates" (lateIn category) will show both now.
+          // Also set in earlyOut for backwards compatibility/consistency
           contributingDates.earlyOut.push({
             date: dStr,
             value: countContribution,
-            label: countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early')
+            label,
           });
         }
       }
@@ -1569,26 +1679,11 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
     summary.totalExtraHours = Math.round(totalExtraHours * 100) / 100;
 
-    // 9. Calculate total permission hours
-    const Permission = require('../../permissions/model/Permission');
-    const approvedPermissions = await Permission.find({
-      employeeId,
-      status: { $in: ['approved', 'checked_out', 'checked_in'] },
-      date: { $gte: startDateStr, $lte: endDateStr },
-      isActive: true,
-    }).select('permissionHours date').lean();
-
-    let totalPermissionHours = 0;
-    for (const permission of approvedPermissions) {
-      const permDate = toNormalizedDateStr(permission.date);
-      if (permDate && isOutsideEmploymentBound(permDate)) continue;
-      totalPermissionHours += permission.permissionHours || 0;
-      if (permDate && !contributingDates.permissions.some(cd => cd.date === permDate)) {
-        contributingDates.permissions.push({ date: permDate, value: permission.permissionHours, label: 'Perm' });
-      }
-    }
+    // 9. Assign total permission hours & counts (pre-calculated before daily loop)
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100;
-    summary.totalPermissionCount = approvedPermissions.length;
+    summary.totalPermissionCount = totalPermissionCount;
+    summary.lateInPermissionCount = lateInPermissionCount;
+    summary.earlyOutPermissionCount = earlyOutPermissionCount;
 
     // Early Out Deductions Summary
     let totalEarlyOutDeductionDays = 0;
@@ -1619,7 +1714,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     };
 
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;
-    summary.lateOrEarlyCount = summary.lateInCount + summary.earlyOutCount;
+    summary.lateOrEarlyCount = contributingDates.lateIn.reduce((sum, cd) => sum + (Number(cd.value) || 0), 0);
 
     // Permission Deductions Summary (using deductionService for consistency)
     let totalPermissionDeductionDays = 0;

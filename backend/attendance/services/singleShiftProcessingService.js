@@ -736,9 +736,18 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
     }
 
     const processedShifts = [pShift];
-    const totalPayableShifts = pShift.payableShift || 0;
-    const status = pShift.status === 'PRESENT' || totalPayableShifts >= 1 ? 'PRESENT'
+    let totalPayableShifts = pShift.payableShift || 0;
+    let status = pShift.status === 'PRESENT' || totalPayableShifts >= 1 ? 'PRESENT'
       : pShift.status === 'HALF_DAY' ? 'HALF_DAY' : 'ABSENT';
+
+    // Half-day safety rule: if workingHours >= 3.75 hours (4.0h - 15m grace), grant HALF_DAY status and 0.5 payable
+    const halfDayMinWithGrace = 3.75;
+    if (status === 'ABSENT' && ((pShift.workingHours || 0) >= halfDayMinWithGrace - 1e-6 || totalPayableShifts >= 0.45)) {
+      status = 'HALF_DAY';
+      pShift.status = 'HALF_DAY';
+      pShift.payableShift = Math.max(pShift.payableShift || 0, 0.5 * basePayable);
+      totalPayableShifts = pShift.payableShift;
+    }
 
     const updateData = {
       shifts: processedShifts,

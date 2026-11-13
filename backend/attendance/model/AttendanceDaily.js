@@ -695,7 +695,19 @@ attendanceDailySchema.pre('save', async function () {
         totalPayableWithOD,
         odPayableContribution,
         hasPunches,
+        totalWorkingHours: this.totalWorkingHours,
       });
+
+      // If status resolved to HALF_DAY from working hours / punches, ensure payableShifts is at least 0.5
+      if (this.status === 'HALF_DAY') {
+        if (this.payableShifts == null || this.payableShifts < 0.5) {
+          this.payableShifts = 0.5;
+        }
+        if (this.shifts && this.shifts.length === 1 && (this.shifts[0].status === 'ABSENT' || !this.shifts[0].payableShift)) {
+          this.shifts[0].status = 'HALF_DAY';
+          this.shifts[0].payableShift = 0.5;
+        }
+      }
     }
     applyRosterHalfNonWorkingToAttendanceDaily(this, rosterEntry, getWorkedHalfFromShifts);
 

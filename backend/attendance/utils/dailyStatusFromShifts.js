@@ -9,10 +9,12 @@ function resolveDailyStatusFromShiftTotals({
   totalPayableWithOD,
   odPayableContribution,
   hasPunches,
+  totalWorkingHours,
 }) {
   if (hasPresentShift || totalPayableWithOD >= 0.95) return 'PRESENT';
   if (odPayableContribution > 0) return 'OD';
-  if (totalPayableWithOD >= 0.45) return 'HALF_DAY';
+  // Standard 4.0h half-day with 15m grace: 3.75 hours (3h 45m)
+  if (totalPayableWithOD >= 0.45 || (Number(totalWorkingHours) >= 3.75 - 1e-6 && hasPunches)) return 'HALF_DAY';
   return hasPunches ? 'PARTIAL' : 'ABSENT';
 }
 

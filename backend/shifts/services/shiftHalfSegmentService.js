@@ -221,13 +221,12 @@ const calculateSegmentCoveragePercentage = (segment, inTime, outTime) => {
 };
 
 /**
- * Evaluate one half: raw window overlap first, then break credit (+ optional overflow) if work spans the break.
+ * Evaluate one half: raw window overlap first, then actual break worked minutes (+ optional overflow) if work spans the break.
  */
 const evaluateHalfPresenceWithBreakCredit = ({
   rawMinutes,
   minMinutes,
-  workedThroughBreak,
-  fullBreakMinutes,
+  breakWorkedMinutes = 0,
   overflowMinutes = 0,
   effectiveGrace = 0,
 }) => {
@@ -239,11 +238,7 @@ const evaluateHalfPresenceWithBreakCredit = ({
 
   if (rawMinutes >= effectiveMin) return { present: true, credit: rawMinutes };
 
-  if (!workedThroughBreak) {
-    return { present: false, credit: rawMinutes };
-  }
-
-  let credit = rawMinutes + fullBreakMinutes;
+  let credit = rawMinutes + (breakWorkedMinutes || 0);
   if (credit < effectiveMin && overflowMinutes > 0) {
     const needed = effectiveMin - credit;
     credit += Math.min(overflowMinutes, needed);
@@ -285,8 +280,8 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
   const firstHalfIsDominant = firstHalfCoveragePercent >= secondHalfCoveragePercent;
   
   const totalWorkMinutes = Math.round((finalOutTime.getTime() - new Date(inTime).getTime()) / 60000);
-  const fullBreakMinutes = breakSegment
-    ? Math.round((breakSegment.range.endDate.getTime() - breakSegment.range.startDate.getTime()) / 60000)
+  const breakWorkedMinutes = breakSegment
+    ? getOverlapMinutes(breakSegment.range, attendanceRange)
     : 0;
   
   const workedThroughBreak = breakSegment
@@ -315,8 +310,7 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
   const firstHalfEval = evaluateHalfPresenceWithBreakCredit({
     rawMinutes: firstHalfRawMinutes,
     minMinutes: firstHalfMinMinutes,
-    workedThroughBreak,
-    fullBreakMinutes,
+    breakWorkedMinutes,
     overflowMinutes: firstHalfOverflowMinutes,
     effectiveGrace: firstHalfEffectiveGrace,
   });
@@ -324,8 +318,7 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
   const secondHalfEval = evaluateHalfPresenceWithBreakCredit({
     rawMinutes: secondHalfRawMinutes,
     minMinutes: secondHalfMinMinutes,
-    workedThroughBreak,
-    fullBreakMinutes,
+    breakWorkedMinutes,
     effectiveGrace: secondHalfEffectiveGrace,
   });
 
@@ -336,11 +329,16 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
 
   // Dominant fallback: only when neither half met minimum on its own (with break credit)
   if (!firstHalfPresent && !secondHalfPresent) {
-    const dominantCredit = totalWorkMinutes + (workedThroughBreak ? fullBreakMinutes : 0);
+    const dominantCredit = totalWorkMinutes;
     const dominantMin = firstHalfIsDominant ? firstHalfMinMinutes : secondHalfMinMinutes;
     const dominantGrace = firstHalfIsDominant ? firstHalfEffectiveGrace : secondHalfEffectiveGrace;
+    const halfDayBenchmarkMins = 240; // 4 hours standard half-day benchmark
 
-    if (dominantCredit >= Math.max(0, dominantMin - dominantGrace)) {
+    if (
+      dominantCredit >= Math.max(0, dominantMin - dominantGrace) ||
+      dominantCredit >= Math.max(0, halfDayBenchmarkMins - dominantGrace) ||
+      totalWorkMinutes >= halfDayBenchmarkMins
+    ) {
       if (firstHalfIsDominant) {
         firstHalfPresent = true;
         firstHalfCredit = dominantCredit;

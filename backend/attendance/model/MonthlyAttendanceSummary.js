@@ -174,6 +174,16 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    lateInPermissionCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    earlyOutPermissionCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
 
     // NEW: Early-Out / Late-In Fields
     // Total early-out minutes in this month

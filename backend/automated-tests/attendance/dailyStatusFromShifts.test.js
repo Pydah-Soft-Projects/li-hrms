@@ -35,4 +35,28 @@ describe('resolveDailyStatusFromShiftTotals', () => {
       })
     ).toBe('HALF_DAY');
   });
+
+  test('completed 4 hours working with punches → HALF_DAY even if shift totalPayable was 0', () => {
+    expect(
+      resolveDailyStatusFromShiftTotals({
+        hasPresentShift: false,
+        totalPayableWithOD: 0,
+        odPayableContribution: 0,
+        hasPunches: true,
+        totalWorkingHours: 4.12,
+      })
+    ).toBe('HALF_DAY');
+  });
+
+  test('completed 3h 56m working with 15m grace (3.93 >= 3.75) → HALF_DAY even if shift totalPayable was 0', () => {
+    expect(
+      resolveDailyStatusFromShiftTotals({
+        hasPresentShift: false,
+        totalPayableWithOD: 0,
+        odPayableContribution: 0,
+        hasPunches: true,
+        totalWorkingHours: 3.93,
+      })
+    ).toBe('HALF_DAY');
+  });
 });

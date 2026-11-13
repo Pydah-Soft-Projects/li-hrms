@@ -11,7 +11,6 @@ export const WORKSPACE_COMPLETE_AGGREGATE_KEYS = [
   'otHours',
   'extraHours',
   'permissions',
-  'permissionDeductionDays',
   'lateEarly',
   'attDed',
   'payableShifts',
@@ -30,7 +29,6 @@ export const SUPERADMIN_COMPLETE_AGGREGATE_KEYS = [
   'otHours',
   'extraHours',
   'permissions',
-  'permissionDeductionDays',
   'lateEarly',
   'attDed',
   'payableShifts',
@@ -38,7 +36,7 @@ export const SUPERADMIN_COMPLETE_AGGREGATE_KEYS = [
 
 export type SuperadminCompleteAggregateKey = (typeof SUPERADMIN_COMPLETE_AGGREGATE_KEYS)[number];
 
-export const WORKSPACE_COMPLETE_AGGREGATE_LABELS: Record<WorkspaceCompleteAggregateKey, string> = {
+export const WORKSPACE_COMPLETE_AGGREGATE_LABELS: Record<string, string> = {
   present: 'Days present',
   leaves: 'Leaves',
   od: 'OD',
@@ -49,13 +47,15 @@ export const WORKSPACE_COMPLETE_AGGREGATE_LABELS: Record<WorkspaceCompleteAggreg
   otHours: 'OT hours',
   extraHours: 'Extra hours',
   permissions: 'Permissions',
+  latePermissions: 'Late Perms',
+  earlyPermissions: 'Early Perms',
   permissionDeductionDays: 'Permission deduction',
   lateEarly: 'Late / early',
   attDed: 'Attendance deduction',
   payableShifts: 'Payable shifts',
 };
 
-export const SUPERADMIN_COMPLETE_AGGREGATE_LABELS: Record<SuperadminCompleteAggregateKey, string> = {
+export const SUPERADMIN_COMPLETE_AGGREGATE_LABELS: Record<string, string> = {
   present: 'Days present',
   leaves: 'Leaves',
   od: 'OD',
@@ -66,6 +66,8 @@ export const SUPERADMIN_COMPLETE_AGGREGATE_LABELS: Record<SuperadminCompleteAggr
   otHours: 'OT hours',
   extraHours: 'Extra hours',
   permissions: 'Permissions',
+  latePermissions: 'Late Perms',
+  earlyPermissions: 'Early Perms',
   permissionDeductionDays: 'Permission deduction',
   lateEarly: 'Late / early',
   attDed: 'Attendance deduction',
@@ -91,15 +93,37 @@ export function normalizeCompleteSummaryColumns(
 }
 
 export function workspaceVisibleCompleteKeys(
-  org: Record<SuperadminCompleteAggregateKey, boolean>
-): WorkspaceCompleteAggregateKey[] {
-  return WORKSPACE_COMPLETE_AGGREGATE_KEYS.filter((k) => org[k]);
+  org: Record<SuperadminCompleteAggregateKey, boolean>,
+  evaluationMode?: string
+): (WorkspaceCompleteAggregateKey | 'latePermissions' | 'earlyPermissions')[] {
+  const isSeparate = evaluationMode === 'separate';
+  const raw = WORKSPACE_COMPLETE_AGGREGATE_KEYS.filter((k) => org[k]);
+  const result: (WorkspaceCompleteAggregateKey | 'latePermissions' | 'earlyPermissions')[] = [];
+  for (const k of raw) {
+    if (k === 'permissions' && isSeparate) {
+      result.push('latePermissions', 'earlyPermissions');
+    } else {
+      result.push(k);
+    }
+  }
+  return result;
 }
 
 export function superadminVisibleCompleteKeys(
-  org: Record<SuperadminCompleteAggregateKey, boolean>
-): SuperadminCompleteAggregateKey[] {
-  return SUPERADMIN_COMPLETE_AGGREGATE_KEYS.filter((k) => org[k]);
+  org: Record<SuperadminCompleteAggregateKey, boolean>,
+  evaluationMode?: string
+): (SuperadminCompleteAggregateKey | 'latePermissions' | 'earlyPermissions')[] {
+  const isSeparate = evaluationMode === 'separate';
+  const raw = SUPERADMIN_COMPLETE_AGGREGATE_KEYS.filter((k) => org[k]);
+  const result: (SuperadminCompleteAggregateKey | 'latePermissions' | 'earlyPermissions')[] = [];
+  for (const k of raw) {
+    if (k === 'permissions' && isSeparate) {
+      result.push('latePermissions', 'earlyPermissions');
+    } else {
+      result.push(k);
+    }
+  }
+  return result;
 }
 
 export function countVisibleCompleteColumns(

@@ -240,6 +240,30 @@ export function resolveAttendanceHighlightDateMap(
         map.set(dateStr, { value: v, label: v > 0 ? `PT (${v})` : 'PARTIAL' });
       }
     }
+  } else if (category === 'latePermissions' && dailyAttendance) {
+    for (const [dateStr, record] of Object.entries(dailyAttendance)) {
+      const rec = record as any;
+      if (!rec) continue;
+      const requests = Array.isArray(rec.permissionRequests) ? rec.permissionRequests : [];
+      const count = requests.filter((pr: any) => pr?.permissionType === 'late_in' || pr?.type === 'late_in').length;
+      if (count > 0) {
+        map.set(dateStr, { value: count, label: 'Late' });
+      } else if (rec.permissionType === 'late_in' || (rec.hasLateInPermission && rec.hasPermission)) {
+        map.set(dateStr, { value: 1, label: 'Late' });
+      }
+    }
+  } else if (category === 'earlyPermissions' && dailyAttendance) {
+    for (const [dateStr, record] of Object.entries(dailyAttendance)) {
+      const rec = record as any;
+      if (!rec) continue;
+      const requests = Array.isArray(rec.permissionRequests) ? rec.permissionRequests : [];
+      const count = requests.filter((pr: any) => pr?.permissionType === 'early_out' || pr?.type === 'early_out').length;
+      if (count > 0) {
+        map.set(dateStr, { value: count, label: 'Early' });
+      } else if (rec.permissionType === 'early_out' || (rec.hasEarlyOutPermission && rec.hasPermission)) {
+        map.set(dateStr, { value: 1, label: 'Early' });
+      }
+    }
   }
   return map;
 }
@@ -289,13 +313,18 @@ export function highlightBadgeSubtitle(
   const L = (label || '').trim();
   if (!L) return null;
   if (category === 'absent') return null;
-  if (category === 'present' && L === 'P') return null;
+  if (category === 'present' && (L === 'P' || L === 'PD' || L === 'PN' || L === 'PH' || L === 'PP')) return null;
   if (category === 'payableShifts' && L === 'Pay') return null;
   if (category === 'ods' && L === 'OD') return null;
   if (category === 'partial' && L === 'PARTIAL') return null;
   if (category === 'weeklyOffs' && (L === 'WO' || L === 'WEEK_OFF')) return null;
   if (category === 'holidays' && (L === 'HOL' || L === 'HOLIDAY')) return null;
-  if (category === 'permissions' && L === 'Perm') return null;
+  if (
+    (category === 'permissions' || category === 'latePermissions' || category === 'earlyPermissions') &&
+    (L === 'Perm' || L === 'Late' || L === 'Early' || L === 'Late Perm' || L === 'Early Perm')
+  ) {
+    return null;
+  }
   if (category === 'otHours' && /^OT\s*\(/i.test(L)) return null;
   if (category === 'extraHours' && /^Ex\s*\(/i.test(L)) return null;
   if (category === 'leaves' || category === 'paidLeaves' || category === 'lopLeaves') {

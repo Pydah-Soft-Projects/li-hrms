@@ -200,7 +200,7 @@ function applyStatusAndPayableFromResolution(pShift, {
   return pShift;
 }
 
-function applySegmentFallbackStatus(pShift, segmentResult, basePayable) {
+function applySegmentFallbackStatus(pShift, segmentResult, basePayable, graceOpts = {}) {
   const segments = segmentResult?.shiftSegments || [];
   const segmentPayable = segments.reduce(
     (sum, seg) => sum + (seg.present ? (Number(seg.payableShifts) || 0) : 0),
@@ -221,6 +221,17 @@ function applySegmentFallbackStatus(pShift, segmentResult, basePayable) {
   } else if (segmentPayable > 0 && segmentPayable < 0.5) {
     status = 'PARTIAL';
     payableShift = segmentPayable * basePayable;
+  } else if (segmentPayable === 0) {
+    // Half-day safety rule with 15-minute grace: 4.0 hours standard - 15m grace = 3.75 hours (3h 45m)
+    const graceVal = pShift.gracePeriod ?? graceOpts?.globalLateInGrace ?? 15;
+    const halfDayMinWithGrace = Math.max(3.0, (240 - graceVal) / 60);
+    const workedHours = Number(pShift.workingHours ?? pShift.punchHours) || 0;
+    if (workedHours >= halfDayMinWithGrace - 1e-6) {
+      status = 'HALF_DAY';
+      payableShift = 0.5 * basePayable;
+      pShift.earlyOutMinutes = null;
+      pShift.isEarlyOut = false;
+    }
   }
 
   return applyStatusAndPayableFromResolution(pShift, {
@@ -354,12 +365,15 @@ async function resolveShiftPresence({
   // Step 3 — half-segment break-aware fallback
   if (hasHalves && effectiveShiftDoc) {
     const segmentResult = getShiftSegmentAssignment(effectiveShiftDoc, date, inTime, outTime, graceOpts);
-    return applySegmentFallbackStatus(pShift, segmentResult, basePayable);
+    return applySegmentFallbackStatus(pShift, segmentResult, basePayable, graceOpts);
   }
 
   // No half segments on shift master — half-day by late-in/early-out (then punch-gap), IN-thumb last
   const PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN = 0.4;
-  if (statusDuration >= expectedHours * PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN) {
+  const graceVal = pShift.gracePeriod ?? effectiveShiftDoc?.gracePeriod ?? graceOpts?.globalLateInGrace ?? 15;
+  const HALF_DAY_MIN_HOURS = Math.max(3.0, (240 - graceVal) / 60); // 3.75 hours (3h 45m) with 15-minute grace
+  const halfDayThresholdHours = Math.min(HALF_DAY_MIN_HOURS, expectedHours * PARTIAL_IN_OUT_HALF_DAY_HOURS_RATIO_MIN);
+  if (statusDuration >= halfDayThresholdHours || statusDuration >= HALF_DAY_MIN_HOURS - 1e-6) {
     const startStr = pShift.shiftStartTime || effectiveShiftDoc?.startTime || '09:00';
     const endStr = pShift.shiftEndTime || effectiveShiftDoc?.endTime || '18:00';
     // Prefer late-in vs early-out (and punch-gap vs shift bounds when tied) over IN-vs-midpoint.

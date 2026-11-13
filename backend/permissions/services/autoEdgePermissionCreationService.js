@@ -498,14 +498,36 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
     }
 
     // Resolve department/global permission limits (cap)
-    const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
+    const { getResolvedPermissionSettings, getResolvedAttendanceSettings } = require('../../departments/controllers/departmentSettingsController');
     const resolvedPermSettings = await getResolvedPermissionSettings(deptId, divId);
+    const resolvedAttSettings = await getResolvedAttendanceSettings(deptId, divId);
+
+    const attRules = resolvedAttSettings?.deductionRules || {};
+    const isSeparateMode = attRules.evaluationMode === 'separate' || settings.useSameRulesForBoth === false;
 
     let monthlyCap = null;
-    if (resolvedPermSettings?.monthlyLimit != null && Number(resolvedPermSettings.monthlyLimit) > 0) {
-      monthlyCap = Number(resolvedPermSettings.monthlyLimit);
-    } else if (resolvedPermSettings?.deductionRules?.freeAllowedPerMonth != null && Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth) > 0) {
-      monthlyCap = Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth);
+    let lateInMonthlyCap = null;
+    let earlyOutMonthlyCap = null;
+
+    if (isSeparateMode) {
+      if (attRules.freeLateInsPerMonth != null && Number(attRules.freeLateInsPerMonth) > 0) {
+        lateInMonthlyCap = Number(attRules.freeLateInsPerMonth);
+      } else if (resolvedPermSettings?.monthlyLimit != null && Number(resolvedPermSettings.monthlyLimit) > 0) {
+        lateInMonthlyCap = Number(resolvedPermSettings.monthlyLimit);
+      }
+      if (attRules.freeEarlyOutsPerMonth != null && Number(attRules.freeEarlyOutsPerMonth) > 0) {
+        earlyOutMonthlyCap = Number(attRules.freeEarlyOutsPerMonth);
+      } else if (resolvedPermSettings?.monthlyLimit != null && Number(resolvedPermSettings.monthlyLimit) > 0) {
+        earlyOutMonthlyCap = Number(resolvedPermSettings.monthlyLimit);
+      }
+    } else {
+      if (resolvedPermSettings?.monthlyLimit != null && Number(resolvedPermSettings.monthlyLimit) > 0) {
+        monthlyCap = Number(resolvedPermSettings.monthlyLimit);
+      } else if (resolvedPermSettings?.deductionRules?.freeAllowedPerMonth != null && Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth) > 0) {
+        monthlyCap = Number(resolvedPermSettings.deductionRules.freeAllowedPerMonth);
+      } else if (attRules.freeAllowedPerMonth != null && Number(attRules.freeAllowedPerMonth) > 0) {
+        monthlyCap = Number(attRules.freeAllowedPerMonth);
+      }
     }
 
     let perDayCap = null;
@@ -581,6 +603,12 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
     let priorMonthlyCount = existingMonthlyPerms.filter((p) => p.date < attendanceDaily.date).length;
     let todayCount = existingMonthlyPerms.filter((p) => p.date === attendanceDaily.date && p.creationSource !== AUTO_SOURCE).length;
 
+    let priorLateInCount = existingMonthlyPerms.filter((p) => p.date < attendanceDaily.date && p.permissionType === 'late_in').length;
+    let todayLateInCount = existingMonthlyPerms.filter((p) => p.date === attendanceDaily.date && p.permissionType === 'late_in' && p.creationSource !== AUTO_SOURCE).length;
+
+    let priorEarlyOutCount = existingMonthlyPerms.filter((p) => p.date < attendanceDaily.date && p.permissionType === 'early_out').length;
+    let todayEarlyOutCount = existingMonthlyPerms.filter((p) => p.date === attendanceDaily.date && p.permissionType === 'early_out' && p.creationSource !== AUTO_SOURCE).length;
+
     const created = [];
     const finalized = [];
     let shouldRefreshAttendance = deactivatedStale;
@@ -634,6 +662,13 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       }
 
       const currentTotalMonthly = priorMonthlyCount + todayCount;
+      const currentTotalForType = isSeparateMode
+        ? (edge.permissionType === 'late_in' ? priorLateInCount + todayLateInCount : priorEarlyOutCount + todayEarlyOutCount)
+        : currentTotalMonthly;
+
+      const capForType = isSeparateMode
+        ? (edge.permissionType === 'late_in' ? lateInMonthlyCap : earlyOutMonthlyCap)
+        : monthlyCap;
 
       // Check daily limit
       if (perDayCap != null && todayCount >= perDayCap) {
@@ -649,15 +684,15 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       }
 
       // Check monthly cap
-      if (monthlyCap != null && currentTotalMonthly >= monthlyCap) {
+      if (capForType != null && currentTotalForType >= capForType) {
         if (permission) {
           permission.isActive = false;
           permission.status = 'rejected';
-          permission.comments = (permission.comments || '') + ` [Deactivated: Exceeds monthly permission cap of ${monthlyCap}]`;
+          permission.comments = (permission.comments || '') + ` [Deactivated: Exceeds monthly ${isSeparateMode ? edge.permissionType + ' ' : ''}permission cap of ${capForType}]`;
           await permission.save();
           shouldRefreshAttendance = true;
         }
-        console.log(`[AutoEdgePermissionCreation] Employee ${employeeNumber} reached monthly cap (${currentTotalMonthly}/${monthlyCap}) for ${attendanceDaily.date}. Skipping ${edge.permissionType}.`);
+        console.log(`[AutoEdgePermissionCreation] Employee ${employeeNumber} reached monthly ${isSeparateMode ? edge.permissionType + ' ' : ''}cap (${currentTotalForType}/${capForType}) for ${attendanceDaily.date}. Skipping ${edge.permissionType}.`);
         continue;
       }
 
@@ -670,11 +705,15 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         });
         created.push(permission);
         todayCount++;
+        if (edge.permissionType === 'late_in') todayLateInCount++;
+        else if (edge.permissionType === 'early_out') todayEarlyOutCount++;
         shouldRefreshAttendance = true;
       } else {
         applyAutoPermissionEdgeFields(permission, attendanceDaily, edge);
         await permission.save();
         todayCount++;
+        if (edge.permissionType === 'late_in') todayLateInCount++;
+        else if (edge.permissionType === 'early_out') todayEarlyOutCount++;
         shouldRefreshAttendance = true;
       }
 

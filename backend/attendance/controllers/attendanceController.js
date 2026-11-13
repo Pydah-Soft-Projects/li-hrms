@@ -564,6 +564,17 @@ exports.getMonthlyAttendance = async (req, res) => {
       { mode: ctx.mode, includeContributingDates: false }
     );
 
+    let evaluationMode = 'combined';
+    try {
+      const AttendanceDeductionSettings = require('../model/AttendanceDeductionSettings');
+      const attDed = await AttendanceDeductionSettings.getActiveSettings();
+      if (attDed?.deductionRules?.evaluationMode) {
+        evaluationMode = attDed.deductionRules.evaluationMode;
+      }
+    } catch {
+      // default combined
+    }
+
     res.status(200).json({
       success: true,
       data: employeesWithAttendance,
@@ -579,6 +590,7 @@ exports.getMonthlyAttendance = async (req, res) => {
       startDate: ctx.periodStartStr,
       endDate: ctx.periodEndStr,
       mode: ctx.mode,
+      evaluationMode,
     });
   } catch (error) {
     console.error('Error fetching monthly attendance:', error);
