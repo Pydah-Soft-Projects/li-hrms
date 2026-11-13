@@ -7,6 +7,7 @@ const Shift = require('../../shifts/model/Shift');
 const Settings = require('../../settings/model/Settings');
 const { getShiftSegmentAssignment } = require('../../shifts/services/shiftHalfSegmentService');
 const Employee = require('../../employees/model/Employee');
+require('../../departments/model/Division');
 const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
 
 async function resolveGraceFromSettings() {
@@ -75,6 +76,17 @@ async function enrichShiftRecordWithSegments(pShift, dateStr, graceOpts, employe
   pShift.segmentContinuityWarnings = seg.continuityWarnings || [];
   pShift.segmentTotalPayableShifts =
     typeof seg.totalPayableShifts === 'number' ? seg.totalPayableShifts : null;
+
+  const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+  const shiftGrace = effectiveShiftDoc.gracePeriod ?? 15;
+  const late = calculateLateIn(inTime, effectiveShiftDoc.startTime, shiftGrace, dateStr, opts.globalLateInGrace);
+  pShift.lateInMinutes = late > 0 ? late : null;
+  pShift.isLateIn = late > 0;
+  if (outTime && effectiveShiftDoc.endTime) {
+    const early = calculateEarlyOut(outTime, effectiveShiftDoc.endTime, effectiveShiftDoc.startTime, dateStr, opts.globalEarlyOutGrace, shiftGrace);
+    pShift.earlyOutMinutes = early > 0 ? early : null;
+    pShift.isEarlyOut = early > 0;
+  }
 
   return pShift;
 }

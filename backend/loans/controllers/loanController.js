@@ -358,9 +358,7 @@ exports.getGuarantorCandidates = async (req, res) => {
       is_active: guarantorRules.activeEmployeeOnly !== false ? true : { $in: [true, false] },
       _id: { $ne: applicantEmployee._id },
     };
-    if (guarantorRules.sameDivisionOnly !== false && applicantEmployee.division_id) {
-      baseFilter.division_id = applicantEmployee.division_id;
-    }
+    // Guarantors are global across all divisions for all users
     if (guarantorRules.sameDepartmentOnly && applicantEmployee.department_id) {
       baseFilter.department_id = applicantEmployee.department_id;
     }
@@ -381,6 +379,7 @@ exports.getGuarantorCandidates = async (req, res) => {
       .select('emp_no employee_name first_name last_name department_id designation_id division_id gross_salary date_of_joining is_active')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
+      .populate('division_id', 'name code')
       .sort(EMP_NO_SORT)
       .collation(EMP_NO_COLLATION)
       .limit(max);
@@ -395,7 +394,8 @@ exports.getGuarantorCandidates = async (req, res) => {
         employee_name: e.employee_name,
         department: e.department_id ? { _id: e.department_id._id, name: e.department_id.name } : null,
         designation: e.designation_id ? { _id: e.designation_id._id, name: e.designation_id.name } : null,
-        division_id: e.division_id || null,
+        division: e.division_id ? { _id: e.division_id._id, name: e.division_id.name, code: e.division_id.code } : null,
+        division_id: e.division_id?._id || e.division_id || null,
         gross_salary: e.gross_salary || 0,
         eligibility: {
           eligible: eligibility.eligible,

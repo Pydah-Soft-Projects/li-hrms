@@ -251,6 +251,45 @@ function formatHoursCell(hours: number | null | undefined): string {
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 
+export function isNightShiftRecord(r: any): boolean {
+  if (!r) return false;
+  const s0 = Array.isArray(r.shifts) && r.shifts.length > 0 ? r.shifts[0] : null;
+  const shiftName = String(s0?.shiftName || r.shiftId?.name || r.shiftName || '').trim();
+  if (/night/i.test(shiftName) || /^c([-_ ]|$)/i.test(shiftName)) {
+    return true;
+  }
+  const startTime = String(s0?.shiftStartTime || r.shiftId?.startTime || r.shiftStartTime || '').trim();
+  const endTime = String(s0?.shiftEndTime || r.shiftId?.endTime || r.shiftEndTime || '').trim();
+  if (startTime) {
+    const [sh, sm] = startTime.split(':').map(Number);
+    if (!isNaN(sh)) {
+      if (sh >= 18 || sh < 4) return true;
+      if (endTime) {
+        const [eh, em] = endTime.split(':').map(Number);
+        if (!isNaN(eh) && (sh * 60 + (sm || 0)) > (eh * 60 + (em || 0))) {
+          return true;
+        }
+      }
+    }
+  }
+  const punchTime = s0?.inTime || r.inTime;
+  if (punchTime) {
+    const d = new Date(punchTime);
+    const istMins = d.getUTCHours() * 60 + d.getUTCMinutes() + 330;
+    const istHour = Math.floor(istMins / 60) % 24;
+    if (istHour >= 18 || istHour < 4) return true;
+  }
+  return false;
+}
+
+export function resolvePresentExportCode(r: any, shiftObj?: any): string {
+  const pay = Number(shiftObj?.payableShift ?? shiftObj?.basePayable ?? r?.payableShifts ?? 1);
+  if (pay >= 1.75) return 'PP'; // Double Duty
+  if (pay >= 1.25 && pay < 1.75) return 'PH'; // 1.5 Duty
+  if (isNightShiftRecord(shiftObj || r)) return 'PN'; // Present Night
+  return 'PD'; // Present Day
+}
+
 /** Multi-line text aligned with Complete table day cells (status + optional late/early + shift/hours badges). */
 export function formatCompleteDayCellForExcel(record: any | null): string {
   if (!record) return '-';
@@ -271,9 +310,11 @@ export function formatCompleteDayCellForExcel(record: any | null): string {
 
   let text: string;
   if (splitStatus) {
-    text = `${splitStatus.top}\n${splitStatus.bottom}`;
+    const topText = splitStatus.top === 'P' ? resolvePresentExportCode(record) : splitStatus.top;
+    const bottomText = splitStatus.bottom === 'P' ? resolvePresentExportCode(record) : splitStatus.bottom;
+    text = `${topText}\n${bottomText}`;
   } else {
-    text = displayStatus;
+    text = displayStatus === 'P' ? resolvePresentExportCode(record) : displayStatus;
   }
   const lines = text.split('\n');
   lines[0] = `${lines[0]}${suffix}`;

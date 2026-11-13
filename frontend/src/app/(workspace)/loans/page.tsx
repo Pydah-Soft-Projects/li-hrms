@@ -3721,7 +3721,7 @@ export default function LoansPage() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-semibold truncate">{getEmployeeName(emp)}</div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{emp.emp_no} • {emp.department?.name || 'No Dept'}</div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{emp.emp_no} • {(emp as any).division?.name ? `${(emp as any).division.name} • ` : ''}{emp.department?.name || 'No Dept'}</div>
                                   </div>
                                 </button>
                               ))

@@ -4901,7 +4901,8 @@ export default function AttendancePage() {
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   {/* Late In Display - Support Multi-Shift */}
                   {(() => {
-                    const totalLate = Number(attendanceDetail.totalLateInMinutes || 0);
+                    const shiftLate = (attendanceDetail.shifts || []).reduce((acc: number, s: any) => acc + (Number(s.lateInMinutes) || 0), 0);
+                    const totalLate = attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? shiftLate : Number(attendanceDetail.totalLateInMinutes || 0);
                     if (totalLate > 0) {
                       return (
                         <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">
@@ -4917,7 +4918,8 @@ export default function AttendancePage() {
 
                   {/* Early Out Display - Support Multi-Shift */}
                   {(() => {
-                    const totalEarlyOut = Number(attendanceDetail.totalEarlyOutMinutes || 0);
+                    const shiftEarlyOut = (attendanceDetail.shifts || []).reduce((acc: number, s: any) => acc + (Number(s.earlyOutMinutes) || 0), 0);
+                    const totalEarlyOut = attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? shiftEarlyOut : Number(attendanceDetail.totalEarlyOutMinutes || 0);
                     if (totalEarlyOut > 0) {
                       return (
                         <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">

@@ -629,8 +629,9 @@ attendanceDailySchema.pre('save', async function () {
       totalOT += shift.otHours || 0;
       totalExtra += shift.extraHours || 0;
 
-      // Accumulate penalties - ONLY from PRESENT segments for multi-segment days
-      if (shift.shiftSegments && shift.shiftSegments.length > 0) {
+      // Accumulate penalties - ONLY from PRESENT segments for half-day shifts; full day uses shift-level penalties (respects shift grace / cap)
+      const isHalfDay = shift.status === 'HALF_DAY' || (typeof shift.payableShift === 'number' && shift.payableShift > 0 && shift.payableShift < 1);
+      if (isHalfDay && shift.shiftSegments && shift.shiftSegments.length > 0) {
         // Multi-segment day (half-day): only count penalties from PRESENT segments
         shift.shiftSegments.forEach((seg) => {
           if (seg.present) {
@@ -639,7 +640,7 @@ attendanceDailySchema.pre('save', async function () {
           }
         });
       } else {
-        // Single shift day: use shift-level penalties
+        // Full day / single shift: use shift-level penalties
         if (shift.lateInMinutes > 0) totalLateIn += shift.lateInMinutes;
         if (shift.earlyOutMinutes > 0) totalEarlyOut += shift.earlyOutMinutes;
       }

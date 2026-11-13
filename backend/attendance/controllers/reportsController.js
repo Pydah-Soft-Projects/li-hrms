@@ -24,10 +24,17 @@ const { buildLeftDuringPeriodOrClause, mergeScopeWithEmployeeClauses } = require
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        const [y, m, day] = d.split('-');
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mon = months[parseInt(m, 10) - 1] || m;
+        return `${day}-${mon}-${y.slice(-2)}`;
+    }
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = String(d.getDate()).padStart(2, '0');
-    const mon = months[d.getMonth()];
-    const yy = String(d.getFullYear()).slice(-2);
+    const dateObj = d instanceof Date ? d : new Date(d);
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const mon = months[dateObj.getMonth()];
+    const yy = String(dateObj.getFullYear()).slice(-2);
     return `${day}-${mon}-${yy}`;
 }
 
@@ -889,7 +896,8 @@ exports.exportAttendanceReport = async (req, res) => {
                 employee_name: (e.employee_name || '').trim() || e.emp_no,
                 department: e.department_id?.name || '',
                 division: e.division_id?.name || '',
-                leftDate: e.leftDate
+                leftDate: e.leftDate,
+                doj: e.doj
             };
             return acc;
         }, {});
@@ -1076,10 +1084,19 @@ exports.exportAttendanceReport = async (req, res) => {
             }
         }
 
+        const allDateKeys = [];
+        let currDate = dayjs(startDate).tz('Asia/Kolkata');
+        const lastDate = dayjs(endDate).tz('Asia/Kolkata');
+        while (!currDate.isAfter(lastDate, 'day')) {
+            allDateKeys.push(currDate.format('YYYY-MM-DD'));
+            currDate = currDate.add(1, 'day');
+        }
+
+        const allEmpIds = new Set([...Object.keys(empMap), ...Object.keys(byEmpDate)]);
         const groups = {};
-        for (const empId of Object.keys(byEmpDate)) {
+        for (const empId of allEmpIds) {
             const info = empMap[empId];
-            const key = `${info.division}\t${info.department}`;
+            const key = `${info.division || ''}\t${info.department || ''}`;
             if (!groups[key]) groups[key] = [];
             groups[key].push(empId);
         }
@@ -1096,16 +1113,23 @@ exports.exportAttendanceReport = async (req, res) => {
 
             for (const empId of empIds) {
                 const info = empMap[empId];
-                const dates = Object.keys(byEmpDate[empId]).sort();
+                const empDatesData = byEmpDate[empId] || {};
 
-                for (const dk of dates) {
-                    const { pairs, totHrsStr } = byEmpDate[empId][dk];
-
+                for (const dk of allDateKeys) {
                     // Boundary Check: If date is after resignation, skip Excel row
                     if (info.leftDate) {
                         const leftStr = dayjs(info.leftDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
                         if (dk > leftStr) continue;
                     }
+                    if (info.doj) {
+                        const dojStr = dayjs(info.doj).tz('Asia/Kolkata').format('YYYY-MM-DD');
+                        if (dk < dojStr) continue;
+                    }
+
+                    const dayData = empDatesData[dk];
+                    const pairs = dayData?.pairs || [];
+                    const totHrsStr = dayData?.totHrsStr || '';
+                    const hasPairs = pairs.length > 0;
 
                     const row = {
                         'SNO': ++sno,
@@ -1113,14 +1137,27 @@ exports.exportAttendanceReport = async (req, res) => {
                         'EMPLOYEE NAME': info.employee_name,
                         'DIVISION': division || '',
                         'DEPARTMENT': department || '',
-                        'PDate': formatPDate(new Date(dk))
+                        'PDate': formatPDate(dk)
                     };
-                    for (let i = 0; i < maxPairs; i++) {
-                        row[`IN ${i + 1}`] = pairs[i]?.in ? formatTime(pairs[i].in) : '';
-                        row[`OUT ${i + 1}`] = pairs[i]?.out ? formatTime(pairs[i].out) : '';
+
+                    if (hasPairs) {
+                        for (let i = 0; i < maxPairs; i++) {
+                            row[`IN ${i + 1}`] = pairs[i]?.in ? formatTime(pairs[i].in) : '';
+                            row[`OUT ${i + 1}`] = pairs[i]?.out ? formatTime(pairs[i].out) : '';
+                        }
+                        row['TOT HRS'] = totHrsStr;
+                        row['WORKING HRS'] = formatWorkingHours(dailyByEmpDate[empId]?.[dk]);
+                    } else {
+                        row['IN 1'] = 'Absent';
+                        row['OUT 1'] = '';
+                        for (let i = 1; i < maxPairs; i++) {
+                            row[`IN ${i + 1}`] = '';
+                            row[`OUT ${i + 1}`] = '';
+                        }
+                        row['TOT HRS'] = '';
+                        row['WORKING HRS'] = '';
                     }
-                    row['TOT HRS'] = totHrsStr;
-                    row['WORKING HRS'] = formatWorkingHours(dailyByEmpDate[empId]?.[dk]);
+
                     rows.push(row);
                 }
             }

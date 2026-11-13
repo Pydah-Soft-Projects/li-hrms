@@ -158,7 +158,7 @@ function buildBothHalvesPresentSegments(shiftDoc, dateStr, inTime, outTime, grac
       gracePeriod: segment.gracePeriod,
       effectiveGrace: getEffectiveGrace(
         segment.gracePeriod,
-        globalLateInGrace ?? globalEarlyOutGrace,
+        segment.segmentName === 'firstHalf' ? globalLateInGrace : globalEarlyOutGrace,
         shiftGrace
       ),
       payableShifts: segment.payableShifts,
