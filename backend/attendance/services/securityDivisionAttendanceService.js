@@ -19,8 +19,10 @@
 const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Employee = require('../../employees/model/Employee');
+const EmployeeGroup = require('../../employees/model/EmployeeGroup');
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
+const Designation = require('../../departments/model/Designation');
 const Shift = require('../../shifts/model/Shift');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
