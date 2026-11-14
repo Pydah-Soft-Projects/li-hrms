@@ -19,31 +19,40 @@ export function CompanyBrandMark({
   subtitle = 'Human Resource Management',
 }: CompanyBrandMarkProps) {
   const content = collapsed ? (
-    <img
-      src="/campo-logos/favicon.svg"
-      alt="Campo HRMS"
-      title="Campo Human Resource Management"
-      className="w-8 h-8 rounded-lg object-contain shadow-xs shrink-0"
-    />
+    <div className="flex flex-col items-center justify-center w-full">
+      <img
+        src="/campo-logos/favicon.svg"
+        alt="Campo"
+        title="Campo Human Resource Management"
+        style={{ width: '28px', height: '28px', maxHeight: '28px' }}
+        className="w-7 h-7 rounded-lg object-contain shadow-xs shrink-0 mx-auto"
+      />
+    </div>
   ) : (
-    <div className="flex flex-col leading-tight min-w-0 select-none">
+    <div className="flex flex-col items-center justify-center text-center w-full min-w-0 select-none">
       <img
         src="/campo-logos/campo_logo_transparent_hq.png"
         alt="Campo"
-        className="h-7 w-auto max-w-[155px] object-contain object-left"
+        style={{
+          height: '28px',
+          maxHeight: '28px',
+          width: 'auto',
+          maxWidth: '115px',
+          objectFit: 'contain',
+          display: 'block',
+        }}
+        className="h-7 w-auto max-w-[115px] object-contain mx-auto select-none"
       />
       <span
-        className="text-[10px] mt-1.5 font-medium tracking-wider whitespace-nowrap"
-        style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+        className="text-[11px] font-medium tracking-wide mt-2 whitespace-nowrap select-none"
+        style={{ color: 'var(--sidebar-muted)' }}
       >
         {subtitle}
       </span>
     </div>
   );
 
-  const containerClass = `flex items-center gap-3 overflow-hidden focus:outline-none ${
-    collapsed ? 'justify-center w-full' : ''
-  } ${className}`;
+  const containerClass = `flex flex-col items-center justify-center w-full focus:outline-none ${className}`;
 
   if (href) {
     return (

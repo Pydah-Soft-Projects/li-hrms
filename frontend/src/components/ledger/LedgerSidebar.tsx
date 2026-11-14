@@ -14,10 +14,10 @@ function ledgerSidebarRowClass(isActive: boolean, collapsed?: boolean): string {
 }
 
 function ledgerSidebarRowStyle(isActive: boolean): CSSProperties {
-  if (!isActive) return { color: 'var(--sidebar-text, #FFFFFF)' };
+  if (!isActive) return { color: 'var(--sidebar-text)' };
   return {
     backgroundColor: 'var(--primary)',
-    color: 'var(--sidebar-text, #FFFFFF)',
+    color: 'var(--sidebar-text)',
     boxShadow: '0 2px 8px -1px rgba(0, 0, 0, 0.2)',
   };
 }
@@ -31,10 +31,10 @@ function ledgerSidebarLinkClass(isActive: boolean, collapsed?: boolean): string 
 }
 
 export function ledgerSidebarLinkStyle(isActive: boolean): CSSProperties {
-  if (!isActive) return { color: 'var(--sidebar-text, #FFFFFF)' };
+  if (!isActive) return { color: 'var(--sidebar-text)' };
   return {
     backgroundColor: 'var(--primary)',
-    color: 'var(--sidebar-text, #FFFFFF)',
+    color: 'var(--sidebar-text)',
     boxShadow: '0 2px 8px -1px rgba(0, 0, 0, 0.2)',
   };
 }
@@ -45,7 +45,7 @@ export function ledgerSidebarIconClass(_isActive: boolean): string {
 
 export function ledgerSidebarIconStyle(isActive: boolean): CSSProperties | undefined {
   return {
-    color: isActive ? 'var(--sidebar-text, #FFFFFF)' : 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))',
+    color: isActive ? 'var(--sidebar-text)' : 'var(--sidebar-muted)',
   };
 }
 
@@ -95,13 +95,14 @@ export function LedgerSidebarShell({
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-[100] h-screen border-r transition-all duration-300 ease-in-out ${
-          isMobileOpen ? 'w-[260px] translate-x-0 shadow-2xl' : '-translate-x-full sm:translate-x-0'
-        } ${navCollapsed ? 'sm:w-[68px]' : 'sm:w-[260px]'}`}
+        className={`fixed top-0 left-0 bottom-0 z-40 border-r transition-all duration-300 ease-in-out ${
+          isMobileOpen ? 'w-64 translate-x-0 shadow-2xl' : '-translate-x-full sm:translate-x-0'
+        } ${navCollapsed ? 'sm:w-20' : 'sm:w-64'}`}
         style={{
-          backgroundColor: 'var(--sidebar, #1E3150)',
-          color: 'var(--sidebar-text, #FFFFFF)',
+          backgroundColor: 'var(--sidebar)',
+          color: 'var(--sidebar-text)',
           borderColor: 'var(--border)',
+          fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
           boxShadow: '4px 0 24px -2px rgba(10, 20, 35, 0.45)',
         }}
         aria-label="Sidebar"
@@ -109,21 +110,21 @@ export function LedgerSidebarShell({
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="absolute -right-3 top-7 z-50 hidden h-6 w-6 items-center justify-center rounded-full border shadow-md transition hover:scale-110 active:scale-95 sm:flex"
+          className="absolute -right-3 top-[106px] z-50 hidden sm:flex h-6 w-6 items-center justify-center rounded-full border shadow-md transition hover:scale-110 active:scale-95"
           style={{
-            backgroundColor: 'var(--surface, #FFFFFF)',
+            backgroundColor: 'var(--surface)',
             borderColor: 'var(--border)',
-            color: 'var(--text-primary, #0F172A)',
+            color: 'var(--text-primary)',
           }}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          {isCollapsed ? <ChevronRight size={14} strokeWidth={2.5} /> : <ChevronLeft size={14} strokeWidth={2.5} />}
         </button>
 
         <div className="flex h-full flex-col overflow-hidden">
           <div
-            className={`flex shrink-0 items-center border-b px-4 py-4 ${
-              navCollapsed ? 'justify-center' : 'justify-between'
+            className={`relative flex shrink-0 flex-col items-center justify-center text-center border-b pt-6 pb-4 ${
+              navCollapsed ? 'px-2' : 'px-4'
             }`}
             style={{ borderColor: 'var(--border)' }}
           >
@@ -132,8 +133,8 @@ export function LedgerSidebarShell({
               <button
                 type="button"
                 onClick={onMobileClose}
-                className="rounded-md p-1 hover:bg-white/10 sm:hidden"
-                style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+                className="absolute right-3 top-3 rounded-md p-1 hover:bg-white/10 sm:hidden"
+                style={{ color: 'var(--sidebar-muted)' }}
               >
                 <X className="h-5 w-5" />
               </button>
@@ -210,19 +211,22 @@ export function LedgerSidebarMenu({
   return (
     <div className="space-y-0.5">
       {directLinks.length > 0 && (
-        <ul className="space-y-0.5">
-          {directLinks.map((item) => (
-            <LedgerSidebarLink
-              key={item.code}
-              href={item.href}
-              label={item.label}
-              icon={item.icon}
-              isActive={isItemActive(item)}
-              collapsed={collapsed}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
+        <div className="space-y-0.5">
+          {!collapsed && <LedgerSidebarCategory label="MAIN" />}
+          <ul className="space-y-0.5">
+            {directLinks.map((item) => (
+              <LedgerSidebarLink
+                key={item.code}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                isActive={isItemActive(item)}
+                collapsed={collapsed}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        </div>
       )}
 
       {directLinks.length > 0 && categoryGroups.length > 0 && !collapsed && (
@@ -259,7 +263,7 @@ export function LedgerSidebarMenu({
                     className={`h-4 w-4 shrink-0 transition-transform duration-200 ${
                       isOpen ? 'rotate-180' : ''
                     }`}
-                    style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+                    style={{ color: 'var(--sidebar-muted)' }}
                   />
                 </>
               )}
@@ -306,7 +310,7 @@ export function LedgerSidebarCategory({
   return (
     <h3
       className="mb-1 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider select-none"
-      style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+      style={{ color: 'var(--sidebar-muted)' }}
     >
       {label}
     </h3>
@@ -365,7 +369,6 @@ export function LedgerSidebarUserCard({
   onLogout: () => void;
 }) {
   const initial = (name.charAt(0) || 'U').toUpperCase();
-  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="relative">
@@ -389,7 +392,7 @@ export function LedgerSidebarUserCard({
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold shadow-xs"
             style={{
-              backgroundColor: 'var(--surface, #FFFFFF)',
+              backgroundColor: 'var(--surface)',
               color: 'var(--primary)',
             }}
           >
@@ -399,13 +402,13 @@ export function LedgerSidebarUserCard({
             <div className="min-w-0 flex-1">
               <p
                 className="truncate text-[13px] font-semibold"
-                style={{ color: 'var(--sidebar-text, #FFFFFF)' }}
+                style={{ color: 'var(--sidebar-text)' }}
               >
                 {name}
               </p>
               <p
                 className="truncate text-[11px] capitalize"
-                style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+                style={{ color: 'var(--sidebar-muted)' }}
               >
                 {subtitle}
               </p>
@@ -413,64 +416,19 @@ export function LedgerSidebarUserCard({
           )}
         </Link>
 
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex shrink-0 items-center justify-center rounded-lg p-1.5 transition hover:bg-white/10"
-            style={{ color: 'var(--sidebar-text, #FFFFFF)' }}
-            aria-label="User menu"
-            aria-expanded={menuOpen}
-          >
-            <ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
-          </button>
-        )}
-
-        {collapsed && (
-          <button
-            type="button"
-            onClick={onLogout}
-            className="flex w-full shrink-0 items-center justify-center rounded-md p-1.5 transition hover:bg-white/10"
-            style={{ color: 'var(--sidebar-text, #FFFFFF)' }}
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
-      {menuOpen && !collapsed && (
-        <div
-          className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-xl border shadow-lg"
-          style={{
-            backgroundColor: 'var(--surface, #FFFFFF)',
-            borderColor: 'var(--border)',
-          }}
+        <button
+          type="button"
+          onClick={onLogout}
+          className={`flex shrink-0 items-center justify-center rounded-lg p-1.5 transition hover:bg-white/10 ${
+            collapsed ? 'w-full' : ''
+          }`}
+          style={{ color: 'var(--sidebar-text)' }}
+          title="Logout"
+          aria-label="Logout"
         >
-          <Link
-            href={profileHref}
-            onClick={() => {
-              setMenuOpen(false);
-              onNavigate?.();
-            }}
-            className="block px-4 py-2.5 text-xs font-medium hover:bg-primary-light transition-colors"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            My Profile
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
-              setMenuOpen(false);
-              onLogout();
-            }}
-            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            Logout
-          </button>
-        </div>
-      )}
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
