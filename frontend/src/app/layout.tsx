@@ -96,10 +96,6 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
-                  var p = window.location.pathname;
-                  var isBeforeLogin = !p || p === '/' || p === '/login' || p.indexOf('/login') === 0 || p === '/forgot-password' || p.indexOf('/outpass') === 0;
-                  if (isBeforeLogin) return; // Do not apply centralized theme on landing or login pages
-
                   var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                   var srv = isLocal ? 'http://localhost:7000' : 'https://ui-theme.pydah.edu.in';
                   if (!document.getElementById('app-theme-preload')) {

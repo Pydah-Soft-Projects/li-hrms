@@ -298,7 +298,7 @@ h1, h2, h3, h4, .font-display {
 
 /* Typography Utilities */
 .text-gradient {
-  background: linear-gradient(135deg, var(--text-primary) 0%, var(--color-accent-dark) 100%);
+  background: linear-gradient(135deg, var(--text-primary, #0f172a) 0%, var(--primary, #059669) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -389,12 +389,20 @@ h1, h2, h3, h4, .font-display {
   background-attachment: fixed;
 }
 
+/* Dynamic silk color tint — tints the silk folds to match the active theme while preserving luminance */
+.hero-silk-tint {
+  background-color: var(--primary, #059669);
+  mix-blend-mode: color;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 /* Light veil for text contrast — keeps the fabric folds visible */
 .hero-bg-overlay {
   background: linear-gradient(
     165deg,
     rgba(255, 255, 255, 0.18) 0%,
-    rgba(240, 253, 244, 0.08) 45%,
+    rgba(var(--primary-rgb, 5, 150, 105), 0.08) 45%,
     rgba(255, 255, 255, 0.22) 100%
   );
 }
@@ -405,7 +413,7 @@ h1, h2, h3, h4, .font-display {
     105deg,
     transparent 0%,
     rgba(255, 255, 255, 0.12) 42%,
-    rgba(167, 243, 208, 0.08) 50%,
+    rgba(var(--primary-rgb, 5, 150, 105), 0.08) 50%,
     rgba(255, 255, 255, 0.12) 58%,
     transparent 100%
   );
@@ -435,12 +443,12 @@ h1, h2, h3, h4, .font-display {
   z-index: 0;
 }
 
-/* Before-login screens: guarantee original mint satin / emerald styling */
+/* Before-login screens: dynamic theme variable bindings */
 .hero-silk-bg,
 .silk-page-bg,
 .login-glass-card {
-  --color-accent: #10b981;
-  --color-accent-dark: #059669;
+  --color-accent: var(--primary, #10b981);
+  --color-accent-dark: var(--primary, #059669);
 }
 
 .login-glass-card {

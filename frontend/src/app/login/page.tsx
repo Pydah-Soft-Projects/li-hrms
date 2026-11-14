@@ -7,11 +7,13 @@ import { Eye, EyeOff, ShieldCheck, ArrowLeft, Lock, User } from "lucide-react";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
+import { initAfterLoginTheme } from "@/lib/utils";
 
 function SilkBackground() {
   return (
     <>
       <div className="silk-page-bg hero-silk-bg" aria-hidden="true" />
+      <div className="silk-page-bg hero-silk-tint pointer-events-none" aria-hidden="true" />
       <div className="silk-page-bg hero-bg-overlay" aria-hidden="true" />
       <div className="silk-page-bg hero-silk-sheen pointer-events-none" aria-hidden="true" />
     </>
@@ -20,11 +22,17 @@ function SilkBackground() {
 
 function LoginLoading({ message }: { message: string }) {
   return (
-    <div className="relative min-h-screen bg-[#f0fdf4]">
+    <div
+      className="relative min-h-screen"
+      style={{ backgroundColor: 'var(--primary-50, var(--primary-light, #f0fdf4))' }}
+    >
       <SilkBackground />
       <div className="relative z-10 flex min-h-screen items-center justify-center px-6">
         <div className="login-glass-card rounded-2xl px-10 py-12 flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <div
+            className="h-10 w-10 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--primary, #059669)', borderTopColor: 'transparent' }}
+          />
           <p className="text-slate-600 font-light">{message}</p>
         </div>
       </div>
@@ -43,6 +51,10 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [ssoVerifying, setSsoVerifying] = useState(() => Boolean(searchParams.get("token")));
   const ssoAttempted = useRef(false);
+
+  useEffect(() => {
+    initAfterLoginTheme();
+  }, []);
 
   useEffect(() => {
     const ssoToken = searchParams.get("token");
@@ -159,23 +171,31 @@ function LoginContent() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[#f0fdf4] text-slate-900 overflow-x-hidden">
+    <div
+      className="relative min-h-screen text-slate-900 overflow-x-hidden"
+      style={{ backgroundColor: 'var(--primary-50, var(--primary-light, #f0fdf4))' }}
+    >
       <SilkBackground />
 
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
         <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border border-white/20"
+              style={{ background: 'linear-gradient(135deg, var(--primary-hover, var(--primary, #10b981)), var(--primary, #059669))' }}
+            >
               <ShieldCheck className="text-white w-6 h-6" />
             </div>
             <span className="text-xl font-display font-bold tracking-tight text-slate-900">
-              <span className="text-emerald-600">HRMS</span>
+              <span style={{ color: 'var(--primary, #059669)' }}>HRMS</span>
             </span>
           </Link>
 
           <Link
             href="/"
-            className="group inline-flex items-center text-sm font-medium text-slate-600 hover:text-emerald-600 transition-colors"
+            className="group inline-flex items-center text-sm font-medium text-slate-600 transition-colors"
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary, #059669)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '')}
           >
             <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
             Back to Home
@@ -186,7 +206,10 @@ function LoginContent() {
       <main className="relative z-10 min-h-screen pt-28 pb-12 px-6 flex items-center justify-center">
         <div className="w-full max-w-5xl grid lg:grid-cols-[1fr_420px] gap-10 lg:gap-16 items-center">
           <div className="hidden lg:block animate-fade-in-up">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700/80 mb-4">
+            <p
+              className="text-sm font-semibold uppercase tracking-[0.2em] mb-4"
+              style={{ color: 'var(--primary, #047857)' }}
+            >
               Secure Access
             </p>
             <h1 className="text-4xl xl:text-5xl font-display font-bold leading-tight text-slate-900 mb-6">
@@ -202,7 +225,8 @@ function LoginContent() {
                 {[1, 2, 3, 4].map((i) => (
                   <div
                     key={i}
-                    className="w-9 h-9 rounded-full border-2 border-white/80 bg-emerald-600/90 flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                    className="w-9 h-9 rounded-full border-2 border-white/80 flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                    style={{ backgroundColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.9)' }}
                   >
                     U{i}
                   </div>
@@ -215,11 +239,14 @@ function LoginContent() {
           <div className="w-full max-w-md mx-auto lg:max-w-none animate-fade-in-up">
             <div className="login-glass-card rounded-2xl p-8 sm:p-10">
               <div className="lg:hidden flex flex-col items-center mb-8">
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20 mb-3">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/20 mb-3"
+                  style={{ background: 'linear-gradient(135deg, var(--primary-hover, var(--primary, #10b981)), var(--primary, #059669))' }}
+                >
                   <ShieldCheck className="text-white w-7 h-7" />
                 </div>
                 <span className="text-lg font-display font-bold text-slate-900">
-                  <span className="text-emerald-600">HRMS</span> Sign In
+                  <span style={{ color: 'var(--primary, #059669)' }}>HRMS</span> Sign In
                 </span>
               </div>
 
@@ -260,7 +287,8 @@ function LoginContent() {
                     </label>
                     <Link
                       href="/forgot-password"
-                      className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold transition-colors"
+                      className="text-xs font-semibold transition-colors hover:opacity-80"
+                      style={{ color: 'var(--primary, #059669)' }}
                     >
                       Forgot password?
                     </Link>
@@ -298,7 +326,15 @@ function LoginContent() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="group relative w-full py-3.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-all shadow-xl hover:shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+                  className="group relative w-full py-3.5 bg-slate-900 text-white font-semibold rounded-xl transition-all shadow-xl active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden hover:opacity-95"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--primary, #047857)';
+                    e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(var(--primary-rgb, 5, 150, 105), 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#0f172a';
+                    e.currentTarget.style.boxShadow = '';
+                  }}
                 >
                   {!loading && <div className="shimmer-btn-overlay" />}
                   <div className="relative z-10 flex items-center justify-center gap-2">

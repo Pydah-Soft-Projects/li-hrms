@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
+import { initAfterLoginTheme } from '@/lib/utils';
 import { ChevronRight, ShieldCheck, Fingerprint } from 'lucide-react';
 
 export default function Home() {
@@ -24,6 +25,8 @@ export default function Home() {
   ];
 
   useEffect(() => {
+    initAfterLoginTheme();
+
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const ssoToken = urlParams.get('token');
@@ -70,24 +73,24 @@ export default function Home() {
           {/* Biometric Sensor Frame */}
           <div className="relative w-48 h-48 flex items-center justify-center">
             {/* Corners */}
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-emerald-600/30 rounded-tl-lg" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-emerald-600/30 rounded-tr-lg" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-emerald-600/30 rounded-bl-lg" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-emerald-600/30 rounded-br-lg" />
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 rounded-tl-lg" style={{ borderColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.35)' }} />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 rounded-tr-lg" style={{ borderColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.35)' }} />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 rounded-bl-lg" style={{ borderColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.35)' }} />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 rounded-br-lg" style={{ borderColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.35)' }} />
             
             {/* Base Fingerprint (Dim) */}
-            <div className="absolute transition-opacity duration-500 text-emerald-100">
+            <div className="absolute transition-opacity duration-500" style={{ color: 'var(--primary-light, #ECFDF5)' }}>
               <Fingerprint size={120} strokeWidth={1.5} />
             </div>
             
             {/* Scanned Fingerprint (Filing) */}
-            <div className="absolute text-emerald-600 animate-scan-fill drop-shadow-[0_0_10px_rgba(5,150,105,0.3)]">
+            <div className="absolute animate-scan-fill" style={{ color: 'var(--primary, #059669)', filter: 'drop-shadow(0 0 10px rgba(var(--primary-rgb, 5, 150, 105), 0.3))' }}>
               <Fingerprint size={120} strokeWidth={1.5} />
             </div>
             
             {/* Scanning Laser Line */}
-            <div className="absolute w-64 h-0.5 bg-emerald-600 animate-scan-line shadow-[0_0_10px_rgba(5,150,105,0.5)] z-10">
-              <div className="absolute inset-0 bg-emerald-500 blur-sm opacity-50" />
+            <div className="absolute w-64 h-0.5 animate-scan-line z-10" style={{ backgroundColor: 'var(--primary, #059669)', boxShadow: '0 0 10px rgba(var(--primary-rgb, 5, 150, 105), 0.5)' }}>
+              <div className="absolute inset-0 blur-sm opacity-50" style={{ backgroundColor: 'var(--primary-hover, var(--primary, #10b981))' }} />
             </div>
           </div>
           
@@ -96,7 +99,7 @@ export default function Home() {
               Authenticating Biometrics
             </p>
             <div className="h-1 w-32 bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 animate-[scan-fill_3s_ease-in-out_infinite]" />
+              <div className="h-full animate-[scan-fill_3s_ease-in-out_infinite]" style={{ backgroundColor: 'var(--primary, #059669)' }} />
             </div>
           </div>
         </div>
@@ -105,22 +108,29 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-[#f0fdf4] text-slate-900">
+    <div
+      className="relative flex flex-col min-h-screen overflow-x-hidden text-slate-900"
+      style={{ backgroundColor: 'var(--primary-50, var(--primary-light, #f0fdf4))' }}
+    >
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
         <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border border-white/20"
+              style={{ background: 'linear-gradient(135deg, var(--primary-hover, var(--primary, #10b981)), var(--primary, #059669))' }}
+            >
               <ShieldCheck className="text-white w-6 h-6" />
             </div>
             <span className="text-xl font-display font-bold tracking-tight text-slate-900">
-              <span className="text-emerald-600">HRMS</span>
+              <span style={{ color: 'var(--primary, #059669)' }}>HRMS</span>
             </span>
           </div>
           
           <Link
             href="/login"
-            className="group relative inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg active:scale-95 border border-white/10 overflow-hidden"
+            className="group relative inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95 border border-white/10 overflow-hidden hover:brightness-95"
+            style={{ backgroundColor: 'var(--primary, #059669)' }}
           >
             <div className="shimmer-btn-overlay" />
             <span className="relative z-10">Sign In</span>
@@ -130,6 +140,7 @@ export default function Home() {
 
       {/* Hero Section - 100vh Independent */}
       <main className="relative z-10 h-[100dvh] flex items-center justify-center px-6 overflow-hidden hero-silk-bg">
+        <div className="absolute inset-0 z-0 hero-silk-tint pointer-events-none" />
         <div className="absolute inset-0 z-0 hero-bg-overlay" />
         <div className="absolute inset-0 z-0 hero-silk-sheen pointer-events-none" />
 
@@ -180,7 +191,10 @@ export default function Home() {
                   {isShattering && (
                     <>
                       <div className="impact-ripple" />
-                      <div className="absolute inset-0 animate-mist bg-emerald-500/20 rounded-xl blur-xl" />
+                      <div
+                        className="absolute inset-0 animate-mist rounded-xl blur-xl"
+                        style={{ backgroundColor: 'rgba(var(--primary-rgb, 5, 150, 105), 0.2)' }}
+                      />
                       {[...Array(28)].map((_, i) => {
                         const polygons = [
                           'polygon(50% 0%, 0% 100%, 100% 100%)',
@@ -208,7 +222,7 @@ export default function Home() {
                               '--tb': (Math.random() > 0.6 ? '12px' : '0px'),
                               left: (Math.random() * 100) + '%',
                               top: (Math.random() * 100) + '%',
-                              background: i % 3 === 0 ? '#10b981' : i % 3 === 1 ? '#0f172a' : '#334155',
+                              background: i % 3 === 0 ? 'var(--primary, #059669)' : i % 3 === 1 ? '#0f172a' : '#334155',
                               animationDelay: (Math.random() * 0.2) + 's'
                             } as any}
                           />
@@ -225,7 +239,9 @@ export default function Home() {
               </div>
               <button 
                 onClick={() => window.open('#', '_blank')}
-                className="px-8 py-4 text-base md:text-lg font-semibold text-slate-600 hover:text-emerald-600 transition-colors"
+                className="px-8 py-4 text-base md:text-lg font-semibold text-slate-600 transition-colors"
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary, #059669)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '')}
                 disabled={isShattering}
               >
                 View Live Demo
@@ -241,18 +257,39 @@ export default function Home() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex flex-col items-center md:items-start gap-2">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="text-emerald-600 w-5 h-5" />
+                <ShieldCheck className="w-5 h-5" style={{ color: 'var(--primary, #059669)' }} />
                 <span className="font-display font-bold text-slate-900">HRMS</span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                A Product of <span className="text-emerald-600 font-semibold">PydahSoft</span>
+                A Product of <span className="font-semibold" style={{ color: 'var(--primary, #059669)' }}>PydahSoft</span>
               </p>
             </div>
             
             <div className="flex gap-8 text-sm text-slate-500 font-medium">
-              <a href="#" className="hover:text-emerald-600 transition-colors">Solutions</a>
-              <a href="#" className="hover:text-emerald-600 transition-colors">Privacy</a>
-              <a href="#" className="hover:text-emerald-600 transition-colors">Contact</a>
+              <a
+                href="#"
+                className="transition-colors"
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary, #059669)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+              >
+                Solutions
+              </a>
+              <a
+                href="#"
+                className="transition-colors"
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary, #059669)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+              >
+                Privacy
+              </a>
+              <a
+                href="#"
+                className="transition-colors"
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary, #059669)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+              >
+                Contact
+              </a>
             </div>
             
             <div className="flex flex-col items-center md:items-end gap-1">
