@@ -1274,12 +1274,41 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
-    // Check if user has explicit EMPLOYEES:edit permission (grants direct update without review queue)
-    const User = require('../../users/model/User');
-    const requestingUser = await User.findById(req.user._id).select('featureControl').lean();
-    const hasEditPermission = !!(requestingUser?.featureControl?.includes('EMPLOYEES:edit'));
+    const isSubAdmin = req.user.role === 'sub_admin' || (Array.isArray(req.user.roles) && req.user.roles.includes('sub_admin'));
 
-    if (!isSuperAdmin && !isOwner && !hasEditPermission) {
+    // Check if user has permissions (edit, write, or admin)
+    const User = require('../../users/model/User');
+    const requestingUser = await User.findById(req.user._id).select('featureControl role roles').lean();
+    const userFeatureControl = Array.isArray(requestingUser?.featureControl) ? requestingUser.featureControl : [];
+    const hasEditPermission = userFeatureControl.includes('EMPLOYEES:edit');
+    const hasWritePermission = userFeatureControl.includes('EMPLOYEES:write') || userFeatureControl.includes('EMPLOYEES');
+    const canManageEmployees = isSuperAdmin || isSubAdmin || hasEditPermission || hasWritePermission;
+
+    // Handle is_active normalization and permission check
+    let targetIsActive = undefined;
+    if (employeeData.is_active !== undefined) {
+      if (!canManageEmployees) {
+        return res.status(403).json({
+          success: false,
+          message: 'Permission denied: You do not have permission to activate or deactivate employees',
+        });
+      }
+      targetIsActive = (
+        employeeData.is_active === true ||
+        employeeData.is_active === 'true' ||
+        employeeData.is_active === 1 ||
+        employeeData.is_active === '1'
+      );
+      employeeData.is_active = targetIsActive;
+    }
+
+    // Determine if this is strictly an active/inactive status toggle (e.g. from action buttons)
+    const nonStatusKeys = Object.keys(employeeData).filter(
+      (k) => !['is_active', 'status', 'empNo', 'emp_no'].includes(k)
+    );
+    const isOnlyActiveStatusChange = targetIsActive !== undefined && nonStatusKeys.length === 0;
+
+    if (!isSuperAdmin && !isSubAdmin && !isOwner && !hasEditPermission && !isOnlyActiveStatusChange) {
       console.log(`[updateEmployee] Redirecting to Profile Request for user: ${req.user.name} (${req.user.role})`);
 
       const existingObj = existingEmployee.toObject({ virtuals: false });
@@ -1788,6 +1817,45 @@ exports.updateEmployee = async (req, res) => {
         updateData,
         { new: true }
       );
+
+      // Sync active status to linked User account if is_active changed
+      if (updateData.is_active !== undefined && existingEmployee.is_active !== updateData.is_active) {
+        try {
+          const linkedUser = await User.findOne({
+            $or: [
+              { employeeRef: existingEmployee._id },
+              { employeeId: existingEmployee.emp_no },
+              ...(existingEmployee.email ? [{ email: existingEmployee.email }] : []),
+              ...(existingEmployee.official_email ? [{ email: existingEmployee.official_email }] : [])
+            ]
+          });
+
+          if (linkedUser && linkedUser.isActive !== updateData.is_active) {
+            linkedUser.isActive = updateData.is_active;
+            await linkedUser.save();
+            console.log(`[updateEmployee] Synced isActive=${updateData.is_active} to linked user ${linkedUser.email} (emp: ${empNo})`);
+          }
+        } catch (userSyncErr) {
+          console.error('[updateEmployee] Failed to sync isActive to linked user:', userSyncErr.message);
+        }
+
+        try {
+          await EmployeeHistory.create({
+            emp_no: existingEmployee.emp_no,
+            event: updateData.is_active ? 'status_changed' : 'status_deactivated',
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              previousState: existingEmployee.is_active,
+              newState: updateData.is_active,
+            },
+            comments: updateData.is_active ? 'Employee activated' : 'Employee deactivated',
+          });
+        } catch (histErr) {
+          console.error('[updateEmployee] Failed to log active status change history:', histErr.message);
+        }
+      }
     } catch (mongoError) {
       console.error('MongoDB update error:', mongoError);
       return res.status(500).json({

@@ -2199,7 +2199,7 @@ export default function EmployeesPage() {
         // Optimistic update
         setEmployees(prev => prev.map(e => {
           if (e.emp_no === empNo) {
-            return { ...e, is_active: false, status: 'Inactive' };
+            return { ...e, is_active: false, status: 'Inactive', ...(response.data || {}) };
           }
           return e;
         }));
@@ -2234,7 +2234,7 @@ export default function EmployeesPage() {
         // Optimistic update
         setEmployees(prev => prev.map(e => {
           if (e.emp_no === empNo) {
-            return { ...e, is_active: true, status: 'Active' };
+            return { ...e, is_active: true, status: 'Active', ...(response.data || {}) };
           }
           return e;
         }));
@@ -4199,7 +4199,7 @@ export default function EmployeesPage() {
                                     }`}
                                   title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
                                 >
-                                  {employee.is_active !== false ? <Settings className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
+                                  {employee.is_active !== false ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
                                 </button>
                               </>
                             )}
@@ -4418,7 +4418,7 @@ export default function EmployeesPage() {
                             }`}
                           title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
                         >
-                          {employee.is_active !== false ? <Settings className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                          {employee.is_active !== false ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
                         </button>
                       </>
                     )}
