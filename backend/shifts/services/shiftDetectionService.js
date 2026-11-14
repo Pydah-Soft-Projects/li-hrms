@@ -1986,7 +1986,31 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
     const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod, date, globalLateInGrace);
     const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace, nearestShift.gracePeriod) : null;
 
-    return await enrichResultWithSegmentData({
+    // Fetch employee context if possible
+    let employeeCtx = null;
+    try {
+      const emp = await Employee.findOne({ emp_no: employeeNumber }).select('gender division_id employee_group_id').lean();
+      if (emp) {
+        employeeCtx = {
+          employeeGender: emp.gender,
+          divisionId: emp.division_id,
+          employeeGroupId: emp.employee_group_id,
+        };
+      }
+    } catch (_) {}
+
+    const effectiveShift = await resolveEffectiveShiftDoc(nearestShift, {
+      divisionId: employeeCtx?.divisionId || null,
+      employeeGender: employeeCtx?.employeeGender || null,
+      employeeGroupId: employeeCtx?.employeeGroupId || null,
+      shiftId: nearestShift?._id || nearestShift?.id,
+    });
+    const segmentData = getShiftSegmentAssignment(effectiveShift, date, inTime, outTime, {
+      globalLateInGrace,
+      globalEarlyOutGrace,
+    });
+
+    return {
       success: true,
       assignedShift: nearestShift._id,
       shiftName: nearestShift.name,
@@ -2001,7 +2025,9 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       expectedHours: nearestShift.duration,
       differenceMinutes: bestCandidate.differenceMinutes,
       isPreferred: bestCandidate.isPreferred,
-    }, nearestShift, employeeCtx);
+      ...segmentData,
+      basePayable: segmentData.totalPayableShifts ?? (effectiveShift.payableShifts || 1),
+    };
 
   } catch (error) {
     console.error('Error in auto-assign nearest shift:', error);
