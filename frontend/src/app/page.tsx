@@ -109,12 +109,23 @@ export default function Home() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
         <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
-              <ShieldCheck className="text-white w-6 h-6" />
+          <div className="flex items-center gap-2.5">
+            <div
+              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg shadow-sm border border-white/10 select-none"
+              style={{ backgroundColor: 'var(--sidebar, #071C46)' }}
+            >
+              <img
+                src="/campo-logos/campo_logo_transparent_hq.png"
+                alt="Campo"
+                style={{ height: '22px', maxHeight: '22px', width: 'auto', maxWidth: '96px', objectFit: 'contain' }}
+                className="h-[22px] w-auto max-w-[96px] object-contain select-none"
+              />
             </div>
-            <span className="text-xl font-display font-bold tracking-tight text-slate-900">
-              <span className="text-emerald-600">HRMS</span>
+            <span
+              className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md text-white shadow-xs"
+              style={{ backgroundColor: 'var(--primary, #059669)' }}
+            >
+              HRMS
             </span>
           </div>
           
@@ -240,9 +251,24 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 h-full">
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex flex-col items-center md:items-start gap-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="text-emerald-600 w-5 h-5" />
-                <span className="font-display font-bold text-slate-900">HRMS</span>
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg shadow-sm border border-white/10 select-none"
+                  style={{ backgroundColor: 'var(--sidebar, #071C46)' }}
+                >
+                  <img
+                    src="/campo-logos/campo_logo_transparent_hq.png"
+                    alt="Campo"
+                    style={{ height: '18px', maxHeight: '18px', width: 'auto', maxWidth: '80px', objectFit: 'contain' }}
+                    className="h-[18px] w-auto max-w-[80px] object-contain select-none"
+                  />
+                </div>
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shadow-xs"
+                  style={{ backgroundColor: 'var(--primary, #059669)' }}
+                >
+                  HRMS
+                </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
                 A Product of <span className="text-emerald-600 font-semibold">PydahSoft</span>

@@ -164,13 +164,18 @@ function LoginContent() {
 
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
         <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
-              <ShieldCheck className="text-white w-6 h-6" />
+          <Link href="/" className="flex items-center gap-2.5 group focus:outline-none">
+            <div
+              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg shadow-sm border border-white/10 select-none transition-transform group-hover:scale-105"
+              style={{ backgroundColor: 'var(--sidebar, #071C46)' }}
+            >
+              <img
+                src="/campo-logos/campo_logo_transparent_hq.png"
+                alt="Campo"
+                style={{ height: '22px', maxHeight: '22px', width: 'auto', maxWidth: '96px', objectFit: 'contain' }}
+                className="h-[22px] w-auto max-w-[96px] object-contain select-none"
+              />
             </div>
-            <span className="text-xl font-display font-bold tracking-tight text-slate-900">
-              <span className="text-emerald-600">HRMS</span>
-            </span>
           </Link>
 
           <Link
@@ -186,8 +191,11 @@ function LoginContent() {
       <main className="relative z-10 min-h-screen pt-28 pb-12 px-6 flex items-center justify-center">
         <div className="w-full max-w-5xl grid lg:grid-cols-[1fr_420px] gap-10 lg:gap-16 items-center">
           <div className="hidden lg:block animate-fade-in-up">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700/80 mb-4">
-              Secure Access
+            <p
+              className="text-sm font-semibold uppercase tracking-[0.2em] mb-4"
+              style={{ color: 'var(--primary, #059669)' }}
+            >
+              HRMS
             </p>
             <h1 className="text-4xl xl:text-5xl font-display font-bold leading-tight text-slate-900 mb-6">
               Welcome back to your{" "}
@@ -214,12 +222,23 @@ function LoginContent() {
 
           <div className="w-full max-w-md mx-auto lg:max-w-none animate-fade-in-up">
             <div className="login-glass-card rounded-2xl p-8 sm:p-10">
-              <div className="lg:hidden flex flex-col items-center mb-8">
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20 mb-3">
-                  <ShieldCheck className="text-white w-7 h-7" />
+              <div className="lg:hidden flex flex-col items-center mb-8 gap-2">
+                <div
+                  className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg shadow-sm border border-white/10 select-none mb-1"
+                  style={{ backgroundColor: 'var(--sidebar, #071C46)' }}
+                >
+                  <img
+                    src="/campo-logos/campo_logo_transparent_hq.png"
+                    alt="Campo"
+                    style={{ height: '22px', maxHeight: '22px', width: 'auto', maxWidth: '96px', objectFit: 'contain' }}
+                    className="h-[22px] w-auto max-w-[96px] object-contain select-none"
+                  />
                 </div>
-                <span className="text-lg font-display font-bold text-slate-900">
-                  <span className="text-emerald-600">HRMS</span> Sign In
+                <span
+                  className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md text-white shadow-xs"
+                  style={{ backgroundColor: 'var(--primary, #059669)' }}
+                >
+                  HRMS Sign In
                 </span>
               </div>
 
