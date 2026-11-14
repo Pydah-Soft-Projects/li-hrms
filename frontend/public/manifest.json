@@ -1,21 +1,41 @@
 {
-  "name": "HRMS Workspace",
-  "short_name": "HRMS",
-  "description": "HRMS Workspace for Attendance, Leaves, OT and Permissions",
+  "name": "Campo HRMS",
+  "short_name": "Campo HRMS",
+  "description": "Campo HRMS — Smart Institutional Human Resource Management System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#00FF00",
+  "theme_color": "#1E3150",
   "icons": [
     {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png"
+      "src": "/campo-logos/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-512x512.png",
+      "src": "/campo-logos/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/campo-logos/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/campo-logos/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/campo-logos/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "screenshots": [

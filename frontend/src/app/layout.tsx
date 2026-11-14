@@ -11,17 +11,52 @@ import PushNotificationPrompt from "@/components/PushNotificationPrompt";
 import PortalSwitcher from "@/components/PortalSwitcher";
 
 export const metadata: Metadata = {
-  title: "HRMS Application",
-  description: "Human Resource Management System",
+  title: {
+    default: "Campo HRMS",
+    template: "%s | Campo HRMS",
+  },
+  description: "Campo HRMS — Smart Institutional Human Resource Management System",
+  applicationName: "Campo HRMS",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/campo-logos/favicon.ico" },
+      { url: "/campo-logos/favicon.svg", type: "image/svg+xml" },
+      { url: "/campo-logos/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/campo-logos/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/campo-logos/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/campo-logos/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/campo-logos/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: ["/campo-logos/favicon.ico"],
+  },
+  openGraph: {
+    title: "Campo HRMS — Human Resource Management System",
+    description: "Campo HRMS — Smart Institutional Human Resource Management System for Attendance, Leaves, Payroll and Staff Administration.",
+    siteName: "Campo HRMS",
+    images: [
+      {
+        url: "/campo-logos/og-image.png",
+        width: 800,
+        height: 800,
+        alt: "Campo HRMS",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Campo HRMS",
+    description: "Campo HRMS — Smart Institutional Human Resource Management System",
+    images: ["/campo-logos/og-image.png"],
+  },
   appleWebApp: {
     capable: true,
+    title: "Campo HRMS",
     statusBarStyle: "default",
-    title: "LI-HRMS",
-  },
-  icons: {
-    icon: "/icons/icon-192x192.png",
-    apple: "/icons/icon-192x192.png",
   },
   formatDetection: {
     telephone: false,
@@ -29,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: "#1E3150",
   width: "device-width",
   initialScale: 1,
   minimumScale: 1,
@@ -46,6 +81,15 @@ export default function RootLayout({
   return (
     <html lang="en-GB" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/campo-logos/favicon.ico" sizes="any" />
+        <link rel="icon" type="image/svg+xml" href="/campo-logos/favicon.svg" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/campo-logos/favicon-16x16.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/campo-logos/favicon-32x32.png" />
+        <link rel="shortcut icon" href="/campo-logos/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/campo-logos/apple-touch-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="apple-mobile-web-app-title" content="Campo HRMS" />
+        <meta name="application-name" content="Campo HRMS" />
         {/* Dynamic client-side theme loader fallback: executes ONLY for authenticated after-login routes */}
         <script
           dangerouslySetInnerHTML={{

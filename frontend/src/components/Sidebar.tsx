@@ -115,6 +115,8 @@ export default function Sidebar() {
         <CompanyBrandMark
           profile={companyProfile}
           collapsed={navCollapsed}
+          href="/superadmin/dashboard"
+          subtitle="Human Resource Management"
         />
       }
       footer={

@@ -1,46 +1,57 @@
 'use client';
 
-import { getBrandInitials, type CompanyProfile } from '@/lib/companyProfile';
+import Link from 'next/link';
+import type { CompanyProfile } from '@/lib/companyProfile';
 
 type CompanyBrandMarkProps = {
-  profile: CompanyProfile;
+  profile?: CompanyProfile;
   collapsed?: boolean;
   className?: string;
+  href?: string;
+  subtitle?: string;
 };
 
-export function CompanyBrandMark({ profile, collapsed, className = '' }: CompanyBrandMarkProps) {
-  const displayName = profile.displayName || 'HRMS';
-  const initials = getBrandInitials(profile);
-  const logoUrl = profile.branding.logoUrl?.trim();
-  const accent = profile.branding.primaryColor || '#059669';
-
-  return (
-    <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : ''} ${className}`}>
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt={displayName}
-          className="h-8 w-8 rounded-xl object-contain flex-shrink-0 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700"
-        />
-      ) : (
-        <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center border text-sm font-bold text-white rounded-lg"
-          style={{
-            backgroundColor: 'var(--primary, #059669)',
-            borderColor: 'var(--border, rgba(5, 150, 105, 0.22))',
-          }}
-        >
-          {initials}
-        </div>
-      )}
-      {!collapsed && (
-        <h2
-          className="truncate font-serif text-lg font-semibold tracking-tight"
-          style={{ color: 'var(--sidebar-text, var(--text-primary, rgb(28 25 23)))' }}
-        >
-          {displayName}
-        </h2>
-      )}
+export function CompanyBrandMark({
+  profile,
+  collapsed,
+  className = '',
+  href = '/dashboard',
+  subtitle = 'Human Resource Management',
+}: CompanyBrandMarkProps) {
+  const content = collapsed ? (
+    <img
+      src="/campo-logos/favicon.svg"
+      alt="Campo HRMS"
+      title="Campo Human Resource Management"
+      className="w-8 h-8 rounded-lg object-contain shadow-xs shrink-0"
+    />
+  ) : (
+    <div className="flex flex-col leading-tight min-w-0 select-none">
+      <img
+        src="/campo-logos/campo_logo_transparent_hq.png"
+        alt="Campo"
+        className="h-7 w-auto max-w-[155px] object-contain object-left"
+      />
+      <span
+        className="text-[10px] mt-1.5 font-medium tracking-wider whitespace-nowrap"
+        style={{ color: 'var(--sidebar-muted, rgba(255, 255, 255, 0.7))' }}
+      >
+        {subtitle}
+      </span>
     </div>
   );
+
+  const containerClass = `flex items-center gap-3 overflow-hidden focus:outline-none ${
+    collapsed ? 'justify-center w-full' : ''
+  } ${className}`;
+
+  if (href) {
+    return (
+      <Link href={href} className={containerClass}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={containerClass}>{content}</div>;
 }

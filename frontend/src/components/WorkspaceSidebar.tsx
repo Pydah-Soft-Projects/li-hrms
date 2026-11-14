@@ -121,6 +121,8 @@ export default function WorkspaceSidebar() {
         <CompanyBrandMark
           profile={companyProfile}
           collapsed={navCollapsed}
+          href="/dashboard"
+          subtitle="Human Resource Management"
         />
       }
       footer={
