@@ -28,24 +28,92 @@ body {
 
 
 :root {
-  /* Light Mode - Refined Palette */
-  --bg-base: #f8fafc; /* slate-50 */
-  --bg-surface: #FFFFFF;
-  --border-base: rgba(0, 0, 0, 0.06);
-  --text-primary: #0f172a; /* slate-900 */
-  --text-secondary: #475569; /* slate-600 */
-  --color-accent: #10b981; /* emerald-500 */
-  --color-accent-dark: #059669; /* emerald-600 */
-  
+  /* ============================================================ */
+  /* Centralized Theme Engine Master Tokens (Default Fallback)     */
+  /* ============================================================ */
+  --primary: #059669;
+  --primary-hover: #047857;
+  --primary-light: #ECFDF5;
+  --primary-rgb: 5, 150, 105;
+
+  --secondary: #0D9488;
+  --secondary-rgb: 13, 148, 136;
+
+  --accent: #0284C7;
+  --accent-rgb: 2, 132, 199;
+
+  /* Primary Shade Scale (50 - 900) */
+  --primary-50: #F0F9F6;
+  --primary-100: #DEF7EF;
+  --primary-200: #B6F7E2;
+  --primary-300: #74FBD0;
+  --primary-400: #39F9BC;
+  --primary-500: #059467;
+  --primary-600: #059669;
+  --primary-700: #047857;
+  --primary-800: #036D4B;
+  --primary-900: #04442F;
+
+  /* Secondary Shade Scale (50 - 900) */
+  --secondary-50: #F1F9F8;
+  --secondary-100: #DFF6F4;
+  --secondary-200: #B9F3EE;
+  --secondary-300: #7CF4EA;
+  --secondary-400: #43EFE0;
+  --secondary-500: #0D968B;
+  --secondary-600: #11C5B6;
+  --secondary-700: #0D968B;
+  --secondary-800: #09675F;
+  --secondary-900: #07403B;
+
+  /* Backgrounds & Surfaces */
+  --background: #F6FBF8;
+  --background-rgb: 246, 251, 248;
+  --surface: #FFFFFF;
+  --surface-rgb: 255, 255, 255;
+
+  --sidebar: #064E3B;
+  --sidebar-text: #ECFDF5;
+  --sidebar-muted: #6EE7B7;
+
+  --navbar: #FFFFFF;
+  --navbar-border: #D1FAE5;
+
+  /* Typography */
+  --text-primary: #06281E;
+  --text-secondary: #335C4E;
+  --text-muted: #6B8E81;
+
+  /* Borders */
+  --border: #E1F2E8;
+  --border-strong: #C2E5D1;
+
+  /* Semantic Tokens */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #0EA5E9;
+
+  /* Semantic Alpha Accents */
+  --success-light: #10B9811A;
+  --warning-light: #F59E0B1A;
+  --danger-light: #EF44441A;
+  --info-light: #0EA5E91A;
+
+  /* Legacy & Application Variable Aliases */
+  --bg-base: var(--background);
+  --bg-surface: var(--surface);
+  --border-base: var(--border);
+  --color-accent: var(--primary);
+  --color-accent-dark: var(--primary-hover);
+  --status-positive: var(--success);
+  --status-warning: var(--warning);
+  --status-negative: var(--danger);
+
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Status Colors */
-  --status-positive: #10b981;
-  --status-warning: #f59e0b;
-  --status-negative: #ef4444;
-
-  /* Highlighter-marker selection (lime ink, soft edges) */
+  /* Highlighter-marker selection */
   --selection-marker-ink: rgba(163, 230, 53, 0.78);
   --selection-marker-ink-strong: rgba(132, 204, 22, 0.82);
   --selection-marker-ink-soft: rgba(217, 249, 157, 0.45);
@@ -54,31 +122,134 @@ body {
 }
 
 @theme inline {
-  --color-bg-base: var(--bg-base);
-  --color-bg-surface: var(--bg-surface);
-  --color-border-base: var(--border-base);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-light: var(--primary-light);
+  --color-primary-rgb: var(--primary-rgb);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-light: var(--surface);
+  --color-secondary-dark: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-light: var(--primary-light);
+  --color-accent-dark: var(--primary-hover);
+
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+
+  --color-secondary-50: var(--secondary-50);
+  --color-secondary-100: var(--secondary-100);
+  --color-secondary-200: var(--secondary-200);
+  --color-secondary-300: var(--secondary-300);
+  --color-secondary-400: var(--secondary-400);
+  --color-secondary-500: var(--secondary-500);
+  --color-secondary-600: var(--secondary-600);
+  --color-secondary-700: var(--secondary-700);
+  --color-secondary-800: var(--secondary-800);
+  --color-secondary-900: var(--secondary-900);
+
+  --color-surface: var(--surface);
+  --color-background: var(--background);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+
+  --color-navbar: var(--navbar);
+  --color-navbar-border: var(--navbar-border);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
-  --color-accent: var(--color-accent);
-  --color-accent-dark: var(--color-accent-dark);
+  --color-text-muted: var(--text-muted);
+  --color-text-main: var(--text-primary);
+  --color-text-sub: var(--text-secondary);
 
-  --color-status-positive: var(--status-positive);
-  --color-status-warning: var(--status-warning);
-  --color-status-negative: var(--status-negative);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-success-light: var(--success-light);
+  --color-warning-light: var(--warning-light);
+  --color-danger-light: var(--danger-light);
+  --color-info-light: var(--info-light);
+
+  --color-bg-base: var(--background);
+  --color-bg-surface: var(--surface);
+  --color-border-base: var(--border);
+
+  --color-status-positive: var(--success);
+  --color-status-warning: var(--warning);
+  --color-status-negative: var(--danger);
 
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
   --font-mono: var(--font-geist-mono);
+
+  /* Emerald, Green & Teal aliases mapped to dynamic primary tokens for seamless theme updates */
+  --color-emerald-50: var(--primary-50);
+  --color-emerald-100: var(--primary-100);
+  --color-emerald-200: var(--primary-200);
+  --color-emerald-300: var(--primary-300);
+  --color-emerald-400: var(--primary-400);
+  --color-emerald-500: var(--primary-500);
+  --color-emerald-600: var(--primary);
+  --color-emerald-700: var(--primary-hover);
+  --color-emerald-800: var(--primary-800);
+  --color-emerald-900: var(--primary-900);
+
+  --color-green-50: var(--primary-50);
+  --color-green-100: var(--primary-100);
+  --color-green-200: var(--primary-200);
+  --color-green-300: var(--primary-300);
+  --color-green-400: var(--primary-400);
+  --color-green-500: var(--primary-500);
+  --color-green-600: var(--primary);
+  --color-green-700: var(--primary-hover);
+  --color-green-800: var(--primary-800);
+  --color-green-900: var(--primary-900);
+
+  --color-teal-50: var(--primary-50);
+  --color-teal-100: var(--primary-100);
+  --color-teal-200: var(--primary-200);
+  --color-teal-300: var(--primary-300);
+  --color-teal-400: var(--primary-400);
+  --color-teal-500: var(--primary-500);
+  --color-teal-600: var(--primary);
+  --color-teal-700: var(--primary-hover);
+  --color-teal-800: var(--primary-800);
+  --color-teal-900: var(--primary-900);
+
+  --color-indigo-50: var(--primary-50);
+  --color-indigo-100: var(--primary-100);
+  --color-indigo-200: var(--primary-200);
+  --color-indigo-300: var(--primary-300);
+  --color-indigo-400: var(--primary-400);
+  --color-indigo-500: var(--primary-500);
+  --color-indigo-600: var(--primary);
+  --color-indigo-700: var(--primary-hover);
+  --color-indigo-800: var(--primary-800);
+  --color-indigo-900: var(--primary-900);
 }
 
 body {
-  background: var(--bg-base);
+  background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  caret-color: #22c55e; /* Branded green cursor */
+  caret-color: var(--primary);
 }
 
 /* Highlighter marker — solid background (CSS gradients are ignored on ::selection in Chrome/Edge) */
@@ -262,6 +433,14 @@ h1, h2, h3, h4, .font-display {
 
 .silk-page-bg.hero-silk-bg {
   z-index: 0;
+}
+
+/* Before-login screens: guarantee original mint satin / emerald styling */
+.hero-silk-bg,
+.silk-page-bg,
+.login-glass-card {
+  --color-accent: #10b981;
+  --color-accent-dark: #059669;
 }
 
 .login-glass-card {

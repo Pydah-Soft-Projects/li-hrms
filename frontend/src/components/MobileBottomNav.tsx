@@ -155,7 +155,7 @@ export default function MobileBottomNav() {
                   href={module.href}
                   className={cn(
                     "flex flex-col items-center justify-center w-12 h-full gap-1 transition-colors",
-                    active ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"
+                    active ? "text-primary font-semibold" : "text-slate-500 dark:text-slate-400"
                   )}
                 >
                   <Icon strokeWidth={active ? 2.5 : 2} className="w-6 h-6" />
@@ -173,8 +173,8 @@ export default function MobileBottomNav() {
             <Link
               href={dashboardModule?.href || '/dashboard'}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full shadow-lg shadow-indigo-500/30 transition-transform active:scale-95 bg-linear-to-br from-indigo-500 to-indigo-600 text-white border-4 border-white dark:border-slate-900",
-                isActive(dashboardModule?.href || '/dashboard', 'DASHBOARD') && "ring-2 ring-indigo-200 dark:ring-indigo-900"
+                "flex items-center justify-center w-14 h-14 rounded-full shadow-lg shadow-primary/30 transition-transform active:scale-95 bg-primary text-white border-4 border-white dark:border-slate-900",
+                isActive(dashboardModule?.href || '/dashboard', 'DASHBOARD') && "ring-2 ring-primary-light"
               )}
             >
               <LayoutDashboard className="w-6 h-6" />
@@ -182,7 +182,7 @@ export default function MobileBottomNav() {
             <div className="text-center mt-1">
               <span className={cn(
                 "text-[9px] font-bold block",
-                isActive(dashboardModule?.href || '/dashboard', 'DASHBOARD') ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"
+                isActive(dashboardModule?.href || '/dashboard', 'DASHBOARD') ? "text-primary" : "text-slate-500 dark:text-slate-400"
               )}>
                 Dash
               </span>
@@ -200,7 +200,7 @@ export default function MobileBottomNav() {
                   href={module.href}
                   className={cn(
                     "flex flex-col items-center justify-center w-12 h-full gap-1 transition-colors",
-                    active ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"
+                    active ? "text-primary font-semibold" : "text-slate-500 dark:text-slate-400"
                   )}
                 >
                   <Icon strokeWidth={active ? 2.5 : 2} className="w-6 h-6" />
@@ -217,10 +217,10 @@ export default function MobileBottomNav() {
                   onClick={() => setIsMoreOpen(!isMoreOpen)}
                   className={cn(
                     "flex flex-col items-center justify-center w-12 h-full gap-1 transition-colors relative z-50",
-                    isMoreOpen ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"
+                    isMoreOpen ? "text-primary font-semibold" : "text-slate-500 dark:text-slate-400"
                   )}
                 >
-                  <div className={cn("p-1 rounded-full transition-colors duration-200", isMoreOpen && "bg-indigo-100 dark:bg-indigo-900/40")}>
+                  <div className={cn("p-1 rounded-full transition-colors duration-200", isMoreOpen && "bg-primary-light")}>
                     {isMoreOpen ? <X className="w-5 h-5" /> : <MoreHorizontal className="w-6 h-6" />}
                   </div>
                   <span className="text-[9px] font-medium">More</span>
@@ -229,7 +229,7 @@ export default function MobileBottomNav() {
                 {/* Vertical Pill Bar - Anchored to the More button */}
                 {isMoreOpen && (
                   <div
-                    className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 p-1.5 bg-white/10 dark:bg-slate-900/60 backdrop-blur-xl border border-white/20 dark:border-slate-800/50 rounded-full shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto no-scrollbar"
+                    className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 p-1.5 bg-surface/90 backdrop-blur-xl border border-border rounded-full shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto no-scrollbar"
                     style={{ width: '3.5rem' }} // Fixed width like the image
                   >
                     {/* Modules inside the pill */}
@@ -246,8 +246,8 @@ export default function MobileBottomNav() {
                           <div className={cn(
                             "w-10 h-10 rounded-full flex items-center justify-center transition-all",
                             active
-                              ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-md transform scale-105"
-                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              ? "bg-primary text-white shadow-md transform scale-105"
+                              : "text-slate-600 dark:text-slate-400 hover:bg-primary-light/50"
                           )}>
                             <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
                           </div>
@@ -255,7 +255,7 @@ export default function MobileBottomNav() {
                           {/* Short Label */}
                           <span className={cn(
                             "text-[8px] font-bold  tracking-tight text-center leading-none",
-                            active ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"
+                            active ? "text-primary" : "text-slate-500 dark:text-slate-400"
                           )}>
                             {SIDEBAR_SHORT_LABELS[module.code] || module.label.slice(0, 4)}
                           </span>

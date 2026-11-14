@@ -53,11 +53,11 @@ export function payslipAccentCssVars(accentHex: string): Record<string, string> 
   const rgb = hexToRgb(accentHex) ?? [5, 150, 105];
   const [r, g, b] = rgb;
   return {
-    '--ps-accent': accentHex,
-    '--ps-accent-rgb': `${r} ${g} ${b}`,
-    '--ps-accent-soft': `rgba(${r}, ${g}, ${b}, 0.08)`,
-    '--ps-accent-muted': `rgba(${r}, ${g}, ${b}, 0.55)`,
-    '--ps-accent-border': `rgba(${r}, ${g}, ${b}, 0.22)`,
-    '--ps-accent-ink': `rgba(${r}, ${g}, ${b}, 0.92)`,
+    '--ps-accent': 'var(--primary, ' + accentHex + ')',
+    '--ps-accent-rgb': 'var(--primary-rgb, ' + `${r} ${g} ${b}` + ')',
+    '--ps-accent-soft': 'var(--primary-light, rgba(' + `${r}, ${g}, ${b}` + ', 0.08))',
+    '--ps-accent-muted': 'rgba(var(--primary-rgb, ' + `${r}, ${g}, ${b}` + '), 0.55)',
+    '--ps-accent-border': 'var(--border, rgba(' + `${r}, ${g}, ${b}` + ', 0.22))',
+    '--ps-accent-ink': 'var(--primary, rgba(' + `${r}, ${g}, ${b}` + ', 0.92))',
   };
 }

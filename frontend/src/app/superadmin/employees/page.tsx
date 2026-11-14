@@ -3677,9 +3677,9 @@ export default function EmployeesPage() {
 
           <div className="flex items-center gap-3">
             {/* Tab Slider */}
-            <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+            <div className="relative flex h-10 items-center rounded-xl border border-border bg-surface p-1 shadow-xs">
               <div
-                className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${
+                className={`absolute h-8 rounded-lg bg-primary shadow-md transition-all duration-300 ease-in-out ${
                   activeTab === 'employees'
                     ? 'left-1 w-32'
                     : activeTab === 'applications'
@@ -3690,8 +3690,8 @@ export default function EmployeesPage() {
               <button
                 onClick={() => setActiveTab('employees')}
                 className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
-                  ? 'text-slate-900 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  ? 'text-white font-bold'
+                  : 'text-text-secondary hover:text-primary'
                   }`}
               >
                 Employees
@@ -3699,13 +3699,15 @@ export default function EmployeesPage() {
               <button
                 onClick={() => setActiveTab('applications')}
                 className={`relative z-10 w-40 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
-                  ? 'text-slate-900 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  ? 'text-white font-bold'
+                  : 'text-text-secondary hover:text-primary'
                   }`}
               >
                 Applications
                 {pendingApplications.length > 0 && (
-                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-red-500 text-white font-bold">
+                  <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
+                    activeTab === 'applications' ? 'bg-white/25 text-white' : 'bg-red-500 text-white'
+                  }`}>
                     {pendingApplications.length}
                   </span>
                 )}
@@ -3713,13 +3715,15 @@ export default function EmployeesPage() {
               <button
                 onClick={() => setActiveTab('requests')}
                 className={`relative z-10 w-48 px-2 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'requests'
-                  ? 'text-slate-900 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  ? 'text-white font-bold'
+                  : 'text-text-secondary hover:text-primary'
                   }`}
               >
                 Profile Requests
                 {pendingUpdateRequests.length > 0 && (
-                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white font-bold">
+                  <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
+                    activeTab === 'requests' ? 'bg-white/25 text-white' : 'bg-primary text-white'
+                  }`}>
                     {pendingUpdateRequests.length}
                   </span>
                 )}
@@ -3729,7 +3733,7 @@ export default function EmployeesPage() {
             {/* New Application button */}
             <button
               onClick={() => setShowApplicationDialog(true)}
-              className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700"
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary-hover"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -5011,7 +5015,7 @@ export default function EmployeesPage() {
                                       </div>
                                       <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                                         <div
-                                          className="h-full rounded-full bg-indigo-500 transition-all"
+                                          className="h-full rounded-full bg-primary transition-all"
                                           style={{ width: `${completion}%` }}
                                         />
                                       </div>

@@ -11,10 +11,11 @@ import Spinner from '@/components/Spinner';
 import WorkspaceSidebar from '@/components/WorkspaceSidebar';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import MainContent from '@/components/MainContent';
+import { initAfterLoginTheme } from '@/lib/utils';
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-bg-base dark:bg-slate-900">
+    <div className="flex min-h-screen bg-background">
       <div className="hidden sm:block">
         <WorkspaceSidebar />
       </div>
@@ -68,6 +69,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       if (!cancelled) {
         setIsAuthenticated(true);
         setIsChecking(false);
+        initAfterLoginTheme();
       }
     };
 
