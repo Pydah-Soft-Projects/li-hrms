@@ -344,9 +344,12 @@ async function getSecurityDivisionEmployees(customEmpNos = null) {
     };
   }
 
-  const employees = await Employee.find(filter)
-    .populate('division_id department_id designation_id')
+  const allEmployees = await Employee.find(filter)
+    .populate('division_id department_id designation_id employee_group_id')
     .lean();
+
+  // Exclude Unit-2 / hour-based group employees so they are never overwritten by Main Security engine
+  const employees = allEmployees.filter(e => isSecurityDivisionEmployee(e));
 
   return { securityDiv, securityDept, employees };
 }
@@ -960,28 +963,43 @@ async function runSecurityDivisionAttendanceEngine(options = {}) {
   return results;
 }
 
+/**
+ * Detects if an employee group is hour-based (e.g. "7/8/9 Hrs", "12 Hrs", "24 Hrs").
+ * Client 2 (Unit-2) uses strictly hour-based groups, whereas Client 1 (Main) uses role-based groups.
+ */
+function isHourBasedGroup(group) {
+  if (!group) return false;
+  const name = typeof group === 'object' ? (group.name || group.code || '') : String(group);
+  return /\b\d+(\.\d+)?\s*(hrs?|hours?)/i.test(name) || /\d+\/\d+/.test(name);
+}
+
 function isSecurityDivisionEmployee(employee) {
   if (!employee) return false;
-  return Boolean(
-    /security/i.test(
-      String(
-        employee.division_id?.name ||
-        employee.division_id ||
-        employee.department_id?.name ||
-        employee.department_id ||
-        employee.department ||
-        employee.division ||
-        employee.designation_id?.name ||
-        employee.designation ||
-        ''
-      )
-    )
-  );
+
+  // Client 2 (Unit-2) respect: If employee has an hour-based group (e.g. "7/8/9 Hrs", "12 Hrs")
+  // or belongs to Unit-2 / Unit-3 division, they follow Group-based attendance rules, NOT the legacy Main Security engine.
+  const divName = employee.division_id?.name || (typeof employee.division_id === 'string' ? employee.division_id : '') || employee.division || '';
+  if (/unit-2|unit-3/i.test(divName) || isHourBasedGroup(employee.employee_group_id)) {
+    return false;
+  }
+
+  const deptName = employee.department_id?.name || (typeof employee.department_id === 'string' ? employee.department_id : '') || employee.department || '';
+  const desigName = employee.designation_id?.name || (typeof employee.designation_id === 'string' ? employee.designation_id : '') || employee.designation || '';
+
+  return /security/i.test(divName) || /security/i.test(deptName) || /security/i.test(desigName);
 }
 
 async function isSecurityEmployeeNumber(employeeNumber) {
   if (!employeeNumber) return false;
   const Employee = require('../../employees/model/Employee');
+  // Ensure referenced models are registered
+  try {
+    require('../../departments/model/Division');
+    require('../../departments/model/Department');
+    require('../../departments/model/Designation');
+    require('../../employees/model/EmployeeGroup');
+  } catch (e) { }
+
   const emp = await Employee.findOne({
     $or: [
       { emp_no: String(employeeNumber).trim().toUpperCase() },
@@ -989,8 +1007,8 @@ async function isSecurityEmployeeNumber(employeeNumber) {
       { customId: String(employeeNumber).trim().toUpperCase() },
     ],
   })
-    .select('emp_no employeeNumber division_id department_id designation_id department division')
-    .populate('division_id department_id designation_id')
+    .select('emp_no employeeNumber division_id department_id designation_id department division employee_group_id')
+    .populate('division_id department_id designation_id employee_group_id')
     .lean();
   return isSecurityDivisionEmployee(emp);
 }

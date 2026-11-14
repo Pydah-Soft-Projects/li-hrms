@@ -392,6 +392,17 @@ function buildIterativeSplitSegments({
     return splitSegments;
 }
 
+/**
+ * Extracts allowed shift duration numbers from an employee group name/code (e.g. "7/8/9 Hrs" -> [7, 8, 9]).
+ */
+function parseAllowedDurationsFromGroupName(groupName) {
+    if (!groupName) return null;
+    const matches = String(groupName).match(/\d+(\.\d+)?/g);
+    if (!matches) return null;
+    const nums = matches.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    return nums.length > 0 ? nums : null;
+}
+
 module.exports = {
     formatDate,
     timeStringToDate,
@@ -411,5 +422,6 @@ module.exports = {
     computeConsiderableSplitHours,
     shouldAttemptIterativeSplit,
     buildIterativeSplitSegments,
+    parseAllowedDurationsFromGroupName,
     NEAR_START_MAX_MINUTES,
 };

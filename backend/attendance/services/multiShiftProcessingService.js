@@ -30,6 +30,7 @@ const {
     computeConsiderableSplitHours,
     shouldAttemptIterativeSplit,
     buildIterativeSplitSegments,
+    parseAllowedDurationsFromGroupName,
 } = require('./multiShiftSplitHelpers');
 
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
@@ -482,7 +483,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 2: Get employee ID & ODs (before pairing loop — divisionId used in presence resolution)
         const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() })
             .select('_id department_id division_id gender employee_group_id')
-            .populate('division_id', 'shifts');
+            .populate('division_id', 'shifts')
+            .populate('employee_group_id', 'name code');
         const employeeId = employee ? employee._id : null;
         const divisionId = employee?.division_id?._id || employee?.division_id || null;
         const segmentCtx = {
@@ -605,7 +607,17 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             if (nextOut) {
                 try {
                     const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent };
-                    const { shifts: shiftsList } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
+                    const { shifts: rawShiftsList } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
+
+                    let shiftsList = rawShiftsList || [];
+                    const groupName = employee?.employee_group_id?.name || employee?.employee_group_id?.code || '';
+                    const allowedDurations = parseAllowedDurationsFromGroupName(groupName);
+                    if (allowedDurations && allowedDurations.length > 0) {
+                        const groupFiltered = shiftsList.filter(s => allowedDurations.includes(Number(s.duration)));
+                        if (groupFiltered.length > 0) {
+                            shiftsList = groupFiltered;
+                        }
+                    }
 
                     const firstShiftRaw = findShiftForSplit(currentInTime, shiftsList, date);
                     if (firstShiftRaw) {
