@@ -1,4 +1,5 @@
 const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Permission Deduction Settings Controller
@@ -55,6 +56,8 @@ exports.saveSettings = async (req, res) => {
 
     // Find existing settings or create new
     let settings = await PermissionDeductionSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     if (!settings) {
       settings = new PermissionDeductionSettings({
@@ -99,6 +102,16 @@ exports.saveSettings = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.isActive = true;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'permission_deduction_settings',
+      category: 'permissions',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated permission deduction settings',
+    });
 
     res.status(200).json({
       success: true,

@@ -1,4 +1,5 @@
 const ResignationSettings = require('../model/ResignationSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 // @desc    Get resignation policy settings
 // @route   GET /api/resignations/settings
@@ -54,6 +55,9 @@ exports.saveSettings = async (req, res) => {
   try {
     const { noticePeriodDays, workflow } = req.body;
     let settings = await ResignationSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
+
     if (!settings) {
       settings = await ResignationSettings.findOne({}) || new ResignationSettings({});
     }
@@ -74,6 +78,17 @@ exports.saveSettings = async (req, res) => {
     settings.isActive = true;
     await settings.save();
     await ResignationSettings.updateMany({ _id: { $ne: settings._id } }, { isActive: false });
+
+    await recordSettingAudit({
+      settingKey: 'resignation_settings',
+      category: 'resignation',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated resignation policy settings',
+    });
+
     res.status(200).json({
       success: true,
       message: 'Resignation policy settings saved successfully',

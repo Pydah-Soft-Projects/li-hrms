@@ -1,4 +1,6 @@
 const Settings = require('../model/Settings');
+const SettingsAudit = require('../model/SettingsAudit');
+const { recordSettingAudit } = require('../services/settingsAuditService');
 const { invalidateSecondSalaryFeatureCache } = require('../secondSalaryFeatureGate');
 const {
   DEFAULT_COMPANY_PROFILE,
@@ -339,31 +341,44 @@ exports.upsertSetting = async (req, res) => {
       valueToSave = validation.normalized;
     }
 
+    // Fetch existing setting to determine previous value and action
+    const existing = await Settings.findOne({ key }).lean();
+    const isNew = !existing;
+    const prevValStr = JSON.stringify(existing ? existing.value : null);
+    const newValStr = JSON.stringify(valueToSave);
+    const hasChanged = isNew || prevValStr !== newValStr;
+
+    const resolvedCategory =
+      category ||
+      (key === 'company_profile'
+        ? 'company'
+        : key === 'mobile_login_geofence'
+          ? 'geofence'
+        : key === FILE_STORAGE_SETTING_KEY
+          ? 'general'
+        : ['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
+        ? 'payroll'
+        : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
+          ? 'employee'
+          : [
+              'auto_od_creation_enabled',
+              'leave_attendance_reconciliation_enabled',
+              'skip_leave_attendance_reconciliation',
+            ].includes(key)
+            ? 'general'
+          : 'general');
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
         key,
         value: valueToSave,
         description: description || `Setting for ${key}`,
-        category:
-          category ||
-          (key === 'company_profile'
-            ? 'company'
-            : key === 'mobile_login_geofence'
-              ? 'geofence'
-            : key === FILE_STORAGE_SETTING_KEY
-              ? 'general'
-            : ['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
-            ? 'payroll'
-            : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
-              ? 'employee'
-              : [
-                  'auto_od_creation_enabled',
-                  'leave_attendance_reconciliation_enabled',
-                  'skip_leave_attendance_reconciliation',
-                ].includes(key)
-                ? 'general'
-              : 'general'),
+        category: resolvedCategory,
+        updatedBy: req.user?._id || null,
+        updatedByName: req.user?.name || null,
+        updatedByEmail: req.user?.email || null,
+        updatedByRole: req.user?.role || null,
       },
       {
         new: true,
@@ -371,6 +386,19 @@ exports.upsertSetting = async (req, res) => {
         runValidators: true,
       }
     );
+
+    // Record audit trail if value was created or changed
+    if (hasChanged) {
+      await recordSettingAudit({
+        settingKey: key,
+        category: resolvedCategory,
+        action: isNew ? 'create' : 'update',
+        previousValue: existing ? existing.value : null,
+        newValue: valueToSave,
+        req,
+        description: description || (isNew ? `Created setting "${key}"` : `Updated setting "${key}"`),
+      });
+    }
 
     if (key === 'enable_second_salary') {
       invalidateSecondSalaryFeatureCache();
@@ -413,7 +441,21 @@ exports.deleteSetting = async (req, res) => {
       });
     }
 
+    const previousValue = setting.value;
+    const category = setting.category || 'general';
+
     await setting.deleteOne();
+
+    // Record audit trail for deletion
+    await recordSettingAudit({
+      settingKey: req.params.key,
+      category,
+      action: 'delete',
+      previousValue,
+      newValue: null,
+      req,
+      description: `Deleted setting "${req.params.key}"`,
+    });
 
     res.status(200).json({
       success: true,
@@ -423,6 +465,112 @@ exports.deleteSetting = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting setting',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get audit trail of settings changes
+// @route   GET /api/settings/audits
+// @access  Private (Super Admin, Sub Admin, Manager)
+exports.getSettingsAudits = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (req.query.settingKey) {
+      query.settingKey = req.query.settingKey;
+    }
+    if (req.query.category) {
+      query.category = req.query.category;
+    }
+    if (req.query.action) {
+      query.action = req.query.action;
+    }
+    if (req.query.search) {
+      const q = req.query.search.trim();
+      const regex = new RegExp(q, 'i');
+      query.$or = [
+        { settingKey: regex },
+        { performedByName: regex },
+        { performedByEmail: regex },
+        { description: regex },
+      ];
+    }
+    if (req.query.startDate || req.query.endDate) {
+      query.timestamp = {};
+      if (req.query.startDate) query.timestamp.$gte = new Date(req.query.startDate);
+      if (req.query.endDate) {
+        const end = new Date(req.query.endDate);
+        end.setHours(23, 59, 59, 999);
+        query.timestamp.$lte = end;
+      }
+    }
+
+    const total = await SettingsAudit.countDocuments(query);
+    const audits = await SettingsAudit.find(query)
+      .populate('performedBy', 'name email role')
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: audits,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching settings audits:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch settings audits',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get audits for a single setting key
+// @route   GET /api/settings/:key/audits
+// @access  Private (Super Admin, Sub Admin, Manager)
+exports.getSettingAuditsByKey = async (req, res) => {
+  try {
+    const { key } = req.params;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const query = { settingKey: key };
+    const total = await SettingsAudit.countDocuments(query);
+    const audits = await SettingsAudit.find(query)
+      .populate('performedBy', 'name email role')
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: audits,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (error) {
+    console.error(`Error fetching audits for setting ${req.params.key}:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch setting audits',
       error: error.message,
     });
   }

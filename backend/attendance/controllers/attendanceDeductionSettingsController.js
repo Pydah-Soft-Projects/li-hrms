@@ -1,4 +1,5 @@
 const AttendanceDeductionSettings = require('../model/AttendanceDeductionSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Attendance Deduction Settings Controller
@@ -56,6 +57,8 @@ exports.saveSettings = async (req, res) => {
 
     // Find existing settings or create new
     let settings = await AttendanceDeductionSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     if (!settings) {
       settings = new AttendanceDeductionSettings({
@@ -106,6 +109,16 @@ exports.saveSettings = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.isActive = true;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'attendance_deduction_settings',
+      category: 'attendance',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated attendance deduction settings',
+    });
 
     res.status(200).json({
       success: true,

@@ -1,5 +1,6 @@
 const PromotionTransferSettings = require('../model/PromotionTransferSettings');
 const { sanitizePromotionWorkflowConfigSteps, toPlainWorkflow } = require('../utils/promotionWorkflowUtils');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 const defaultWorkflow = () => ({
   isEnabled: true,
@@ -54,6 +55,9 @@ exports.saveSettings = async (req, res) => {
   try {
     const { workflow } = req.body;
     let settings = await PromotionTransferSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
+
     if (!settings) {
       settings = new PromotionTransferSettings({});
     }
@@ -89,6 +93,17 @@ exports.saveSettings = async (req, res) => {
     settings.isActive = true;
     await settings.save();
     await PromotionTransferSettings.updateMany({ _id: { $ne: settings._id } }, { isActive: false });
+
+    await recordSettingAudit({
+      settingKey: 'promotion_transfer_settings',
+      category: 'promotions_transfers',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated promotion & transfer settings',
+    });
+
     res.status(200).json({
       success: true,
       message: 'Promotion & transfer policy saved',

@@ -1,5 +1,6 @@
 const OvertimeSettings = require('../model/OvertimeSettings');
 const cacheService = require('../../shared/services/cacheService');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Overtime Settings Controller
@@ -58,6 +59,8 @@ exports.saveSettings = async (req, res) => {
   try {
     const body = req.body || {};
     let settings = await OvertimeSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     if (!settings) {
       settings = new OvertimeSettings({
@@ -98,6 +101,16 @@ exports.saveSettings = async (req, res) => {
     } catch (e) {
       /* non-fatal */
     }
+
+    await recordSettingAudit({
+      settingKey: 'overtime_settings',
+      category: 'overtime',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated overtime settings',
+    });
 
     res.status(200).json({
       success: true,

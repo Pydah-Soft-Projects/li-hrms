@@ -75,7 +75,7 @@ export default function Sidebar() {
     return SUPERADMIN_NAV_CATEGORIES.map((category) => ({
       ...category,
       items: category.items.filter((item) => {
-        if (item.code === 'USER_AUDITS' && user?.role !== 'super_admin') return false;
+        if ((item.code === 'USER_AUDITS' || item.code === 'SETTINGS_AUDIT') && user?.role !== 'super_admin') return false;
         if (item.code === 'GENERAL_COMPLAINTS' && !generalComplaintsEnabled) return false;
         if (item.feature === 'second_salary' && isAdmin && !secondSalaryNavEnabled) return false;
         if (isAdmin) return true;

@@ -42,11 +42,27 @@ function refName(
     const o = ref as { name?: string; code?: string; title?: string };
     return o.name || o.title || o.code || '';
   }
-  const hit = list?.find((x) => String(x._id) === String(ref));
-  return hit?.name || hit?.title || hit?.code || '';
+  const str = String(ref).trim();
+  if (!str) return '';
+
+  const hitById = list?.find((x) => String(x._id) === str);
+  if (hitById) return hitById.name || hitById.title || hitById.code || '';
+
+  const hitByName = list?.find(
+    (x) =>
+      (x.name && x.name.toLowerCase() === str.toLowerCase()) ||
+      (x.code && x.code.toLowerCase() === str.toLowerCase())
+  );
+  if (hitByName) return hitByName.name || hitByName.title || hitByName.code || '';
+
+  // If it's already a non-ObjectId string (e.g. human-readable name like 'TEACHING'), return it
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(str);
+  if (!isObjectId) return str;
+
+  return '';
 }
 
-/** Resolve division / department / designation labels for view dialogs and lists. */
+/** Resolve division / department / designation / employee group labels for view dialogs and lists. */
 export function resolveEmployeeOrgRefName(
   record: object | null | undefined,
   refKey: 'division' | 'department' | 'designation' | 'employee_group',
@@ -55,9 +71,27 @@ export function resolveEmployeeOrgRefName(
 ): string {
   if (!record) return '-';
   const row = record as Record<string, unknown>;
-  const name =
+  const df = (row.dynamicFields && typeof row.dynamicFields === 'object' ? row.dynamicFields : {}) as Record<string, unknown>;
+  const basicInfo = (row.basic_info && typeof row.basic_info === 'object' ? row.basic_info : {}) as Record<string, unknown>;
+
+  let name =
     refName(row[refKey], lookups) ||
-    refName(row[idKey], lookups);
+    refName(row[idKey], lookups) ||
+    refName(df[refKey], lookups) ||
+    refName(df[idKey], lookups) ||
+    refName(basicInfo[refKey], lookups) ||
+    refName(basicInfo[idKey], lookups);
+
+  if (!name && refKey === 'employee_group') {
+    name =
+      refName(row.employeeGroup, lookups) ||
+      refName(row.employeeGroupId, lookups) ||
+      refName(df.employeeGroup, lookups) ||
+      refName(df.employeeGroupId, lookups) ||
+      refName(basicInfo.employeeGroup, lookups) ||
+      refName(basicInfo.employeeGroupId, lookups);
+  }
+
   return name || '-';
 }
 

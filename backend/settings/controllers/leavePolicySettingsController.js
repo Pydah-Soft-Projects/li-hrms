@@ -4,6 +4,7 @@
  */
 
 const LeavePolicySettings = require('../model/LeavePolicySettings');
+const { recordSettingAudit } = require('../services/settingsAuditService');
 
 /**
  * @desc    Get current leave policy settings
@@ -35,7 +36,19 @@ exports.getSettings = async (req, res) => {
  */
 exports.updateSettings = async (req, res) => {
     try {
+        const previousSettings = await LeavePolicySettings.getSettings();
         const settings = await LeavePolicySettings.updateSettings(req.body);
+
+        await recordSettingAudit({
+            settingKey: 'leave_policy_settings',
+            category: 'leave_policy',
+            action: 'update',
+            previousValue: previousSettings ? (previousSettings.toObject ? previousSettings.toObject() : previousSettings) : null,
+            newValue: settings ? (settings.toObject ? settings.toObject() : settings) : null,
+            req,
+            description: 'Updated leave policy settings',
+        });
+
         res.status(200).json({
             success: true,
             message: 'Leave policy settings updated successfully',
@@ -58,8 +71,20 @@ exports.updateSettings = async (req, res) => {
  */
 exports.resetSettings = async (req, res) => {
     try {
+        const previousSettings = await LeavePolicySettings.getSettings();
         await LeavePolicySettings.deleteMany({});
         const defaultSettings = await LeavePolicySettings.create({});
+
+        await recordSettingAudit({
+            settingKey: 'leave_policy_settings',
+            category: 'leave_policy',
+            action: 'reset',
+            previousValue: previousSettings ? (previousSettings.toObject ? previousSettings.toObject() : previousSettings) : null,
+            newValue: defaultSettings ? (defaultSettings.toObject ? defaultSettings.toObject() : defaultSettings) : null,
+            req,
+            description: 'Reset leave policy settings to defaults',
+        });
+
         res.status(200).json({
             success: true,
             message: 'Leave policy settings reset to defaults',
@@ -108,10 +133,21 @@ exports.previewELCalculation = async (req, res) => {
  */
 exports.initSettings = async (req, res) => {
     try {
+        const previousSettings = await LeavePolicySettings.getSettings();
         // Force create default settings even if they exist
         await LeavePolicySettings.deleteMany({});
         const settings = await LeavePolicySettings.create({});
-        
+
+        await recordSettingAudit({
+            settingKey: 'leave_policy_settings',
+            category: 'leave_policy',
+            action: 'create',
+            previousValue: previousSettings ? (previousSettings.toObject ? previousSettings.toObject() : previousSettings) : null,
+            newValue: settings ? (settings.toObject ? settings.toObject() : settings) : null,
+            req,
+            description: 'Initialized leave policy settings (forced defaults)',
+        });
+
         console.log('[LeavePolicySettings] Settings initialized (forced)');
         
         res.status(200).json({

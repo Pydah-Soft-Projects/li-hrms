@@ -1,4 +1,5 @@
 const EarlyOutSettings = require('../model/EarlyOutSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Early-Out Settings Controller
@@ -46,6 +47,8 @@ exports.saveSettings = async (req, res) => {
 
     // Find existing settings or create new
     let settings = await EarlyOutSettings.getActiveSettings();
+    const isNew = !settings;
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     if (!settings) {
       settings = new EarlyOutSettings({
@@ -78,6 +81,16 @@ exports.saveSettings = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.isActive = true;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'early_out_settings',
+      category: 'attendance',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated early-out settings',
+    });
 
     res.status(200).json({
       success: true,
@@ -122,6 +135,7 @@ exports.addRange = async (req, res) => {
     }
 
     let settings = await EarlyOutSettings.getActiveSettings();
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
     if (!settings) {
       settings = new EarlyOutSettings({
         createdBy: req.user._id,
@@ -150,6 +164,16 @@ exports.addRange = async (req, res) => {
     settings.updatedBy = req.user._id;
     settings.isActive = true;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'early_out_settings',
+      category: 'attendance',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Added early-out deduction range',
+    });
 
     res.status(200).json({
       success: true,
@@ -181,6 +205,8 @@ exports.updateRange = async (req, res) => {
       });
     }
 
+    const previousSnapshot = settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings));
+
     const range = settings.deductionRanges.id(rangeId);
     if (!range) {
       return res.status(404).json({
@@ -209,6 +235,16 @@ exports.updateRange = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'early_out_settings',
+      category: 'attendance',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: `Updated early-out deduction range ${rangeId}`,
+    });
 
     res.status(200).json({
       success: true,
@@ -239,9 +275,21 @@ exports.deleteRange = async (req, res) => {
       });
     }
 
+    const previousSnapshot = settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings));
+
     settings.deductionRanges.id(rangeId).remove();
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'early_out_settings',
+      category: 'attendance',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: `Deleted early-out deduction range ${rangeId}`,
+    });
 
     res.status(200).json({
       success: true,

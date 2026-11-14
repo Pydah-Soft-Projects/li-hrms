@@ -958,6 +958,48 @@ export interface Setting {
   value: any;
   description?: string;
   category: string;
+  updatedBy?: string | null;
+  updatedByName?: string | null;
+  updatedByEmail?: string | null;
+  updatedByRole?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SettingsAudit {
+  _id: string;
+  settingKey: string;
+  category: string;
+  action: 'create' | 'update' | 'delete' | 'reset';
+  previousValue: any;
+  newValue: any;
+  performedBy?: {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+  } | null;
+  performedByName: string;
+  performedByEmail?: string;
+  performedByRole?: string;
+  description?: string;
+  details?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+  timestamp: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SettingsAuditListResponse {
+  success: boolean;
+  data: SettingsAudit[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
 export type AutoEdgePermissionApplyFor = 'late_in' | 'early_out' | 'both';
@@ -2488,6 +2530,36 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  getSettingsAudits: async (params?: {
+    settingKey?: string;
+    category?: string;
+    action?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.settingKey) searchParams.append('settingKey', params.settingKey);
+    if (params?.category) searchParams.append('category', params.category);
+    if (params?.action) searchParams.append('action', params.action);
+    if (params?.search) searchParams.append('search', params.search);
+    if (params?.startDate) searchParams.append('startDate', params.startDate);
+    if (params?.endDate) searchParams.append('endDate', params.endDate);
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return apiRequest<SettingsAudit[]>(`/settings/audits${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
+  getSettingAuditsByKey: async (key: string, limit = 50) => {
+    return apiRequest<SettingsAudit[]>(
+      `/settings/${key}/audits?limit=${limit}`,
+      { method: 'GET' }
+    );
   },
 
   // Public API Keys Management

@@ -9,6 +9,7 @@ const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Division = require('../../departments/model/Division');
 const Settings = require('../../settings/model/Settings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
 const User = require('../../users/model/User');
 const EmployeeGroup = require('../model/EmployeeGroup');
@@ -2085,11 +2086,35 @@ exports.updateSettings = async (req, res) => {
     ].filter(Boolean);
 
     for (const { key, value } of updates) {
+      const existing = await Settings.findOne({ key });
+      const previousValue = existing ? existing.value : null;
+      const hasChanged = !existing || JSON.stringify(existing.value) !== JSON.stringify(value);
+
       await Settings.findOneAndUpdate(
         { key },
-        { key, value, category: 'employee' },
+        {
+          key,
+          value,
+          category: 'employee',
+          updatedBy: req.user?._id || null,
+          updatedByName: req.user?.name || null,
+          updatedByEmail: req.user?.email || null,
+          updatedByRole: req.user?.role || null,
+        },
         { new: true, upsert: true }
       );
+
+      if (hasChanged) {
+        await recordSettingAudit({
+          settingKey: key,
+          category: 'employee',
+          action: !existing ? 'create' : 'update',
+          previousValue,
+          newValue: value,
+          req,
+          description: `Updated employee setting "${key}"`,
+        });
+      }
     }
 
     const settings = await getEmployeeSettings();

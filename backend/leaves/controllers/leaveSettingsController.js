@@ -1,4 +1,5 @@
 const LeaveSettings = require('../model/LeaveSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Leave Settings Controller
@@ -143,6 +144,8 @@ exports.saveSettings = async (req, res) => {
 
     // Find existing or create new
     let leaveSettings = await LeaveSettings.findOne({ type });
+    const isNew = !leaveSettings;
+    const previousSnapshot = leaveSettings ? (leaveSettings.toObject ? leaveSettings.toObject() : JSON.parse(JSON.stringify(leaveSettings))) : null;
 
     console.log('Existing settings found:', !!leaveSettings);
     if (leaveSettings) {
@@ -208,6 +211,16 @@ exports.saveSettings = async (req, res) => {
     await leaveSettings.save();
     console.log('Settings saved successfully');
     console.log('Final settings.settings:', JSON.stringify(leaveSettings.settings, null, 2));
+
+    await recordSettingAudit({
+      settingKey: `${type}_settings`,
+      category: type === 'complaint' ? 'general' : 'leave',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: leaveSettings.toObject ? leaveSettings.toObject() : leaveSettings,
+      req,
+      description: `Updated ${type} settings`,
+    });
 
     res.status(200).json({
       success: true,

@@ -1,5 +1,6 @@
 const LoanSettings = require('../model/LoanSettings');
 const User = require('../../users/model/User');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Loan Settings Controller
@@ -144,6 +145,8 @@ exports.saveSettings = async (req, res) => {
 
     // Find existing settings or create new
     let loanSettings = await LoanSettings.findOne({ type, isActive: true });
+    const isNew = !loanSettings;
+    const previousSnapshot = loanSettings ? (loanSettings.toObject ? loanSettings.toObject() : JSON.parse(JSON.stringify(loanSettings))) : null;
 
     if (!loanSettings) {
       loanSettings = new LoanSettings({
@@ -198,6 +201,16 @@ exports.saveSettings = async (req, res) => {
     await loanSettings.save();
 
     console.log('Settings saved successfully');
+
+    await recordSettingAudit({
+      settingKey: `${type}_settings`,
+      category: 'loan',
+      action: isNew ? 'create' : 'update',
+      previousValue: previousSnapshot,
+      newValue: loanSettings.toObject ? loanSettings.toObject() : loanSettings,
+      req,
+      description: `Updated ${type === 'salary_advance' ? 'salary advance' : 'loan'} settings`,
+    });
 
     res.status(200).json({
       success: true,

@@ -43,6 +43,7 @@ import {
   ClipboardCheck,
   FolderSearch,
   MessageSquare,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 export type SidebarIcon = ComponentType<{ className?: string; style?: CSSProperties; strokeWidth?: number }>;
@@ -93,6 +94,7 @@ export const SIDEBAR_MODULE_ICONS: Record<string, SidebarIcon> = {
   DEPARTMENTAL_SETTINGS: Settings2,
   USERS: UserCog,
   USER_AUDITS: ShieldCheck,
+  SETTINGS_AUDIT: SlidersHorizontal,
   REPORTS: LineChart,
   MOBILE_ANALYTICS: Smartphone,
   PAYMENTS: CreditCard,
@@ -172,6 +174,7 @@ export const SUPERADMIN_NAV_CATEGORIES: SidebarNavCategory[] = [
     items: [
       { code: 'ATTENDANCE_AUDIT', label: 'Audits', href: `${SUPERADMIN_PREFIX}/audits`, icon: FolderSearch },
       { code: 'USER_AUDITS', label: 'User Audits', href: `${SUPERADMIN_PREFIX}/user-audits`, icon: ShieldCheck },
+      { code: 'SETTINGS_AUDIT', label: 'Settings Audits', href: `${SUPERADMIN_PREFIX}/settings-audit`, icon: SlidersHorizontal },
     ],
   },
   {
@@ -389,6 +392,7 @@ export const SIDEBAR_SHORT_LABELS: Record<string, string> = {
   STATUTORY_DEDUCTIONS: 'Stat',
   USERS: 'Users',
   USER_AUDITS: 'Audits',
+  SETTINGS_AUDIT: 'Sets',
   REPORTS: 'Rpts',
   COMMUNICATIONS: 'Comms',
   GENERAL_SETTINGS: 'Sets',
@@ -414,7 +418,8 @@ export function isSidebarPathActive(href: string, pathname: string): boolean {
     return pathname === `${href}/form-settings` ? false : true;
   }
   if (href.endsWith('/user-audits') && pathname.startsWith(href)) return true;
-  if (href.endsWith('/audits') && pathname.startsWith(href) && !pathname.includes('user-audits')) return true;
+  if (href.endsWith('/settings-audit') && pathname.startsWith(href)) return true;
+  if (href.endsWith('/audits') && pathname.startsWith(href) && !pathname.includes('user-audits') && !pathname.includes('settings-audit')) return true;
   return false;
 }
 

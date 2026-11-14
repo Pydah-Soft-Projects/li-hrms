@@ -2,6 +2,7 @@ const DepartmentSettings = require('../model/DepartmentSettings');
 const Department = require('../model/Department');
 const Division = require('../model/Division');
 const LoanSettings = require('../../loans/model/LoanSettings');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * Helper function to get resolved leave settings
@@ -421,10 +422,22 @@ exports.updateDivisionWideDepartmentSettings = async (req, res) => {
     }
 
     let settings = await DepartmentSettings.getOrCreateDivisionWide(divisionId);
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
     applyDepartmentSettingsPayloadToDoc(settings, req.body);
 
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: `division_department_settings_${divisionId}`,
+      category: 'department',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: `Updated division-wide department settings for division ${div.name || divisionId}`,
+      details: { divisionId },
+    });
 
     if (req.body.ot) {
       const cacheService = require('../../shared/services/cacheService');
@@ -604,11 +617,23 @@ exports.updateDepartmentSettings = async (req, res) => {
 
     // Get or create settings
     let settings = await DepartmentSettings.getOrCreateCombination(deptId, divisionId);
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     applyDepartmentSettingsPayloadToDoc(settings, req.body);
 
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: `department_settings_${deptId}${divisionId ? `_div_${divisionId}` : ''}`,
+      category: 'department',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: `Updated department settings for ${department.name || deptId}`,
+      details: { deptId, divisionId },
+    });
 
     if (req.body.ot) {
       const cacheService = require('../../shared/services/cacheService');

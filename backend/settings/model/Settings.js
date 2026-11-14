@@ -21,6 +21,26 @@ const settingsSchema = new mongoose.Schema(
       enum: ['shift', 'attendance', 'payroll', 'general', 'employee', 'overtime', 'permissions', 'attendance_deductions', 'communications', 'feature_control', 'ot', 'loan', 'permission', 'company', 'geofence', 'security'],
       default: 'general',
     },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    updatedByName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    updatedByEmail: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    updatedByRole: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

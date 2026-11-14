@@ -5,6 +5,7 @@
 
 const AttendanceSettings = require('../model/AttendanceSettings');
 const { normalizeCompleteSummaryColumns } = require('../constants/completeSummaryColumns');
+const { recordSettingAudit } = require('../../settings/services/settingsAuditService');
 
 /**
  * @desc    Get attendance settings
@@ -69,6 +70,7 @@ exports.updateSettings = async (req, res) => {
     } = req.body;
 
     const settings = await AttendanceSettings.getSettings();
+    const previousSnapshot = settings ? (settings.toObject ? settings.toObject() : JSON.parse(JSON.stringify(settings))) : null;
 
     if (dataSource !== undefined) {
       settings.dataSource = dataSource;
@@ -149,6 +151,16 @@ exports.updateSettings = async (req, res) => {
     }
 
     await settings.save();
+
+    await recordSettingAudit({
+      settingKey: 'attendance_settings',
+      category: 'attendance',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: settings.toObject ? settings.toObject() : settings,
+      req,
+      description: 'Updated attendance general settings',
+    });
 
     res.status(200).json({
       success: true,

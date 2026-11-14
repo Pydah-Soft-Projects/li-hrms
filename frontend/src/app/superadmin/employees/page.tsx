@@ -1424,18 +1424,20 @@ export default function EmployeesPage() {
   const loadEmployeeGroupingConfig = async () => {
     try {
       const res = await api.getSetting('custom_employee_grouping_enabled');
-      const on = !!(res?.success && res?.data != null && res.data.value);
+      const on = !!(res?.success && res?.data != null && (res.data.value === true || res.data.value === 'true'));
       setCustomEmployeeGroupingEnabled(on);
-      if (!on) {
-        setEmployeeGroups([]);
-        return;
-      }
+      // Always load employee groups so existing assignments can be displayed and resolved
       const gRes = await api.getEmployeeGroups(true);
       if (gRes.success && Array.isArray(gRes.data)) setEmployeeGroups(gRes.data);
       else setEmployeeGroups([]);
     } catch {
       setCustomEmployeeGroupingEnabled(false);
-      setEmployeeGroups([]);
+      try {
+        const gRes = await api.getEmployeeGroups(true);
+        if (gRes.success && Array.isArray(gRes.data)) setEmployeeGroups(gRes.data);
+      } catch {
+        setEmployeeGroups([]);
+      }
     }
   };
 
@@ -1445,10 +1447,10 @@ export default function EmployeesPage() {
 
   // Re-check latest setting when dialogs open (setting can be changed from settings page).
   useEffect(() => {
-    if (showApplicationDialog || showDialog || showBulkUpload || showEmployeeUpdateModal) {
+    if (showApplicationDialog || showDialog || showBulkUpload || showEmployeeUpdateModal || showViewDialog) {
       loadEmployeeGroupingConfig();
     }
-  }, [showApplicationDialog, showDialog, showBulkUpload, showEmployeeUpdateModal]);
+  }, [showApplicationDialog, showDialog, showBulkUpload, showEmployeeUpdateModal, showViewDialog]);
 
   const loadDivisions = async () => {
     try {
@@ -7031,7 +7033,7 @@ export default function EmployeesPage() {
                               {resolveEmployeeOrgRefName(viewingEmployee, 'designation', 'designation_id', designations)}
                             </p>
                           </div>
-                          {customEmployeeGroupingEnabled && (
+                          {(customEmployeeGroupingEnabled || viewingEmployee.employee_group || viewingEmployee.employee_group_id || (viewingEmployee as any).dynamicFields?.employee_group_id || employeeGroups.length > 0) && (
                             <div>
                               <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Group</label>
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">

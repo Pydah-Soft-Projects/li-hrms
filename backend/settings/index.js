@@ -47,6 +47,12 @@ router.get('/', settingsController.getAllSettings);
 // Geofence location search
 router.get('/geofence/search-location', settingsController.searchGeofenceLocation);
 
+// ==========================================
+// SETTINGS AUDIT LOG ROUTES (Super Admin only - must come before /:key)
+// ==========================================
+router.get('/audits', authorize('super_admin'), settingsController.getSettingsAudits);
+router.get('/:key/audits', authorize('super_admin'), settingsController.getSettingAuditsByKey);
+
 // Get single setting
 router.get('/:key', settingsController.getSetting);
 

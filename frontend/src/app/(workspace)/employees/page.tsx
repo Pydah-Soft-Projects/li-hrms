@@ -1072,18 +1072,20 @@ export default function EmployeesPage() {
   const loadEmployeeGroupingConfig = async () => {
     try {
       const res = await api.getSetting('custom_employee_grouping_enabled');
-      const on = !!(res?.success && res?.data != null && res.data.value);
+      const on = !!(res?.success && res?.data != null && (res.data.value === true || res.data.value === 'true'));
       setCustomEmployeeGroupingEnabled(on);
-      if (!on) {
-        setEmployeeGroups([]);
-        return;
-      }
+      // Always load employee groups so existing assignments can be displayed and resolved
       const g = await api.getEmployeeGroups(true);
       if (g.success && Array.isArray(g.data)) setEmployeeGroups(g.data);
       else setEmployeeGroups([]);
     } catch {
       setCustomEmployeeGroupingEnabled(false);
-      setEmployeeGroups([]);
+      try {
+        const g = await api.getEmployeeGroups(true);
+        if (g.success && Array.isArray(g.data)) setEmployeeGroups(g.data);
+      } catch {
+        setEmployeeGroups([]);
+      }
     }
   };
 
@@ -1093,10 +1095,10 @@ export default function EmployeesPage() {
 
   // Re-check latest grouping setting when dialogs open (setting might have changed in another page).
   useEffect(() => {
-    if (showApplicationDialog || showDialog || showBulkUpload) {
+    if (showApplicationDialog || showDialog || showBulkUpload || showViewDialog) {
       loadEmployeeGroupingConfig();
     }
-  }, [showApplicationDialog, showDialog, showBulkUpload]);
+  }, [showApplicationDialog, showDialog, showBulkUpload, showViewDialog]);
 
   // Load employee settings when bulk upload dialog opens; sync toggle default for preview
   useEffect(() => {
@@ -6692,7 +6694,7 @@ export default function EmployeesPage() {
                         {resolveEmployeeOrgRefName(viewingEmployee, 'designation', 'designation_id', designations)}
                       </p>
                     </div>
-                    {customEmployeeGroupingEnabled && (
+                    {(customEmployeeGroupingEnabled || viewingEmployee.employee_group || viewingEmployee.employee_group_id || (viewingEmployee as any).dynamicFields?.employee_group_id || employeeGroups.length > 0) && (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Group</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">

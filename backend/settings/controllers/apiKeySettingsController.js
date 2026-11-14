@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const ApiKey = require('../../security/model/ApiKey');
+const { recordSettingAudit } = require('../services/settingsAuditService');
 
 const AVAILABLE_FIELDS = [
   { id: 'emp_no', label: 'Employee ID (emp_no / empNo)', group: 'Basic Info', defaultSelected: true },
@@ -83,6 +84,23 @@ exports.createApiKey = async (req, res) => {
 
     await newKey.save();
 
+    await recordSettingAudit({
+      settingKey: `api_key_${newKey._id}`,
+      category: 'api_keys',
+      action: 'create',
+      previousValue: null,
+      newValue: {
+        _id: newKey._id,
+        clientName: newKey.clientName,
+        allowedFields: newKey.allowedFields,
+        description: newKey.description,
+        isActive: newKey.isActive,
+        key: '********',
+      },
+      req,
+      description: `Created public API key for client "${newKey.clientName}"`,
+    });
+
     res.status(201).json({
       success: true,
       message: 'API Key generated successfully',
@@ -109,12 +127,38 @@ exports.updateApiKey = async (req, res) => {
       return res.status(404).json({ success: false, message: 'API Key not found' });
     }
 
+    const previousSnapshot = {
+      _id: keyDoc._id,
+      clientName: keyDoc.clientName,
+      allowedFields: keyDoc.allowedFields,
+      description: keyDoc.description,
+      isActive: keyDoc.isActive,
+      key: '********',
+    };
+
     if (clientName !== undefined) keyDoc.clientName = clientName.trim();
     if (isActive !== undefined) keyDoc.isActive = !!isActive;
     if (description !== undefined) keyDoc.description = description.trim();
     if (Array.isArray(allowedFields)) keyDoc.allowedFields = allowedFields;
 
     await keyDoc.save();
+
+    await recordSettingAudit({
+      settingKey: `api_key_${keyDoc._id}`,
+      category: 'api_keys',
+      action: 'update',
+      previousValue: previousSnapshot,
+      newValue: {
+        _id: keyDoc._id,
+        clientName: keyDoc.clientName,
+        allowedFields: keyDoc.allowedFields,
+        description: keyDoc.description,
+        isActive: keyDoc.isActive,
+        key: '********',
+      },
+      req,
+      description: `Updated public API key for client "${keyDoc.clientName}"`,
+    });
 
     res.status(200).json({
       success: true,
@@ -140,6 +184,23 @@ exports.deleteApiKey = async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ success: false, message: 'API Key not found' });
     }
+
+    await recordSettingAudit({
+      settingKey: `api_key_${deleted._id}`,
+      category: 'api_keys',
+      action: 'delete',
+      previousValue: {
+        _id: deleted._id,
+        clientName: deleted.clientName,
+        allowedFields: deleted.allowedFields,
+        description: deleted.description,
+        isActive: deleted.isActive,
+        key: '********',
+      },
+      newValue: null,
+      req,
+      description: `Revoked public API key for client "${deleted.clientName}"`,
+    });
 
     res.status(200).json({
       success: true,
