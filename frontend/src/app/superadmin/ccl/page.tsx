@@ -368,16 +368,16 @@ export default function SuperadminCCLPage() {
       </div>
 
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+        <div className="flex gap-1 rounded-lg bg-surface p-1 shadow-sm border border-border">
           <button
             onClick={() => setActiveTab('all')}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'all' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:bg-surface hover:text-text-primary'}`}
           >
             All CCL
           </button>
           <button
             onClick={() => setActiveTab('pending')}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'pending' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'pending' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:bg-surface hover:text-text-primary'}`}
           >
             Pending Approvals {pendingCCLs.length > 0 && `(${pendingCCLs.length})`}
           </button>

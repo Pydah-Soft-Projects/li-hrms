@@ -300,14 +300,14 @@ export default function SuperAdminDashboard() {
               <Bell className="h-4 w-4 text-zinc-500" />
             )}
             {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+              <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
           <Link
             href="/superadmin/profile"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-white shadow-sm"
           >
             {(userName.charAt(0) || 'A').toUpperCase()}
           </Link>
@@ -318,12 +318,12 @@ export default function SuperAdminDashboard() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-32 animate-pulse rounded-2xl bg-white" />
+              <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface border border-border" />
             ))}
           </div>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div className="h-80 animate-pulse rounded-2xl bg-white xl:col-span-2" />
-            <div className="h-80 animate-pulse rounded-2xl bg-white" />
+            <div className="h-80 animate-pulse rounded-2xl bg-surface border border-border xl:col-span-2" />
+            <div className="h-80 animate-pulse rounded-2xl bg-surface border border-border" />
           </div>
         </div>
       ) : (
@@ -335,7 +335,7 @@ export default function SuperAdminDashboard() {
               value={stats.activeEmployees || stats.totalEmployees}
               subtitle={
                 stats.newEmployeesThisMonth > 0 ? (
-                  <span className="text-emerald-600">↑ {stats.newEmployeesThisMonth} this month</span>
+                  <span className="text-primary font-medium">↑ {stats.newEmployeesThisMonth} this month</span>
                 ) : (
                   'Active workforce'
                 )
@@ -393,16 +393,16 @@ export default function SuperAdminDashboard() {
 
           {/* Charts row */}
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm xl:col-span-2">
+            <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm xl:col-span-2">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-semibold text-zinc-900">Attendance Overview</h3>
-                  <p className="text-xs text-zinc-500">Daily attendance rate &amp; employee count</p>
+                  <h3 className="text-base font-semibold text-text-primary">Attendance Overview</h3>
+                  <p className="text-xs text-text-secondary">Daily attendance rate &amp; employee count</p>
                 </div>
                 <select
                   value={trackerPeriod}
                   onChange={(e) => setTrackerPeriod(e.target.value as 'week' | 'month' | 'lastMonth')}
-                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  className="rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
                   <option value="week">This Week</option>
                   <option value="month">This Month</option>
@@ -415,13 +415,13 @@ export default function SuperAdminDashboard() {
               />
             </section>
 
-            <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm">
-              <h3 className="mb-1 text-base font-semibold text-zinc-900">Leave Summary</h3>
-              <p className="mb-4 text-xs text-zinc-500">Current cycle composition</p>
+            <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+              <h3 className="mb-1 text-base font-semibold text-text-primary">Leave Summary</h3>
+              <p className="mb-4 text-xs text-text-secondary">Current cycle composition</p>
               <LeaveSummaryDonut data={stats.leaveTypeDistribution} />
               <Link
                 href="/superadmin/leave-register"
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary-light py-2.5 text-xs font-semibold text-primary transition hover:bg-primary-light/80"
               >
                 <Calendar className="h-3.5 w-3.5" />
                 View Leave Calendar
@@ -431,32 +431,32 @@ export default function SuperAdminDashboard() {
 
           {/* Growth + Quick actions */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
               <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-zinc-900">Employee Growth</h3>
-                <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                <h3 className="text-base font-semibold text-text-primary">Employee Growth</h3>
+                <span className="rounded-md bg-background px-2 py-0.5 text-[10px] font-medium text-text-secondary">
                   Last 12 Months
                 </span>
               </div>
-              <p className="mb-3 text-xs text-emerald-600">
+              <p className="mb-3 text-xs text-primary font-medium">
                 ↑ {stats.employeeGrowthPct}% growth in last 12 months
               </p>
               <EmployeeGrowthChart data={stats.employeeGrowthTrend} />
             </section>
 
-            <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm">
-              <h3 className="mb-1 text-base font-semibold text-zinc-900">Joining vs Resignation</h3>
-              <p className="mb-3 text-xs text-zinc-500">
+            <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+              <h3 className="mb-1 text-base font-semibold text-text-primary">Joining vs Resignation</h3>
+              <p className="mb-3 text-xs text-text-secondary">
                 Net Growth:{' '}
-                <span className="font-semibold text-emerald-600">
+                <span className="font-semibold text-primary">
                   {stats.netGrowth12Months >= 0 ? '+' : ''}
                   {stats.netGrowth12Months}
                 </span>
               </p>
               <JoinResignChart data={stats.joinResignTrend} />
-              <div className="mt-2 flex gap-4 text-[10px] text-zinc-500">
+              <div className="mt-2 flex gap-4 text-[10px] text-text-secondary">
                 <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Joined
+                  <span className="h-2 w-2 rounded-sm bg-primary" /> Joined
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="h-2 w-2 rounded-sm bg-orange-500" /> Resigned
@@ -464,8 +464,8 @@ export default function SuperAdminDashboard() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-base font-semibold text-zinc-900">Quick Actions</h3>
+            <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+              <h3 className="mb-4 text-base font-semibold text-text-primary">Quick Actions</h3>
               <div className="grid grid-cols-2 gap-2">
                 {QUICK_ACTIONS.map((action) => {
                   const Icon = action.icon;
@@ -474,10 +474,10 @@ export default function SuperAdminDashboard() {
                       key={action.label}
                       type="button"
                       onClick={() => router.push(action.href)}
-                      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/60 px-2 py-3 text-center transition hover:border-emerald-200 hover:bg-emerald-50"
+                      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-primary/10 bg-primary-light/60 px-2 py-3 text-center transition hover:border-primary/20 hover:bg-primary-light"
                     >
-                      <Icon className="h-5 w-5 text-emerald-600" />
-                      <span className="text-[10px] font-semibold leading-tight text-zinc-700">
+                      <Icon className="h-5 w-5 text-primary" />
+                      <span className="text-[10px] font-semibold leading-tight text-text-primary">
                         {action.label}
                       </span>
                     </button>
@@ -488,29 +488,29 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Upcoming events */}
-          <section className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-zinc-900">Upcoming Events &amp; Reminders</h3>
+              <h3 className="text-base font-semibold text-text-primary">Upcoming Events &amp; Reminders</h3>
               <Link
                 href="/superadmin/holidays"
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                className="text-xs font-semibold text-primary hover:text-primary-hover"
               >
                 View Calendar
               </Link>
             </div>
             {stats.upcomingEvents.length === 0 ? (
-              <p className="py-6 text-center text-sm text-zinc-400">No upcoming events scheduled</p>
+              <p className="py-6 text-center text-sm text-text-muted">No upcoming events scheduled</p>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {stats.upcomingEvents.map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-xl border border-zinc-100 bg-zinc-50/50 p-4"
+                    className="rounded-xl border border-border bg-background/50 p-4"
                   >
-                    <p className="text-xs font-bold text-emerald-600">{formatEventDate(event.date)}</p>
-                    <p className="mt-1 text-sm font-semibold text-zinc-900">{event.title}</p>
-                    <p className="mt-0.5 text-[11px] text-zinc-500">{event.description}</p>
-                    <span className="mt-2 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    <p className="text-xs font-bold text-primary">{formatEventDate(event.date)}</p>
+                    <p className="mt-1 text-sm font-semibold text-text-primary">{event.title}</p>
+                    <p className="mt-0.5 text-[11px] text-text-secondary">{event.description}</p>
+                    <span className="mt-2 inline-block rounded-full bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary">
                       {event.status}
                     </span>
                   </div>

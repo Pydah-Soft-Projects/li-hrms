@@ -758,7 +758,7 @@ export default function ShiftsPage() {
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-background" />
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
@@ -772,7 +772,7 @@ export default function ShiftsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
             {showViewModeToggle && (
               <div
-                className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                className="inline-flex rounded-xl border border-border bg-surface p-1 shadow-xs"
                 role="group"
                 aria-label="Shifts display mode"
               >
@@ -781,8 +781,8 @@ export default function ShiftsPage() {
                   onClick={() => setViewMode('grid')}
                   aria-pressed={viewMode === 'grid'}
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'grid'
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-text-secondary hover:text-primary'
                     }`}
                 >
                   <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
@@ -793,8 +793,8 @@ export default function ShiftsPage() {
                   onClick={() => setViewMode('table')}
                   aria-pressed={viewMode === 'table'}
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'table'
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-text-secondary hover:text-primary'
                     }`}
                 >
                   <Table2 className="h-4 w-4 shrink-0" aria-hidden />
@@ -808,7 +808,7 @@ export default function ShiftsPage() {
                   resetForm();
                   setShowForm(true);
                 }}
-                className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 touch-manipulation min-h-[44px] sm:min-h-0"
+                className="inline-flex items-center rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-primary-hover touch-manipulation min-h-[44px] sm:min-h-0"
               >
                 <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1168,7 +1168,7 @@ export default function ShiftsPage() {
                   <div className="flex gap-2 pt-1">
                     <button
                       type="submit"
-                      className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                      className="flex-1 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-primary-hover"
                     >
                       {editingShift ? 'Update' : 'Create'} Shift
                     </button>

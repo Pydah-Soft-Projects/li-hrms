@@ -3655,8 +3655,8 @@ function LeavesPageContent() {
           <button
             onClick={() => setActiveTab('leaves')}
             className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 ${activeTab === 'leaves'
-              ? 'border-blue-500 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-primary text-primary font-bold'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
           >
             <span className="flex items-center gap-2">
@@ -3667,8 +3667,8 @@ function LeavesPageContent() {
           <button
             onClick={() => setActiveTab('od')}
             className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 ${activeTab === 'od'
-              ? 'border-purple-500 text-purple-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-primary text-primary font-bold'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
           >
             <span className="flex items-center gap-2">
@@ -3679,8 +3679,8 @@ function LeavesPageContent() {
           <button
             onClick={() => setActiveTab('pending')}
             className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 ${activeTab === 'pending'
-              ? 'border-yellow-500 text-yellow-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              ? 'border-primary text-primary font-bold'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
           >
             <span className="flex items-center gap-2">

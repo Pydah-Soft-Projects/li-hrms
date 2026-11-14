@@ -265,8 +265,8 @@ export default function HolidayManagementPage() {
                         <button
                             onClick={() => setActiveTab('master')}
                             className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'master'
-                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                ? 'border-primary text-primary font-bold'
+                                : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary'
                                 }`}
                         >
                             Calendar View
@@ -274,8 +274,8 @@ export default function HolidayManagementPage() {
                         <button
                             onClick={() => setActiveTab('groups')}
                             className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'groups'
-                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                ? 'border-primary text-primary font-bold'
+                                : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary'
                                 }`}
                         >
                             Holiday Groups
@@ -283,8 +283,8 @@ export default function HolidayManagementPage() {
                         <button
                             onClick={() => setActiveTab('registry')}
                             className={`whitespace-nowrap border-b-2 px-1 pb-4 text-sm font-medium transition-colors ${activeTab === 'registry'
-                                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                ? 'border-primary text-primary font-bold'
+                                : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary'
                                 }`}
                         >
                             All Holidays

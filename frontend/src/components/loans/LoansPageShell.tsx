@@ -218,8 +218,8 @@ export function LoansTabBar({
 }) {
   return (
     <div
-      className="mb-5 flex flex-wrap gap-1 border-b bg-white px-3 py-2 dark:bg-stone-950"
-      style={{ borderColor: 'var(--ps-accent-border)' }}
+      className="mb-5 flex flex-wrap gap-1 border-b bg-surface px-3 py-2"
+      style={{ borderColor: 'var(--border, var(--ps-accent-border))' }}
     >
       {tabs.map((tab) => {
         const active = activeTab === tab.id;
@@ -232,10 +232,10 @@ export function LoansTabBar({
             style={
               active
                 ? {
-                    backgroundColor: 'var(--ps-accent-soft)',
-                    color: 'var(--ps-accent)',
+                    backgroundColor: 'var(--primary-light, var(--ps-accent-soft))',
+                    color: 'var(--primary, var(--ps-accent))',
                   }
-                : { color: 'rgb(120 113 108)' }
+                : { color: 'var(--text-secondary, rgb(120 113 108))' }
             }
           >
             <span>{tab.label}</span>
@@ -244,8 +244,8 @@ export function LoansTabBar({
                 className="min-w-[1.25rem] rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
                 style={
                   active
-                    ? { backgroundColor: 'var(--ps-accent)', color: '#fff' }
-                    : { backgroundColor: 'rgba(120,113,108,0.12)', color: 'rgb(120 113 108)' }
+                    ? { backgroundColor: 'var(--primary, var(--ps-accent))', color: '#fff' }
+                    : { backgroundColor: 'rgba(120,113,108,0.12)', color: 'var(--text-secondary, rgb(120 113 108))' }
                 }
               >
                 {tab.count}

@@ -7,6 +7,7 @@ import MainContent from '@/components/MainContent';
 import Spinner from '@/components/Spinner';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import { auth } from '@/lib/auth';
+import { initAfterLoginTheme } from '@/lib/utils';
 
 export default function SuperAdminLayout({
   children,
@@ -33,6 +34,7 @@ export default function SuperAdminLayout({
 
     setIsAllowed(true);
     setIsChecking(false);
+    initAfterLoginTheme();
   }, [router]);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function SuperAdminLayout({
 
   if (isChecking) {
     return (
-      <div className="min-h-screen bg-bg-base flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Spinner className="w-10 h-10" />
           <p className="text-text-secondary">Loading...</p>
@@ -62,7 +64,7 @@ export default function SuperAdminLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-[#f4f6f9] dark:bg-slate-900">
+      <div className="flex min-h-screen bg-background">
         <Sidebar />
         <MainContent className="pt-16 sm:pt-0">{children}</MainContent>
       </div>

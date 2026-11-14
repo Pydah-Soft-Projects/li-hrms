@@ -1085,7 +1085,7 @@ export default function CommunicationsView() {
               <button
                 type="submit"
                 disabled={isSending}
-                className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition disabled:opacity-50"
+                className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white font-bold py-3 px-6 rounded-xl shadow-md transition disabled:opacity-50"
               >
                 {isSending ? (
                   <>

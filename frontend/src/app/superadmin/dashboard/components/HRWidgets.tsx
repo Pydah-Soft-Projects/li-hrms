@@ -19,10 +19,17 @@ import {
   ComposedChart,
 } from 'recharts';
 
-const GREEN = '#10b981';
-const GREEN_LIGHT = '#d1fae5';
+const GREEN = 'var(--primary, #10b981)';
+const GREEN_LIGHT = 'var(--primary-light, #d1fae5)';
 const ORANGE = '#f97316';
-const CHART_COLORS = ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#059669', '#047857'];
+const CHART_COLORS = [
+  'var(--primary, #10b981)',
+  'var(--primary-400, #34d399)',
+  'var(--primary-300, #6ee7b7)',
+  'var(--primary-200, #a7f3d0)',
+  'var(--primary-700, #059669)',
+  'var(--primary-800, #047857)',
+];
 
 function MiniSparkline({ data, color = GREEN, type = 'area' }: { data: number[]; color?: string; type?: 'area' | 'bar' }) {
   const chartData = data.map((v, i) => ({ i, v }));
@@ -113,29 +120,29 @@ export function LeaveOdTodayCard({
   const odSpark = (trackerData ?? []).map((d) => d.od || 0);
 
   return (
-    <div className="flex items-start justify-between gap-2 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
+    <div className="flex items-start justify-between gap-2 rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="min-w-0 flex-1">
-        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light text-primary">
           {icon}
         </div>
-        <p className="text-xs font-medium text-zinc-500">On Leave &amp; OD Today</p>
+        <p className="text-xs font-medium text-text-secondary">On Leave &amp; OD Today</p>
         <div className="mt-1 flex items-baseline gap-3">
           <div>
-            <p className="text-2xl font-bold tabular-nums tracking-tight text-zinc-900">{onLeave}</p>
-            <p className="text-[10px] font-medium text-emerald-600">On Leave</p>
+            <p className="text-2xl font-bold tabular-nums tracking-tight text-text-primary">{onLeave}</p>
+            <p className="text-[10px] font-medium text-primary">On Leave</p>
           </div>
-          <div className="text-lg font-light text-zinc-300">|</div>
+          <div className="text-lg font-light text-border">|</div>
           <div>
-            <p className="text-2xl font-bold tabular-nums tracking-tight text-zinc-900">{onOd}</p>
+            <p className="text-2xl font-bold tabular-nums tracking-tight text-text-primary">{onOd}</p>
             <p className="text-[10px] font-medium text-blue-600">On OD</p>
           </div>
         </div>
       </div>
       <div className="flex flex-col items-end gap-1">
         <MiniDualSparkline leaveData={leaveSpark} odData={odSpark} />
-        <div className="flex gap-2 text-[9px] text-zinc-400">
+        <div className="flex gap-2 text-[9px] text-text-muted">
           <span className="flex items-center gap-0.5">
-            <span className="h-1.5 w-1.5 rounded-sm bg-emerald-500" /> Leave
+            <span className="h-1.5 w-1.5 rounded-sm bg-primary" /> Leave
           </span>
           <span className="flex items-center gap-0.5">
             <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" /> OD
@@ -162,25 +169,25 @@ export function PendingApprovalsCard({
   const odSpark = (trackerData ?? []).map((d) => d.pendingOd || 0);
 
   return (
-    <div className="flex items-start justify-between gap-2 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
+    <div className="flex items-start justify-between gap-2 rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="min-w-0 flex-1">
-        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light text-primary">
           {icon}
         </div>
-        <p className="text-xs font-medium text-zinc-500">Pending Approvals</p>
-        <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-zinc-900">{total}</p>
+        <p className="text-xs font-medium text-text-secondary">Pending Approvals</p>
+        <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-text-primary">{total}</p>
         <div className="mt-1.5 flex items-center gap-3 text-[11px]">
-          <span className="font-medium text-emerald-600">{pendingLeaves} Leave</span>
-          <span className="text-zinc-300">|</span>
+          <span className="font-medium text-primary">{pendingLeaves} Leave</span>
+          <span className="text-border">|</span>
           <span className="font-medium text-blue-600">{pendingODs} OD</span>
         </div>
-        <p className="mt-0.5 text-[10px] text-zinc-400">Requires your action</p>
+        <p className="mt-0.5 text-[10px] text-text-muted">Requires your action</p>
       </div>
       <div className="flex flex-col items-end gap-1">
         <MiniDualSparkline leaveData={leaveSpark} odData={odSpark} />
-        <div className="flex gap-2 text-[9px] text-zinc-400">
+        <div className="flex gap-2 text-[9px] text-text-muted">
           <span className="flex items-center gap-0.5">
-            <span className="h-1.5 w-1.5 rounded-sm bg-emerald-500" /> Leave
+            <span className="h-1.5 w-1.5 rounded-sm bg-primary" /> Leave
           </span>
           <span className="flex items-center gap-0.5">
             <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" /> OD
@@ -197,7 +204,7 @@ export function StatCard({
   subtitle,
   icon,
   sparkData,
-  sparkColor,
+  sparkColor = GREEN,
   sparkType,
   trailing,
 }: {
@@ -211,14 +218,14 @@ export function StatCard({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-2 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
+    <div className="flex items-start justify-between gap-2 rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="min-w-0 flex-1">
-        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light text-primary">
           {icon}
         </div>
-        <p className="text-xs font-medium text-zinc-500">{title}</p>
-        <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-zinc-900">{value}</p>
-        {subtitle && <div className="mt-1 text-[11px] text-zinc-500">{subtitle}</div>}
+        <p className="text-xs font-medium text-text-secondary">{title}</p>
+        <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-text-primary">{value}</p>
+        {subtitle && <div className="mt-1 text-[11px] text-text-secondary">{subtitle}</div>}
       </div>
       <div className="flex flex-col items-end gap-1">
         {trailing}
