@@ -1601,22 +1601,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         const isLate = dayLateMin > 0 && !lateInWaved && !hasLateInPermission;
         const isEarly = dayEarlyMin > 0 && !earlyOutWaved && !hasEarlyOutPermission;
 
-        if (isLate || isEarly) {
-          let countContribution = 0;
-          if (isLate) countContribution++;
-          if (isEarly) countContribution++;
-
-          const label = countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early');
+        if (isLate) {
           contributingDates.lateIn.push({
             date: dStr,
-            value: countContribution,
-            label,
+            value: 1,
+            label: isEarly ? 'L+E' : 'Late',
           });
-          // Also set in earlyOut for backwards compatibility/consistency
+        }
+        if (isEarly) {
           contributingDates.earlyOut.push({
             date: dStr,
-            value: countContribution,
-            label,
+            value: 1,
+            label: isLate ? 'L+E' : 'Early',
           });
         }
       }
@@ -1714,7 +1710,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     };
 
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;
-    summary.lateOrEarlyCount = contributingDates.lateIn.reduce((sum, cd) => sum + (Number(cd.value) || 0), 0);
+    summary.lateInCount = contributingDates.lateIn.reduce((sum, cd) => sum + (Number(cd.value) || 0), 0);
+    summary.earlyOutCount = contributingDates.earlyOut.reduce((sum, cd) => sum + (Number(cd.value) || 0), 0);
+    summary.lateOrEarlyCount = summary.lateInCount + summary.earlyOutCount;
 
     // Permission Deductions Summary (using deductionService for consistency)
     let totalPermissionDeductionDays = 0;

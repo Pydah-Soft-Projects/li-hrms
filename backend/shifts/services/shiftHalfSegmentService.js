@@ -285,7 +285,8 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
     : 0;
   
   const workedThroughBreak = breakSegment
-    && new Date(inTime) < breakSegment.range.endDate
+    && firstHalfRawMinutes > 0
+    && new Date(inTime) < breakSegment.range.startDate
     && finalOutTime > breakSegment.range.startDate;
   
   const firstHalfMinMinutes = (firstHalf.minDuration || 0) * 60;
@@ -293,7 +294,7 @@ const calculateSegmentPresenceIntelligent = (timeline, inTime, outTime, options 
 
   // Overflow into second-half window can help first half when employee skips lunch but leaves early afternoon
   let firstHalfOverflowMinutes = 0;
-  if (workedThroughBreak && breakSegment?.range && secondHalf?.range && finalOutTime > breakSegment.range.endDate) {
+  if (workedThroughBreak && firstHalfRawMinutes > 0 && breakSegment?.range && secondHalf?.range && finalOutTime > breakSegment.range.endDate) {
     firstHalfOverflowMinutes = getOverlapMinutes(
       {
         startDate: new Date(Math.max(breakSegment.range.endDate.getTime(), new Date(inTime).getTime())),

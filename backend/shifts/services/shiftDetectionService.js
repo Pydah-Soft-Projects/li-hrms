@@ -18,6 +18,7 @@ const { extractISTComponents, createISTDate } = require('../../shared/utils/date
 const { getShiftSegmentAssignment } = require('./shiftHalfSegmentService');
 const { flattenShiftConfigsWithGroups } = require('../../shared/utils/shiftAssignmentConfig');
 const { resolveEffectiveShiftDoc } = require('../../shared/utils/divisionShiftSegments');
+const { parseAllowedDurationsFromGroupName } = require('../../attendance/services/multiShiftSplitHelpers');
 
 /**
  * Convert time string (HH:mm) to minutes from midnight
@@ -247,7 +248,8 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     const employee = await Employee.findOne({ emp_no: employeeNumber })
       .populate('division_id')
       .populate('department_id')
-      .populate('designation_id');
+      .populate('designation_id')
+      .populate('employee_group_id', 'name code');
 
     if (!employee) {
       return { shifts: [], source: 'none' };
@@ -257,7 +259,9 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     const department_id = employee.department_id?._id;
     const designation_id = employee.designation_id?._id;
     const employeeGender = employee.gender;
-    const employeeGroupId = employee.employee_group_id || null;
+    const employeeGroupId = employee.employee_group_id?._id || employee.employee_group_id || null;
+    const employeeGroupName = employee.employee_group_id?.name || null;
+    const allowedGroupDurations = employeeGroupName ? parseAllowedDurationsFromGroupName(employeeGroupName) : null;
     const groupingEnabled = await isCustomEmployeeGroupingEnabled();
 
     if (!division_id) {
@@ -431,8 +435,16 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
       else determinedSource = 'organizational';
     }
 
+    let finalShifts = Array.from(allCandidateShifts.values());
+    if (allowedGroupDurations && allowedGroupDurations.length > 0 && !rosteredShift) {
+      const durationFiltered = finalShifts.filter(s => allowedGroupDurations.includes(Number(s.duration)));
+      if (durationFiltered.length > 0) {
+        finalShifts = durationFiltered;
+      }
+    }
+
     return {
-      shifts: Array.from(allCandidateShifts.values()),
+      shifts: finalShifts,
       source: rosteredShift ? 'pre_scheduled' : 'organizational',
       tier: determinedSource,
       rosteredShiftId: rosteredShift?._id || null,
@@ -675,6 +687,7 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3, rosterStr
  */
 const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes = 30) => {
   if (candidateShifts.length <= 1) return false;
+  if (candidateShifts[0].startTime === candidateShifts[1].startTime) return true;
   if (candidateShifts[0].isPreferred) return false;
 
   const topDistance = candidateShifts[0].differenceMinutes;
@@ -1203,8 +1216,9 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
 
     // Step 4: Multiple candidates - check for ambiguity
     if (candidateShifts.length > 1) {
-      // Check if all candidates have the same start time
-      const allSameStartTime = candidateShifts.every(c => c.startTime === candidateShifts[0].startTime);
+      // Check if all or top candidates have the same start time
+      const allSameStartTime = candidateShifts.every(c => c.startTime === candidateShifts[0].startTime) ||
+        (candidateShifts.length >= 2 && candidateShifts[0].startTime === candidateShifts[1].startTime);
 
       if (allSameStartTime) {
         // Multiple shifts with same start time
@@ -1869,7 +1883,7 @@ const syncShiftsForExistingRecords = async (startDateOrOptions = null, endDate =
 
     const { reprocessAttendanceForEmployeeDate } = require('../../attendance/services/attendanceSyncService');
 
-    records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    records.sort((a, b) => String(a.date).localeCompare(String(b.date)));
     stats.processed += records.length;
 
     for (const record of records) {
@@ -1997,7 +2011,7 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
           employeeGroupId: emp.employee_group_id,
         };
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const effectiveShift = await resolveEffectiveShiftDoc(nearestShift, {
       divisionId: employeeCtx?.divisionId || null,

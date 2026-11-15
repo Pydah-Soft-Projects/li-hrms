@@ -647,9 +647,13 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                             `lateJoinCredit=${splitDecision.usedLateJoinCredit}, leftoverAfterEnd=${leftoverAfterEndHours.toFixed(2)}`
                         );
 
+                        const effectiveSplitThreshold = firstShift && firstShift.duration
+                            ? Math.min(splitThresholdHours, Number(firstShift.duration) + splitMinGapHours)
+                            : splitThresholdHours;
+
                         const fullSplitHolds = shouldAttemptIterativeSplit({
                             considerableHours: splitDecision.considerableHours,
-                            splitThresholdHours,
+                            splitThresholdHours: effectiveSplitThreshold,
                             outTime,
                             firstEndDate,
                             splitMinGapHours,
@@ -812,6 +816,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     earlyOutMinutes: earlyOutMinutes > 0 ? earlyOutMinutes : null,
                                     basePayable: basePayablePerShift(split.assignedShift),
                                     payableShift: segPayable,
+                                    presenceResolutionPath: 'iterative_split',
+                                    isSplitShift: true,
                                 };
 
                                 // Apply OD gap-fill logic to split segment

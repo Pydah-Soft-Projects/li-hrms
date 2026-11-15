@@ -32,7 +32,12 @@ function pickByGender(candidates, employeeGender) {
   });
   if (exact.length) return exact[0];
 
-  const all = candidates.filter((r) => normalizeSlabGender(r?.gender) === 'All');
+  const all = candidates.filter((r) => {
+    const g = normalizeSlabGender(r?.gender);
+    if (g === 'All') return true;
+    if (r?.description && /all\s*(shifts|employees|staff|genders)?/i.test(r.description)) return true;
+    return false;
+  });
   if (all.length) return all[0];
 
   // No All and no exact: do not use another gender's slab

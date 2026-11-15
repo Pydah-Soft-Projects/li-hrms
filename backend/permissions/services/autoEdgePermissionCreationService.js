@@ -60,7 +60,8 @@ const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/sh
 
 function getDetectedMinutes(shift, permissionType, dateStr = null) {
   if (permissionType === 'late_in') {
-    if (Number(shift?.lateInMinutes) > 0) return Number(shift.lateInMinutes);
+    if (shift?.isLateIn === false) return 0;
+    if (shift?.lateInMinutes != null && Number(shift.lateInMinutes) > 0) return Number(shift.lateInMinutes);
     if (shift?.inTime && shift?.shiftStartTime) {
       const punchIn = shift.inTime instanceof Date ? shift.inTime : new Date(shift.inTime);
       return calculateLateIn(punchIn, shift.shiftStartTime, 0, dateStr, 0) || 0;
@@ -68,7 +69,7 @@ function getDetectedMinutes(shift, permissionType, dateStr = null) {
     return 0;
   }
 
-  if (Number(shift?.earlyOutMinutes) > 0) return Number(shift.earlyOutMinutes);
+  if (shift?.earlyOutMinutes != null && Number(shift.earlyOutMinutes) > 0) return Number(shift.earlyOutMinutes);
   if (shift?.outTime && shift?.shiftEndTime) {
     const punchOut = shift.outTime instanceof Date ? shift.outTime : new Date(shift.outTime);
     return calculateEarlyOut(punchOut, shift.shiftEndTime, shift.shiftStartTime, dateStr, 0) || 0;
@@ -264,6 +265,11 @@ function buildEligibleEdges(attendanceDaily, settings, employeeGender = null) {
       // Both IN and OUT punches must be present to evaluate and apply edge permissions
       if (!shift?.inTime || !shift?.outTime) continue;
 
+      // Do NOT create auto edge permissions on split segments / multi-shift continuations
+      if (shift.presenceResolutionPath === 'iterative_split' || shift.isSplitShift || Number(shift.shiftNumber) > 1) {
+        continue;
+      }
+
       const detectedMinutes = getDetectedMinutes(shift, permissionType, attendanceDaily?.date);
       if (detectedMinutes <= 0) continue;
       if (permissionType === 'late_in' && !shift?.inTime) continue;
@@ -325,7 +331,7 @@ async function findExistingPermission({ employeeId, date, permissionType }) {
 }
 
 async function findExistingAutoPermission({ employeeId, date, permissionType, shiftNumber }) {
-  return Permission.findOne({
+  const active = await Permission.findOne({
     employeeId,
     date,
     permissionType,
@@ -334,6 +340,15 @@ async function findExistingAutoPermission({ employeeId, date, permissionType, sh
     status: { $nin: REJECTED_STATUSES },
     'autoCreationMeta.shiftNumber': shiftNumber || null,
   });
+  if (active) return active;
+
+  return Permission.findOne({
+    employeeId,
+    date,
+    permissionType,
+    creationSource: AUTO_SOURCE,
+    'autoCreationMeta.shiftNumber': shiftNumber || null,
+  }).sort({ createdAt: -1 });
 }
 
 async function createAutoPermissionForEdge({ attendanceDaily, employee, requestedBy, edge }) {
@@ -445,10 +460,11 @@ async function finalizeAutoEdgePermission({ permission, edge, actorId }) {
   const verifiedStatus = getVerifiedStatus(edge.permissionType);
   const grantedMinutes = Number(permission.autoCreationMeta?.grantedMinutes) || Number(edge.detectedMinutes) || 0;
   const comments = buildAutoPermissionExplanation(edge, Math.round(grantedMinutes * 100) / 100);
+  permission.isActive = true;
   if (FINAL_EDGE_STATUSES.includes(permission.status)) {
     completeAutoWorkflow(permission, actorId, edge, comments);
     await permission.save();
-    return { success: true, finalized: false, skippedReason: 'Permission already system verified' };
+    return { success: true, finalized: true, status: permission.status };
   }
 
   const gateTime = getSystemGateTime(edge);
@@ -535,18 +551,17 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
       perDayCap = Number(resolvedPermSettings.perDayLimit);
     }
 
-    // Check for shifts that lack both inTime and outTime OR are already full PRESENT from punch hours
-    // Client requirement: permissions only apply where both IN and OUT are present,
-    // and should not be wasted on shifts that are already full PRESENT.
+    // Check for shifts that lack both inTime and outTime or are split continuations
+    // Client requirement: permissions only apply where both IN and OUT are present
     const incompleteShiftNumbers = (attendanceDaily.shifts || [])
       .filter((s) => !s.inTime || !s.outTime)
       .map((s) => Number(s.shiftNumber) || 1);
 
-    const alreadyPresentShiftNumbers = (attendanceDaily.shifts || [])
-      .filter((s) => isShiftAlreadyPresentWithoutPermission(s))
+    const splitShiftNumbers = (attendanceDaily.shifts || [])
+      .filter((s) => s.presenceResolutionPath === 'iterative_split' || s.isSplitShift || Number(s.shiftNumber) > 1)
       .map((s) => Number(s.shiftNumber) || 1);
 
-    const shiftsToDeactivate = [...new Set([...incompleteShiftNumbers, ...alreadyPresentShiftNumbers])];
+    const shiftsToDeactivate = [...new Set([...incompleteShiftNumbers, ...splitShiftNumbers])];
 
     let deactivatedStale = false;
     if (shiftsToDeactivate.length > 0) {
@@ -558,11 +573,11 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         'autoCreationMeta.shiftNumber': { $in: shiftsToDeactivate },
       });
       for (const p of staleAutoPerms) {
-        const isAlreadyPresent = alreadyPresentShiftNumbers.includes(Number(p.autoCreationMeta?.shiftNumber) || 1);
+        const isSplit = splitShiftNumbers.includes(Number(p.autoCreationMeta?.shiftNumber) || 1);
         p.isActive = false;
         p.status = 'rejected';
-        p.comments = (p.comments || '') + (isAlreadyPresent
-          ? ' [Deactivated: Shift is already full PRESENT from punch hours; auto permission not needed]'
+        p.comments = (p.comments || '') + (isSplit
+          ? ' [Deactivated: Split shift segment continuation; auto permission not applicable]'
           : ' [Deactivated: Both check-in and check-out punches are required]');
         await p.save();
         deactivatedStale = true;
@@ -630,36 +645,7 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         shiftNumber,
       });
 
-      // Check if this shift is already full PRESENT from punch hours alone
-      if (isShiftAlreadyPresentWithoutPermission(edge.shift)) {
-        if (permission && permission.isActive) {
-          permission.isActive = false;
-          permission.status = 'rejected';
-          permission.comments = (permission.comments || '') + ' [Deactivated: Shift is already full PRESENT from punch hours; auto permission not needed]';
-          await permission.save();
-          shouldRefreshAttendance = true;
-        }
-        console.log(`[AutoEdgePermissionCreation] Shift ${shiftNumber} on ${attendanceDaily.date} is already full PRESENT from punches alone (${getShiftPunchHours(edge.shift)}h). Skipping ${edge.permissionType} to preserve monthly quota.`);
-        continue;
-      }
 
-      // Check if this shift has ALREADY reached PRESENT (75% threshold) from punches + OD + previously granted edge hours on this date
-      const punchH = getShiftPunchHours(edge.shift);
-      const odH = Number(edge.shift?.odHours) || 0;
-      const expectedH = Number(edge.shift?.expectedHours) || deriveShiftDurationHours(edge.shift) || 8;
-      const alreadyGrantedHours = grantedEdgeHoursByShift[shiftNumber] || 0;
-
-      if (expectedH > 0 && alreadyGrantedHours > 0 && (punchH + odH + alreadyGrantedHours) >= expectedH * 0.75) {
-        if (permission && permission.isActive) {
-          permission.isActive = false;
-          permission.status = 'rejected';
-          permission.comments = (permission.comments || '') + ' [Deactivated: Shift already reached full PRESENT with prior edge permission; quota preserved]';
-          await permission.save();
-          shouldRefreshAttendance = true;
-        }
-        console.log(`[AutoEdgePermissionCreation] Shift ${shiftNumber} on ${attendanceDaily.date} already reached PRESENT with prior edge permission (${alreadyGrantedHours}h). Skipping ${edge.permissionType} to preserve monthly quota.`);
-        continue;
-      }
 
       const currentTotalMonthly = priorMonthlyCount + todayCount;
       const currentTotalForType = isSeparateMode
@@ -709,6 +695,10 @@ async function autoCreateEdgePermissionsForAttendance(attendanceDaily) {
         else if (edge.permissionType === 'early_out') todayEarlyOutCount++;
         shouldRefreshAttendance = true;
       } else {
+        permission.isActive = true;
+        if (permission.status === 'rejected' || permission.status === 'manager_rejected') {
+          permission.status = 'pending';
+        }
         applyAutoPermissionEdgeFields(permission, attendanceDaily, edge);
         await permission.save();
         todayCount++;

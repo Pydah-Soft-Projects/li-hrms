@@ -133,6 +133,14 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
+      presenceResolutionPath: {
+        type: String,
+        default: null,
+      },
+      isSplitShift: {
+        type: Boolean,
+        default: false,
+      },
     }],
     // Aggregate fields for multi-shift
     totalShifts: {

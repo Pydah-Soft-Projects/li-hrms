@@ -79,6 +79,16 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
   globalGrace = DEFAULT_GRACE,
 }) {
   if (!pShift || !employeeNumber || !date) return pShift;
+
+  // Split / continuation shifts do not receive edge permission hours
+  if (pShift.presenceResolutionPath === 'iterative_split' || pShift.isSplitShift || (Number(pShift.shiftNumber) > 1 && !pShift.isManualShift)) {
+    pShift.edgePermissionHours = 0;
+    const punchH = Number(pShift.punchHours) || 0;
+    const odH = Number(pShift.odHours) || 0;
+    pShift.workingHours = Math.round((punchH + odH) * 100) / 100;
+    return pShift;
+  }
+
   // Permissions are only applied when BOTH check-in and check-out are present
   if (!pShift.shiftStartTime || !pShift.shiftEndTime || !pShift.inTime || !pShift.outTime) {
     pShift.edgePermissionHours = 0;
@@ -190,23 +200,26 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
   const shiftEnd = pShift.shiftEndTime;
   const overnight = shiftOvernight(shiftStart, shiftEnd);
 
-  let lateMin =
-    pShift.isLateIn && pShift.lateInMinutes != null
+  let lateMin = 0;
+  const hasActiveLateInPerm = activePerms.some((p) => p.permissionType === 'late_in');
+  if (pShift.isLateIn !== false || hasActiveLateInPerm) {
+    lateMin = pShift.lateInMinutes != null && Number(pShift.lateInMinutes) > 0
       ? Number(pShift.lateInMinutes)
-      : calculateLateIn(punchIn, shiftStart, 0, date, 0);
+      : calculateLateIn(punchIn, shiftStart, hasActiveLateInPerm ? 0 : globalGrace, date, hasActiveLateInPerm ? 0 : globalGrace);
+  }
 
   let earlyMin = 0;
-  if (punchOut) {
-    earlyMin =
-      pShift.isEarlyOut && pShift.earlyOutMinutes != null
-        ? Number(pShift.earlyOutMinutes)
-        : calculateEarlyOut(punchOut, shiftEnd, shiftStart, date, 0) || 0;
+  const hasActiveEarlyOutPerm = activePerms.some((p) => p.permissionType === 'early_out');
+  if (punchOut && (pShift.isEarlyOut !== false || hasActiveEarlyOutPerm)) {
+    earlyMin = pShift.earlyOutMinutes != null && Number(pShift.earlyOutMinutes) > 0
+      ? Number(pShift.earlyOutMinutes)
+      : calculateEarlyOut(punchOut, shiftEnd, shiftStart, date, hasActiveEarlyOutPerm ? 0 : globalGrace, hasActiveEarlyOutPerm ? 0 : globalGrace) || 0;
   }
 
   let edgeHours = 0;
 
   const shiftStartDate = createISTDate(date, shiftStart);
-  const shiftStartGraceMs = 0;
+  const shiftStartGraceMs = (Number(globalGrace) || 0) * 60000;
   const shiftStartGraceDate = new Date(shiftStartDate.getTime() + shiftStartGraceMs);
 
   let shiftEndDate = createISTDate(date, shiftEnd);
@@ -350,6 +363,12 @@ async function refreshAttendanceEdgePermissions(employeeNumber, dateStr) {
       pShift,
       globalGrace: DEFAULT_GRACE,
     });
+
+    // If this is a split shift segment from iterative split, preserve its calculated status and payableShift
+    if (pShift.presenceResolutionPath === 'iterative_split' || pShift.isSplitShift) {
+      refreshedShifts.push(pShift);
+      continue;
+    }
 
     const shiftDoc = pShift.shiftId
       ? await loadEffectiveShiftDoc(pShift, divisionId, segmentCtx)
