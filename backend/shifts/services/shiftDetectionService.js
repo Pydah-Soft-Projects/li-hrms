@@ -5,6 +5,7 @@
  */
 
 const Employee = require('../../employees/model/Employee');
+const EmployeeGroup = require('../../employees/model/EmployeeGroup');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Division = require('../../departments/model/Division');
