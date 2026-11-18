@@ -313,7 +313,7 @@ export function highlightBadgeSubtitle(
   const L = (label || '').trim();
   if (!L) return null;
   if (category === 'absent') return null;
-  if (category === 'present' && (L === 'P' || L === 'PD' || L === 'PN' || L === 'PH' || L === 'PP')) return null;
+  if (category === 'present' && (L === 'P' || L === 'PD' || L === 'PN' || L === 'PH' || L === 'PP' || L === 'PPH' || L === 'PPP')) return null;
   if (category === 'payableShifts' && L === 'Pay') return null;
   if (category === 'ods' && L === 'OD') return null;
   if (category === 'partial' && L === 'PARTIAL') return null;

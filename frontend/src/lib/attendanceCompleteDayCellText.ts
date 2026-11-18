@@ -98,6 +98,8 @@ export function isNightShiftRecord(r: any): boolean {
 
 export function resolvePresentExportCode(r: any, shiftObj?: any): string {
   const pay = Number(shiftObj?.payableShift ?? shiftObj?.basePayable ?? r?.payableShifts ?? 1);
+  if (pay >= 2.75) return 'PPP'; // Triple Duty (3 shifts)
+  if (pay >= 2.25) return 'PPH'; // 2.5 Duty (2.5 shifts)
   if (pay >= 1.75) return 'PP'; // Double Duty
   if (pay >= 1.25 && pay < 1.75) return 'PH'; // 1.5 Duty
   if (isNightShiftRecord(shiftObj || r)) return 'PN'; // Present Night

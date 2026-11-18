@@ -403,7 +403,7 @@ export default function AttendancePage() {
     if (v.includes('HD')) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/45 dark:text-emerald-200';
     if (v === 'H' || v.startsWith('H/') || v.endsWith('/H')) return 'bg-rose-100 text-rose-800 dark:bg-rose-900/45 dark:text-rose-200';
     if (v === 'WO' || v.includes('WO')) return 'bg-orange-100 text-orange-800 dark:bg-orange-900/45 dark:text-orange-200';
-    if (v === 'P' || v === 'PD' || v === 'PN' || v === 'PH' || v === 'PP') return 'bg-green-100 text-green-800 dark:bg-green-900/45 dark:text-green-200';
+    if (v === 'P' || v === 'PD' || v === 'PN' || v === 'PH' || v === 'PP' || v === 'PPH' || v === 'PPP') return 'bg-green-100 text-green-800 dark:bg-green-900/45 dark:text-green-200';
     if (v === 'A') return 'bg-slate-100 text-slate-700 dark:bg-slate-800/80 dark:text-slate-300';
     return 'bg-slate-100 text-slate-800 dark:bg-slate-800/70 dark:text-slate-200';
   };
@@ -2737,6 +2737,8 @@ export default function AttendancePage() {
               { label: 'PN', name: 'Present Night', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' },
               { label: 'PH', name: '1.5 Duty', color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800' },
               { label: 'PP', name: 'Double Duty', color: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800' },
+              { label: 'PPH', name: '2.5 Duty', color: 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800' },
+              { label: 'PPP', name: 'Triple Duty', color: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400 dark:border-violet-800' },
               { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
               { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
               { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },

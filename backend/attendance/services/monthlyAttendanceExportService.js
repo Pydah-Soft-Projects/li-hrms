@@ -42,6 +42,12 @@ function statusAbbrev(cell) {
     const pay = typeof cell === 'object' && cell !== null
       ? Number(cell.payableShifts ?? cell.payableShift ?? 1)
       : 1;
+    if (pay >= 2.75) {
+      return 'PPP'; // Triple Duty (3 shifts)
+    }
+    if (pay >= 2.25) {
+      return 'PPH'; // 2.5 Duty (2.5 shifts)
+    }
     if (pay >= 1.75) {
       return 'PP'; // Double Duty
     }
