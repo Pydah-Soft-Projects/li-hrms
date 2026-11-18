@@ -619,7 +619,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                         }
                     }
 
-                    const firstShiftRaw = findShiftForSplit(currentInTime, shiftsList, date);
+                    const firstShiftRaw = findShiftForSplit(currentInTime, shiftsList, date, outTime);
                     if (firstShiftRaw) {
                         const firstShift = await resolveEffectiveShiftDoc(
                             firstShiftRaw,

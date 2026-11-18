@@ -190,6 +190,29 @@ describe('findShiftForSplit — second-half IN beyond 5h from start', () => {
     const found = findShiftForSplit(inTime, [shift1, shift2BackToBack], DATE);
     assert.equal(found?.name, 'Evening');
   });
+
+  it('multi-shift long duration (12.5h) with late morning arrival keeps containing morning shift over near 9 AM shift', () => {
+    const shift6to1 = {
+      _id: '697f7dd9a2942c6b291e09b9',
+      name: '6 AM to 1 PM shift',
+      startTime: '06:00',
+      endTime: '13:00',
+      duration: 7,
+      payableShifts: 1,
+    };
+    const shift9to6 = {
+      _id: '697f7efaa2942c6b291e09e4',
+      name: '9 AM to 6 PM Shift',
+      startTime: '09:00',
+      endTime: '18:00',
+      duration: 9,
+      payableShifts: 1,
+    };
+    const inTime = punch(DATE, '07:58');
+    const outTime = punch(DATE, '20:45');
+    const found = findShiftForSplit(inTime, [shift6to1, shift9to6], DATE, outTime);
+    assert.equal(found?.name, '6 AM to 1 PM shift');
+  });
 });
 
 describe('buildIterativeSplitSegments', () => {

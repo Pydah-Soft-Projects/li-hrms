@@ -117,7 +117,7 @@ function getShiftWindowContaining(shift, dateStr, inTime) {
  * Prefer the rostered window that contains IN (so a second-half join still matches).
  * Fallback: closest start within 5 hours (300 min), same as the old splitter.
  */
-function findShiftForSplit(inTime, shiftsList, date) {
+function findShiftForSplit(inTime, shiftsList, date, outTime = null) {
     if (!shiftsList?.length || !inTime) return null;
     const dateStr = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
         ? date
@@ -167,9 +167,28 @@ function findShiftForSplit(inTime, shiftsList, date) {
             remainingHours < minHalfHours || bestNearDiff < startDiffMin
         ) && (bestNear._id?.toString?.() || bestNear.name) !== (bestContaining._id?.toString?.() || bestContaining.name);
 
-        if (!isEarlyArrivalForBestNear) {
-            return bestContaining;
+        if (isEarlyArrivalForBestNear) {
+            // When employee worked a long duration (>=10.5h) and outTime is known:
+            // Check if bestContaining enables a valid multi-shift split (leftover >= 3h)
+            // while bestNear would choke the split (leftover < 3h).
+            // If so, prioritize bestContaining to preserve the multi-shift duty.
+            if (outTime && window.end && outTime > window.end) {
+                const totalSpanHours = (outTime.getTime() - inTime.getTime()) / 3600000;
+                const leftoverFromContaining = (outTime.getTime() - window.end.getTime()) / 3600000;
+                const nearWindow = getShiftWindowContaining(bestNear, dateStr, inTime);
+                const nearEnd = nearWindow.end || getShiftEndDate(bestNear, dateStr);
+                const leftoverFromNear = nearEnd && outTime > nearEnd
+                    ? (outTime.getTime() - nearEnd.getTime()) / 3600000
+                    : 0;
+
+                if (totalSpanHours >= 10.5 && leftoverFromContaining >= 3.0 && leftoverFromNear < 3.0) {
+                    return bestContaining;
+                }
+            }
+            return bestNear;
         }
+
+        return bestContaining;
     }
     return bestNearDiff <= NEAR_START_MAX_MINUTES ? bestNear : null;
 }
